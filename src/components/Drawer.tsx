@@ -10,7 +10,7 @@ import React, {
 import { Box, Pressable, Text } from 'native-base';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 
-export const DRAWER_TRIGGER_WIDTH = 32;
+export const DRAWER_TRIGGER_WIDTH = 12;
 
 export interface DrawerRef {
   open: () => void;
@@ -61,8 +61,8 @@ const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
         onPress={() => setVisible(true)}
         accessibilityLabel={`打开${triggerLabel}`}
       >
-        <Text color="black" fontSize="xs" fontWeight="bold" lineHeight={18} textAlign="center">
-          {`‹\n${triggerLabel.slice(0, 2)}\n${triggerLabel.slice(2)}`}
+        <Text color="black" fontSize="md" fontWeight="bold" textAlign="center">
+          ‹
         </Text>
       </Pressable>
     );

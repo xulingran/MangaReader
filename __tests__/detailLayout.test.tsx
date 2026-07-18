@@ -27,6 +27,7 @@ const metrics: Metrics = {
 
 describe('漫画详情布局', () => {
   it('目录网格为下载列表触发栏预留宽度', () => {
+    expect(DRAWER_TRIGGER_WIDTH).toBe(12);
     const split = splitWidth({ ...metrics.frame, fontScale: 1, scale: 1 }, metrics.insets, {
       gap: 12,
       width: 0,
@@ -39,14 +40,14 @@ describe('漫画详情布局', () => {
     expect(occupiedWidth).toBe(632 - DRAWER_TRIGGER_WIDTH);
   });
 
-  it('收起的下载列表触发栏有明确文字提示', () => {
+  it('收起的下载列表触发栏保留向左展开提示', () => {
     let tree: renderer.ReactTestRenderer;
     act(() => {
       tree = renderer.create(<Drawer triggerLabel="下载列表" />);
     });
 
     expect(tree!.root.findByProps({ accessibilityLabel: '打开下载列表' })).toBeTruthy();
-    expect(tree!.root.findByProps({ children: '‹\n下载\n列表' })).toBeTruthy();
+    expect(tree!.root.findByProps({ children: '‹' })).toBeTruthy();
     act(() => tree!.unmount());
   });
 });
