@@ -1,7 +1,6 @@
 import React from 'react';
 import { ColorType, SizeType, SafeAreaProps } from 'native-base/lib/typescript/components/types';
-import { Spinner, Center } from 'native-base';
-import { ColorValue } from 'react-native';
+import { Center, Text } from 'native-base';
 
 interface SpinLoadingProps extends SafeAreaProps {
   size?: 'lg' | 'sm';
@@ -9,15 +8,18 @@ interface SpinLoadingProps extends SafeAreaProps {
   height?: SizeType;
 }
 
+/** 电子墨水版：旋转 Spinner 改为静态文字 */
 const SpinLoading = ({
   size = 'lg',
-  color = 'purple.500',
+  color = 'gray.600',
   height = 48,
   ...safeAreaProps
 }: SpinLoadingProps) => {
   return (
     <Center w="full" h={height} {...safeAreaProps}>
-      <Spinner color={color as ColorValue} size={size} accessibilityLabel="loading" />
+      <Text color={color} fontSize={size === 'lg' ? 'md' : 'sm'}>
+        加载中…
+      </Text>
     </Center>
   );
 };

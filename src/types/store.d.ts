@@ -3,12 +3,10 @@ import {
   MangaStatus,
   Sequence,
   LayoutMode,
-  LightSwitch,
   ReaderDirection,
   MultipleSeat,
-  Hearing,
+  PageKeys,
   Timer,
-  Animated,
   TaskType,
 } from '~/utils';
 import { Plugin } from '~/plugins';
@@ -121,20 +119,17 @@ declare global {
     setting: {
       /** 布局模式 */
       mode: LayoutMode;
-      /** 开关灯 */
-      light: LightSwitch;
       /** 漫画阅读方向 */
       direction: ReaderDirection;
       /** 双页模式的图片位置 */
       seat: MultipleSeat;
       /** 章节排列顺序 */
       sequence: Sequence;
-      /** 是否监听音量并进行反页 */
-      hearing: Hearing;
+      /** 是否监听实体翻页键 */
+      pageKeys: PageKeys;
       /** 定时翻页 */
       timer: Timer;
       timerGap: number;
-      animated: Animated;
       androidDownloadPath: string;
     };
     plugin: {

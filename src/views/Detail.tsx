@@ -27,12 +27,11 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import { CachedImage } from '@georstat/react-native-image-cache';
 import ActionsheetSelect, { ActionsheetSelectProps } from '~/components/ActionsheetSelect';
-import Drawer, { DrawerRef } from '~/components/Drawer';
+import Drawer, { DRAWER_TRIGGER_WIDTH, DrawerRef } from '~/components/Drawer';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import VectorIcon from '~/components/VectorIcon';
-import RedHeart from '~/components/RedHeart';
 import { useBackgroundColor } from '~/utils/theme/hooks';
 
 const {
@@ -72,6 +71,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const { mangaHash, enabledMultiple = false, selected = [] } = route.params;
   const { gap, insets, itemWidth, numColumns, windowWidth, windowHeight } = useSplitWidth({
     gap: 12,
+    reservedWidth: DRAWER_TRIGGER_WIDTH,
     minNumColumns: 3,
     maxSplitWidth: 100,
   });
@@ -210,9 +210,9 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             px={1}
             py={2}
             position="relative"
-            bg={isActived ? 'purple.500' : 'transparent'}
-            color={isActived ? 'white' : '#717171'}
-            borderColor={isActived ? 'purple.500' : '#717171'}
+            bg={isActived ? 'black' : 'transparent'}
+            color={isActived ? 'white' : 'gray.600'}
+            borderColor={isActived ? 'black' : 'gray.600'}
             overflow="hidden"
             borderRadius="md"
             borderWidth={0.5}
@@ -227,7 +227,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               as={MaterialCommunityIcons}
               size="sm"
               name="check-circle"
-              color={isChecked ? 'purple.500' : 'gray.400'}
+              color={isChecked ? 'gray.500' : 'gray.400'}
               position="absolute"
               top={`${gap / 3}px`}
               right={`${gap / 3}px`}
@@ -239,7 +239,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               size="xs"
               style={{ transform: [{ rotateZ: '30deg' }] }}
               name={record.isVisited ? 'brightness-1' : 'brightness-2'}
-              color={`purple.${Math.min(Math.floor(record.progress / 25) + 1, 5)}00`}
+              color={`gray.${Math.min(Math.floor(record.progress / 25) + 1, 5)}00`}
               position="absolute"
               top={`${gap / 3}px`}
               right={`${gap / 3}px`}
@@ -252,7 +252,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
 
   return (
     <Box w="full" h="full" bg={bg}>
-      <Flex safeAreaX w="full" bg="purple.500" flexDirection="row" pl={4} pr={4} pb={4}>
+      <Flex safeAreaX w="full" bg="gray.100" flexDirection="row" pl={4} pr={4} pb={4}>
         <CachedImage
           options={{ headers: data.headers }}
           source={data.infoCover || data.bookCover || data.cover || ''}
@@ -265,7 +265,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
         />
         <Flex flexGrow={1} flexShrink={1} pl={4}>
           <Text
-            color="white"
+            color="black"
             fontSize={18}
             fontWeight="bold"
             numberOfLines={2}
@@ -273,7 +273,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
           >
             {data.title}
           </Text>
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             作者：
             {data.author.map((text, index) => (
               <Fragment key={text}>
@@ -284,10 +284,10 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             {data.author.length <= 0 && '未知'}
           </Text>
           <Box flexGrow={1} />
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             上次观看：{lastWatch.title || '未知'}
           </Text>
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             分类：
             {data.tag.map((text, index) => (
               <Fragment key={text}>
@@ -297,46 +297,50 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             ))}
             {data.tag.length <= 0 && '未知'}
           </Text>
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             来源：{data.sourceName}
           </Text>
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             状态：{statusToLabel(data.status)}
           </Text>
-          <Text color="white" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             最近更新：{data.updateTime || '未知'}
           </Text>
         </Flex>
       </Flex>
 
-      {chapters.length > 0 && render ? (
-        <FlashList
-          data={chapters}
-          extraData={extraData}
-          contentContainerStyle={{
-            padding: gap / 2,
-            paddingLeft: gap / 2 + insets.left,
-            paddingRight: gap / 2 + insets.right,
-          }}
-          numColumns={numColumns}
-          estimatedItemSize={50}
-          estimatedListSize={{ width: windowWidth, height: windowHeight }}
-          refreshControl={
-            <RefreshControl
-              refreshing={loadStatus === AsyncStatus.Pending && mangaHash === loadingMangaHash}
-              onRefresh={handleReload}
-              tintColor={colors.purple[500]}
-            />
-          }
-          renderItem={renderItem}
-          ListFooterComponent={<Box safeAreaBottom />}
-          keyExtractor={(item) => item.hash}
-        />
-      ) : (
-        <Flex w="full" flexGrow={1} alignItems="center" justifyContent="center" safeAreaBottom>
-          <SpinLoading />
-        </Flex>
-      )}
+      <Box flex={1} mr={`${DRAWER_TRIGGER_WIDTH + insets.right}px`}>
+        {chapters.length > 0 && render ? (
+          <FlashList
+            data={chapters}
+            extraData={extraData}
+            contentContainerStyle={{
+              padding: gap / 2,
+              paddingLeft: gap / 2 + insets.left,
+            }}
+            numColumns={numColumns}
+            estimatedItemSize={50}
+            estimatedListSize={{
+              width: windowWidth - DRAWER_TRIGGER_WIDTH - insets.right,
+              height: windowHeight,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={loadStatus === AsyncStatus.Pending && mangaHash === loadingMangaHash}
+                onRefresh={handleReload}
+                tintColor={colors.gray[500]}
+              />
+            }
+            renderItem={renderItem}
+            ListFooterComponent={<Box safeAreaBottom />}
+            keyExtractor={(item) => item.hash}
+          />
+        ) : (
+          <Flex w="full" flexGrow={1} alignItems="center" justifyContent="center" safeAreaBottom>
+            <SpinLoading />
+          </Flex>
+        )}
+      </Box>
 
       <ActionsheetSelect
         isOpen={isOpen}
@@ -458,11 +462,16 @@ export const HeartAndBrowser = () => {
       {isActived && (
         <VectorIcon
           name={enableBatch ? 'lock-open' : 'lock-outline'}
-          color={enableBatch ? 'white' : 'purple.200'}
+          color={enableBatch ? 'black' : 'gray.400'}
           onPress={toggleQueue}
         />
       )}
-      <RedHeart actived={isActived} onPress={toggleFavorite} />
+      <VectorIcon
+        source="materialCommunityIcons"
+        name={isActived ? 'heart' : 'heart-outline'}
+        color="black"
+        onPress={toggleFavorite}
+      />
       <VectorIcon
         source="octicons"
         name={sequence === Sequence.Asc ? 'sort-asc' : 'sort-desc'}
@@ -515,14 +524,14 @@ export const PrehandleDrawer = () => {
           flex={1}
           fontWeight="bold"
           fontSize="md"
-          color={`purple.${Math.floor(progress * -5) + 9}00`}
+          color={`gray.${Math.floor(progress * -5) + 9}00`}
           numberOfLines={1}
         >
           {item.title}
         </Text>
         {item.status === AsyncStatus.Pending && (
           <Box ml={1}>
-            <SpinLoading size="sm" height={1} color={`purple.${Math.floor(progress * -5) + 9}00`} />
+            <SpinLoading size="sm" height={1} color={`gray.${Math.floor(progress * -5) + 9}00`} />
           </Box>
         )}
         {item.status === AsyncStatus.Rejected && (
@@ -546,7 +555,7 @@ export const PrehandleDrawer = () => {
   }
 
   return (
-    <Drawer ref={drawerRef}>
+    <Drawer ref={drawerRef} triggerLabel="下载列表">
       <Box bg="gray.100" h="full">
         {list.length > 0 && (
           <FlashList

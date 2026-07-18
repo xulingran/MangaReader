@@ -1,17 +1,19 @@
 import React, { memo, useMemo } from 'react';
-import { useDelayRender, useSplitWidth } from '~/hooks';
-import { Box, Text, Icon, HStack, Pressable } from 'native-base';
+import { useDelayRender, useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
+import { Box, Text, Icon, HStack, VStack, Pressable } from 'native-base';
 import { Keyboard, StyleSheet } from 'react-native';
-import { coverAspectRatio } from '~/utils';
 import { CachedImage } from '@georstat/react-native-image-cache';
 import { FlashList } from '@shopify/flash-list';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import WhiteCurtain from '~/components/WhiteCurtain';
 import SpinLoading from '~/components/SpinLoading';
 import Loading from '~/components/Loading';
 import Empty from '~/components/Empty';
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useBackgroundColor } from '~/utils/theme/hooks';
+
+/** 书架行高（固定）：小封面 + 标题/来源/状态 */
+export const BOOKSHELF_ROW_HEIGHT = 112;
+const COVER_WIDTH = 64;
+const COVER_HEIGHT = 96;
 
 interface BookshelfProps {
   list: Manga[];
@@ -29,6 +31,31 @@ interface BookshelfProps {
   isSelectMode?: boolean;
 }
 
+/** 状态统一用「图标 + 文字」表达 */
+const statusOf = (
+  hash: string,
+  extra: {
+    fail: string[];
+    trend: string[];
+    active: string[];
+    negative: string[];
+  }
+): { icon: string; text: string } | null => {
+  if (extra.active.includes(hash)) {
+    return { icon: 'sync', text: '更新中…' };
+  }
+  if (extra.fail.includes(hash)) {
+    return { icon: 'error-outline', text: '更新失败' };
+  }
+  if (extra.trend.includes(hash)) {
+    return { icon: 'fiber-new', text: '有更新' };
+  }
+  if (extra.negative.includes(hash)) {
+    return { icon: 'lock-outline', text: '已禁用批量更新' };
+  }
+  return null;
+};
+
 const Bookshelf = ({
   list,
   failList,
@@ -44,15 +71,11 @@ const Bookshelf = ({
   isSelectMode,
   itemOnLongPress,
 }: BookshelfProps) => {
-  const { gap, insets, itemWidth, numColumns, windowWidth, windowHeight } = useSplitWidth({
-    gap: 8,
-    minNumColumns: 3,
-    maxSplitWidth: 180,
-  });
+  const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
+  const insets = useDebouncedSafeAreaInsets();
   const render = useDelayRender(loading && list.length === 0);
   const extraData = useMemo(
     () => ({
-      width: itemWidth,
       fail: failList || [],
       trend: trendList || [],
       active: activeList || [],
@@ -60,7 +83,7 @@ const Bookshelf = ({
       selectMode: isSelectMode || false,
       selected: selectedList || [],
     }),
-    [itemWidth, failList, trendList, activeList, negativeList, isSelectMode, selectedList]
+    [failList, trendList, activeList, negativeList, isSelectMode, selectedList]
   );
   const bg = useBackgroundColor();
 
@@ -89,13 +112,11 @@ const Bookshelf = ({
     <FlashList
       data={list}
       extraData={extraData}
-      numColumns={numColumns}
-      estimatedItemSize={itemWidth / coverAspectRatio}
+      estimatedItemSize={BOOKSHELF_ROW_HEIGHT}
       estimatedListSize={{ width: windowWidth, height: windowHeight }}
       contentContainerStyle={{
-        padding: gap / 2,
-        paddingLeft: gap / 2 + insets.left,
-        paddingRight: gap / 2 + insets.right,
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
       }}
       onScroll={Keyboard.dismiss}
       onEndReached={handleEndReached}
@@ -104,85 +125,69 @@ const Bookshelf = ({
       ListFooterComponent={
         loading ? <SpinLoading height={48} safeAreaBottom /> : <Box safeAreaBottom />
       }
-      renderItem={({
-        item,
-        extraData: { width, fail, trend, active, negative, selected, selectMode },
-      }) => (
-        <Pressable
-          _pressed={{ opacity: 0.8 }}
-          onPress={handlePress(item.hash)}
-          onLongPress={handleLongPress(item.hash)}
-        >
-          <Box width={width + gap} flexDirection="column" p={`${gap / 2}px`}>
-            <Box position="relative" shadow={0} bg="white" borderRadius={6}>
-              <CachedImage
-                options={{ headers: item.headers }}
-                source={item.bookCover || item.infoCover || item.cover || ''}
-                style={{ ...styles.img, height: width / coverAspectRatio }}
-                resizeMode="cover"
-              />
-              {selectMode && (
-                <Box shadow={0} position="absolute" right={0} top={0} borderRadius={3}>
-                  <Icon
-                    as={MaterialCommunityIcons}
-                    size="md"
-                    name="check-circle"
-                    color={selected?.includes(item.hash) ? 'purple.500' : 'gray.400'}
-                    position="absolute"
-                    top={`${(gap / 3) * -1}px`}
-                    right={`${(gap / 3) * -1}px`}
-                  />
-                </Box>
-              )}
-              {trend.includes(item.hash) && (
-                <Box
-                  shadow={0}
-                  position="absolute"
-                  left={0}
-                  bottom={0}
-                  borderRadius={3}
-                  borderBottomLeftRadius={6}
-                  px={2}
-                  bg="purple.500"
-                >
-                  <Text fontSize="xs" fontWeight="bold" color="white">
-                    New
-                  </Text>
-                </Box>
-              )}
-              <HStack position="absolute" top={1} right={1}>
-                {fail.includes(item.hash) && !selectMode && (
-                  <Icon
-                    shadow="icon"
-                    as={MaterialIcons}
-                    name="report"
-                    size="md"
-                    color="yellow.500"
-                  />
-                )}
-                {negative.includes(item.hash) && !selectMode && (
-                  <Icon shadow="icon" as={MaterialIcons} name="lock" size="md" color="purple.500" />
-                )}
-              </HStack>
-              <WhiteCurtain actived={active.includes(item.hash)}>
-                <Box
-                  position="absolute"
-                  w="full"
-                  h="full"
-                  top={0}
-                  left={0}
-                  backgroundColor="white"
-                  opacity={0.3}
+      renderItem={({ item, extraData: extra }) => {
+        const status = statusOf(item.hash, extra);
+        const isSelected = extra.selected?.includes(item.hash);
+        return (
+          <Pressable
+            _pressed={{ bg: 'gray.100' }}
+            onPress={handlePress(item.hash)}
+            onLongPress={handleLongPress(item.hash)}
+          >
+            <HStack
+              height={BOOKSHELF_ROW_HEIGHT}
+              px={3}
+              py={2}
+              space={3}
+              alignItems="flex-start"
+              borderBottomWidth={1}
+              borderColor="gray.200"
+              bg={isSelected ? 'gray.200' : 'white'}
+            >
+              <Box
+                width={COVER_WIDTH}
+                height={COVER_HEIGHT}
+                borderWidth={1}
+                borderColor="black"
+                overflow="hidden"
+              >
+                <CachedImage
+                  options={{ headers: item.headers }}
+                  source={item.bookCover || item.infoCover || item.cover || ''}
+                  style={styles.img}
+                  resizeMode="cover"
                 />
-                <SpinLoading />
-              </WhiteCurtain>
-            </Box>
-            <Text pt={1} fontSize="md" fontWeight="bold" numberOfLines={1}>
-              {item.title || item.hash}
-            </Text>
-          </Box>
-        </Pressable>
-      )}
+              </Box>
+              <VStack flex={1} space={1}>
+                <HStack alignItems="center" space={1}>
+                  {extra.selectMode && (
+                    <Icon
+                      as={MaterialIcons}
+                      size="md"
+                      name={isSelected ? 'check-box' : 'check-box-outline-blank'}
+                      color="black"
+                    />
+                  )}
+                  <Text fontSize="md" fontWeight="bold" numberOfLines={1} flex={1}>
+                    {item.title || item.hash}
+                  </Text>
+                </HStack>
+                <Text fontSize="sm" color="gray.600" numberOfLines={1}>
+                  {item.sourceName}
+                </Text>
+                {status && !extra.selectMode && (
+                  <HStack alignItems="center" space={1}>
+                    <Icon as={MaterialIcons} size="xs" name={status.icon} color="black" />
+                    <Text fontSize="xs" color="black">
+                      {status.text}
+                    </Text>
+                  </HStack>
+                )}
+              </VStack>
+            </HStack>
+          </Pressable>
+        );
+      }}
     />
   );
 };
@@ -190,8 +195,7 @@ const Bookshelf = ({
 const styles = StyleSheet.create({
   img: {
     width: '100%',
-    overflow: 'hidden',
-    borderRadius: 6,
+    height: '100%',
   },
 });
 

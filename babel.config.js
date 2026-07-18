@@ -8,7 +8,7 @@ module.exports = {
         alias: {
           '^~/(.+)': './src/\\1',
         },
-        extensions: ['.ios.js', '.android.js', '.js', '.jsx', '.json', '.tsx', '.ts', '.native.js'],
+        extensions: ['.android.js', '.js', '.jsx', '.json', '.tsx', '.ts', '.native.js'],
       },
     ],
     ['react-native-reanimated/plugin'],

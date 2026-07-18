@@ -1,13 +1,6 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
-        "Animated": {
-            "enum": [
-                0,
-                1
-            ],
-            "type": "number"
-        },
         "AsyncStatus": {
             "description": "enum of any async status",
             "enum": [
@@ -15,13 +8,6 @@
                 1,
                 2,
                 3
-            ],
-            "type": "number"
-        },
-        "Hearing": {
-            "enum": [
-                0,
-                1
             ],
             "type": "number"
         },
@@ -134,14 +120,14 @@
             ],
             "type": "string"
         },
-        "LightSwitch": {
-            "enum": [
-                "Off",
-                "On"
-            ],
-            "type": "string"
-        },
         "MultipleSeat": {
+            "enum": [
+                0,
+                1
+            ],
+            "type": "number"
+        },
+        "PageKeys": {
             "enum": [
                 0,
                 1
@@ -615,24 +601,17 @@
                 "androidDownloadPath": {
                     "type": "string"
                 },
-                "animated": {
-                    "$ref": "#/definitions/Animated"
-                },
                 "direction": {
                     "$ref": "#/definitions/ReaderDirection",
                     "description": "漫画阅读方向"
                 },
-                "hearing": {
-                    "$ref": "#/definitions/Hearing",
-                    "description": "是否监听音量并进行反页"
-                },
-                "light": {
-                    "$ref": "#/definitions/LightSwitch",
-                    "description": "开关灯"
-                },
                 "mode": {
                     "$ref": "#/definitions/LayoutMode",
                     "description": "布局模式"
+                },
+                "pageKeys": {
+                    "$ref": "#/definitions/PageKeys",
+                    "description": "是否监听实体翻页键"
                 },
                 "seat": {
                     "$ref": "#/definitions/MultipleSeat",
@@ -652,11 +631,9 @@
             },
             "required": [
                 "androidDownloadPath",
-                "animated",
                 "direction",
-                "hearing",
-                "light",
                 "mode",
+                "pageKeys",
                 "seat",
                 "sequence",
                 "timer",

@@ -1,14 +1,13 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { nonNullable, AsyncStatus } from '~/utils';
-import { View, Text, HStack, Button, Modal, useDisclose } from 'native-base';
+import { View, Text, HStack, Button, useDisclose } from 'native-base';
 import { useFocusEffect } from '@react-navigation/native';
 import { useBackgroundColor } from '~/utils/theme/hooks';
 import VectorIcon from '~/components/VectorIcon';
 import Bookshelf from '~/components/Bookshelf';
-import Rotate from '~/components/Rotate';
+import Overlay from '~/components/Overlay';
 import * as RootNavigation from '~/utils/navigation';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 
 const { batchUpdate, removeFavorites } = action;
 
@@ -22,7 +21,6 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   const [selectedManga, setSelectedManga] = useState<string[]>([]);
   const [isSelectMode, setSelectMode] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclose();
-  const headerRightOpacity = useSharedValue(0);
   const bg = useBackgroundColor();
 
   const favoriteList = useMemo(
@@ -56,13 +54,11 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
     }
     setSelectMode(true);
     setSelectedManga([mangaHash]);
-    headerRightOpacity.value = 1;
   };
 
   const handleCancel = useCallback(() => {
     setSelectMode(false);
-    headerRightOpacity.value = 0;
-  }, [headerRightOpacity]);
+  }, []);
 
   const handleSelectAll = useCallback(() => {
     if (selectedManga.length === list.length) {
@@ -77,54 +73,33 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
     onClose();
   }, [dispatch, onClose, selectedManga]);
 
-  const seteletModeHeaderRightStyle = useAnimatedStyle(() => {
-    return {
-      opacity: headerRightOpacity.value,
-      transform: [{ scale: withSpring(headerRightOpacity.value) }],
-    };
-  }, []);
-
   const renderHeaderRight = useCallback(() => {
     if (isSelectMode) {
       return (
-        <Animated.View style={seteletModeHeaderRightStyle}>
-          <HStack flexShrink={0}>
-            <VectorIcon
-              source="materialCommunityIcons"
-              name="window-close"
-              onPress={handleCancel}
-            />
-            <VectorIcon
-              source="materialCommunityIcons"
-              name={
-                selectedManga.length <= 0
-                  ? 'checkbox-blank-outline'
-                  : selectedManga.length >= list.length
-                  ? 'checkbox-marked-outline'
-                  : 'checkbox-intermediate'
-              }
-              onPress={handleSelectAll}
-            />
-            <VectorIcon
-              name="delete-forever"
-              opacity={selectedManga.length <= 0 ? 0.5 : 1}
-              disabled={selectedManga.length <= 0}
-              onPress={onOpen}
-            />
-          </HStack>
-        </Animated.View>
+        <HStack flexShrink={0}>
+          <VectorIcon source="materialCommunityIcons" name="window-close" onPress={handleCancel} />
+          <VectorIcon
+            source="materialCommunityIcons"
+            name={
+              selectedManga.length <= 0
+                ? 'checkbox-blank-outline'
+                : selectedManga.length >= list.length
+                ? 'checkbox-marked-outline'
+                : 'checkbox-intermediate'
+            }
+            onPress={handleSelectAll}
+          />
+          <VectorIcon
+            name="delete-forever"
+            opacity={selectedManga.length <= 0 ? 0.5 : 1}
+            disabled={selectedManga.length <= 0}
+            onPress={onOpen}
+          />
+        </HStack>
       );
     }
     return <SearchAndAbout />;
-  }, [
-    list,
-    selectedManga,
-    isSelectMode,
-    seteletModeHeaderRightStyle,
-    handleCancel,
-    handleSelectAll,
-    onOpen,
-  ]);
+  }, [list, selectedManga, isSelectMode, handleCancel, handleSelectAll, onOpen]);
 
   useFocusEffect(
     useCallback(() => {
@@ -147,24 +122,21 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
         itemOnLongPress={handleSelect}
         loading={loadStatus === AsyncStatus.Pending}
       />
-      <Modal useRNModal isOpen={isOpen} onClose={onClose} size="xl">
-        <Modal.Content>
-          <Modal.Header>确认</Modal.Header>
-          <Modal.Body>
-            <Text>从列表删除所选漫画？</Text>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button.Group size="sm" space="sm">
-              <Button px={5} variant="outline" colorScheme="gray" onPress={onClose}>
-                取消
-              </Button>
-              <Button px={5} colorScheme="purple" onPress={handleDelete}>
-                确认
-              </Button>
-            </Button.Group>
-          </Modal.Footer>
-        </Modal.Content>
-      </Modal>
+      <Overlay isOpen={isOpen} title="确认" onClose={onClose}>
+        <View p={4}>
+          <Text color="black" fontSize="md">
+            从列表删除所选漫画？
+          </Text>
+          <Button.Group size="sm" space="sm" mt={4} justifyContent="flex-end">
+            <Button px={5} variant="outline" colorScheme="gray" onPress={onClose}>
+              取消
+            </Button>
+            <Button px={5} colorScheme="gray" onPress={handleDelete}>
+              确认
+            </Button>
+          </Button.Group>
+        </View>
+      </Overlay>
     </View>
   );
 };
@@ -172,13 +144,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
 export const SearchAndAbout = () => {
   const dispatch = useAppDispatch();
   const { loadStatus: batchStatus, stack, queue, fail } = useAppSelector((state) => state.batch);
-  const [enableRotate, setEnableRotate] = useState(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      setEnableRotate(batchStatus === AsyncStatus.Pending);
-    }, [batchStatus])
-  );
+  const isUpdating = batchStatus === AsyncStatus.Pending;
 
   const handleSearch = () => {
     RootNavigation.navigate('Discovery');
@@ -195,15 +161,13 @@ export const SearchAndAbout = () => {
       <VectorIcon name="search" onPress={handleSearch} />
       <VectorIcon name="settings" onPress={handlePlugin} />
       <View position="relative">
-        <Rotate enable={enableRotate}>
-          <VectorIcon isDisabled={enableRotate} name="autorenew" onPress={handleUpdate} />
-        </Rotate>
-        {batchStatus === AsyncStatus.Pending && (
-          <Text position="absolute" top={0} right={0} color="white" fontWeight="extrabold">
+        <VectorIcon isDisabled={isUpdating} name="autorenew" onPress={handleUpdate} />
+        {isUpdating && (
+          <Text position="absolute" top={0} right={0} color="black" fontWeight="extrabold">
             {queue.length + stack.length}
           </Text>
         )}
-        {batchStatus !== AsyncStatus.Pending && fail.length > 0 && (
+        {!isUpdating && fail.length > 0 && (
           <Text position="absolute" top={0} right={0} color="red.400" fontWeight="extrabold">
             {fail.length}
           </Text>

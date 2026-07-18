@@ -1,0 +1,112 @@
+# MangaReader（安卓电子墨水版）
+
+一个基于 React Native 的漫画阅读 APP，**仅支持 Android**，面向电子纸设备：全局黑白高对比静态 UI，移除所有装饰动画与程序化翻页动画。采用插件式设计抓取多个漫画网站的内容，数据全部离线存储在本地，支持备份和恢复。
+
+- 仓库：https://github.com/youniaogu/MangaReader
+- 当前版本：0.7.10（`package.json` 中的 `version` 与 `publishTime`，以及 `android/app/build.gradle` 中的 `versionCode` / `versionName` 需保持同步）
+- 文档与用户界面以中文为主，代码注释中英文混用
+
+## 电子墨水版核心约定
+
+- **无动画**：导航 `animation: 'none'`；阅读器所有 `scrollToIndex/scrollToOffset` 固定 `animated: false`；弹窗/抽屉统一使用 `src/components/Overlay.tsx` / 静态 `Drawer`；禁止 GIF、Spinner、Stagger、摇晃/旋转/弹跳/淡入淡出组件（已全部移除，勿再加回）
+- **黑白主题**：`src/utils/theme.ts` 只有灰阶调色板 `gray`，无暗色模式、无阴影、无透明遮罩、无渐变；语义色板在 `src/utils/theme/tokens.ts`（light/dark 同值）
+- **横向翻页**：FlashList 横向拖拽内容直接跟随手指，松手时由 `src/utils/reader.ts` 的 `resolveDragTargetIndex` 按拖动距离/方向决策目标页（最多一页、无惯性），再 `scrollToIndex(animated: false)` 瞬时对齐；阈值比例 `DRAG_PAGE_THRESHOLD_RATIO = 0.2`
+- **实体键翻页**：原生模块 `android/.../eink/EInkKeyModule.java` 仅在阅读页（`setReaderActive(true)`）拦截 VOLUME_UP/PAGE_UP/DPAD_LEFT（上一页）与 VOLUME_DOWN/PAGE_DOWN/DPAD_RIGHT（下一页），按键抬起时发一次 `pageKey` 事件；JS 侧 `src/utils/einkKey.ts` + `src/hooks/usePageKeys.ts`，设置项为 `setting.pageKeys`（旧 `hearing` 迁移而来）
+- **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
+- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
+
+## 技术栈
+
+- **React Native 0.72.10** + React 18.2 + TypeScript 4.8.4（Node >= 18，`.nvmrc` 指定 18.16.1）
+- **状态管理**：Redux Toolkit + redux-saga（`src/redux/`），dev 环境启用 redux-logger；jest 环境下不启动 saga（`store.ts`）
+- **UI**：NativeBase 3.4（通过 patch-package 打了补丁，见 `patches/native-base+3.4.28.patch`，移除了 SSRProvider）、react-navigation（native-stack）、react-native-reanimated（仅保留缩放/平移的直接操控）、@shopify/flash-list
+- **抓取**：cheerio 解析 HTML，自定义 fetch 封装（`src/utils/fetch.ts`），@react-native-cookies/cookies 管理 Cookie，webview（`src/views/Webview.tsx`）用于过 Cloudflare 校验和登录
+- **存储**：react-native-mmkv（`src/utils/storage.ts` 封装，可切换回 AsyncStorage）、react-native-file-access 读写下载文件、@georstat/react-native-image-cache 图片缓存
+- **包管理**：只能用 yarn（`preinstall` 钩子里 `only-allow yarn` 强制）
+
+## 常用命令
+
+```bash
+yarn install               # 安装依赖（postinstall 自动执行 patch-package）
+yarn start                 # 启动 Metro
+yarn android               # 运行 Android debug 包
+yarn build-android         # 打包 Android release（cd android && ./gradlew assembleRelease）
+yarn build-android-sideload # 打包个人侧载 APK（assembleSideload：继承 release 优化 + debug 签名）
+yarn lint                  # eslint 校验 **/*.{ts,tsx}
+yarn test                  # jest
+yarn jsonschema            # 重新生成 src/schema/*.json（见下文「状态与 Schema」）
+yarn clean                 # react-native-clean-project 深度清理
+```
+
+Windows 环境下注意：`yarn build-android*` 里的 `./gradlew` 是 Unix 写法，在 cmd/PowerShell 中需用 `gradlew.bat`。
+
+## 目录结构与模块划分
+
+```
+index.js               # 入口：dayjs 中文 locale、注入 process.env.NAME/VERSION/PUBLISH_TIME、
+                       # 配置图片缓存（512MB 上限、淡入 0）、AppRegistry 注册
+android/app/src/main/java/com/mangareader/
+└── eink/              # EInkKeyModule / EInkKeyPackage：实体翻页键原生桥接
+src/
+├── App.tsx            # 导航与 Provider 组装（animation: 'none'）；底部导出 *StateType 供 schema 生成用
+├── plugins/           # 插件系统（核心）：base.ts 定义抽象基类 Base 与 Plugin 枚举，
+│                      # 其余每个文件对应一个漫画源（copy、jmc、pica、dmzj……），
+│                      # index.ts 汇总为 PluginMap
+├── redux/             # slice.ts（单一 rootSlice + initialState）、saga.ts（全部副作用，
+│                      # 约 1200 行：抓取、持久化、批量更新、下载/导出任务、备份恢复）、store.ts
+├── schema/            # 由 TS 类型生成的 JSON Schema，运行时校验持久化/备份数据
+├── views/             # 8 个页面：Home（书架）、Discovery、Search、Detail、Chapter（阅读器）、
+│                      # Plugin、Webview、About
+├── components/        # 共享组件（Reader、Controller、ComicImage、Bookshelf、Overlay 等）
+├── hooks/             # 自定义 hooks（usePageKeys、useInterval、usePrevNext 等）
+├── utils/             # enum.ts（枚举与 ErrorMessage）、common.ts（工具函数、加密解密、
+│                      # schema 校验、migrateSetting）、fetch.ts、storage.ts、reader.ts（拖拽决策）、
+│                      # einkKey.ts、theme/
+├── types/             # 全局 ambient 类型（global.d.ts、store.d.ts、plugins.d.ts、router.d.ts），
+│                      # RootState 等类型全局可用，无需 import
+__tests__/             # jest 测试（App 冒烟、reader 翻页决策、migrateSetting 迁移）
+jest.setup.js          # jest 原生模块 mock（mmkv、file-access、cookies、image-cache 等）
+patches/               # patch-package 补丁
+```
+
+## 插件系统
+
+这是本项目最核心的设计。每个漫画源是 `src/plugins/base.ts` 中抽象类 `Base` 的一个子类实例：
+
+- 子类需实现 5 个 `prepare*Fetch` 方法（返回 `FetchData` 描述请求）和 5 个 `handle*` 方法（把响应解析成统一数据结构）：discovery（发现页）、search、mangaInfo、chapterList、chapter
+- 漫画/章节的唯一标识是 hash：`combineHash(plugin, mangaId, chapterId?)`，格式为 `插件ID&mangaId&chapterId`，用 `splitHash` 解码
+- 新增加插件：新建文件继承 `Base` → 在 `Plugin` 枚举中登记 → 在 `src/plugins/index.ts` 的 `PluginMap` 中注册
+- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态（通过 webview 拿到 Cookie/Token 后存到 plugin extra）
+- `batchDelay` 控制批量更新时的请求间隔，避免触发源站风控
+
+## 状态与 Schema
+
+- 全局状态类型 `RootState` 定义在 `src/types/store.d.ts`（全局声明），初始值在 `src/redux/slice.ts` 的 `initialState`
+- 持久化数据（favorites、dict、plugin、setting、task 等）存储在 MMKV，key 定义在 `src/utils/common.ts` 的 `storageKey`
+- `src/schema/*.json` 是由 `typescript-json-schema` 从 TS 类型生成的 JSON Schema，saga 在启动加载和恢复备份时用 `json-schema-library` 的 `Draft07` 校验数据合法性
+- **改动 `RootState` 相关类型后必须运行 `yarn jsonschema` 重新生成 schema**（pre-commit 钩子也会执行）
+
+## 代码规范
+
+- Prettier：行宽 100、单引号、句尾分号、缩进 2 空格、ES5 尾随逗号、`endOfLine: auto`
+- ESLint：继承 `@react-native` 配置
+- 路径别名：`~/` 映射到 `src/`（`tsconfig.json` 的 paths + `babel.config.js` 的 module-resolver，两处需保持一致）
+- 面向用户的文案（错误提示、toast 等）使用中文，集中在 `src/utils/enum.ts` 的 `ErrorMessage` 等枚举中
+
+## 测试
+
+- jest + `react-native` preset（`jest.config.js` + `jest.setup.js` 原生模块 mock），运行 `yarn test`
+- `__tests__/`：App 冒烟、`reader.test.tsx`（拖拽决策纯函数 + 组件级无动画断言）、`migrateSetting.test.ts`（旧设置/旧备份迁移）
+- 无 CI 流水线：`.github/` 下只有 issue 模板，没有 workflow
+
+## 提交与发布
+
+- Husky pre-commit（`.husky/pre-commit`）依次执行：`yarn lint` → `yarn jsonschema`
+- 发布：`yarn build-android` 打 release 包上传 GitHub Releases；`yarn build-android-sideload` 打个人侧载包（继承 release 的 R8 + 资源裁剪，debug 签名，可直接安装）
+- Android 仅构建 ARMv7/ARM64（`gradle.properties` 的 `reactNativeArchitectures`），Hermes 开启；fresco 仅保留静态 WebP（`webpsupport`），无动态 GIF/WebP 解码
+
+## 安全注意事项
+
+- 不要把签名证书、keystore 提交进仓库
+- 用户凭据（Cookie、Token）只保存在设备本地（MMKV / Cookie 管理器），不经过任何自有服务器
+- 插件抓取第三方网站，注意遵守 `batchDelay` 限速，避免高频请求

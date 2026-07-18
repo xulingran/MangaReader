@@ -16,6 +16,7 @@ import {
   fetchData,
   haveError,
   validate,
+  migrateSetting,
   getLatestRelease,
   dictToPairs,
   pairsToDict,
@@ -66,10 +67,12 @@ const {
   loadLatestReleaseCompletion,
   // setting
   setMode,
-  setLight,
+  setPageKeys,
   setDirection,
   setSequence,
   setSeat,
+  setTimer,
+  setTimerGap,
   setAndroidDownloadPath,
   syncSetting,
   // plugin
@@ -276,7 +279,7 @@ function* syncDataSaga() {
         }
       }
       if (settingData) {
-        const setting: RootState['setting'] = JSON.parse(settingData);
+        const setting = migrateSetting(JSON.parse(settingData));
         if (validate(setting, settingSchema, initialState.setting)) {
           yield put(syncSetting(setting));
         } else {
@@ -340,6 +343,7 @@ function* restoreSaga() {
       const data = JSON.parse(
         decodeURIComponent(base64.decode(source.replace('datatext/plainbase64', '')))
       );
+      data.setting = migrateSetting(data.setting);
 
       if (!validate(data, rootSchema, initialState)) {
         throw new Error('数据格式错误');
@@ -454,10 +458,12 @@ function* saveDataSaga() {
       clearCacheCompletion.type,
       restoreCompletion.type,
       setMode.type,
-      setLight.type,
+      setPageKeys.type,
       setDirection.type,
       setSequence.type,
       setSeat.type,
+      setTimer.type,
+      setTimerGap.type,
       setAndroidDownloadPath.type,
       setSource.type,
       setExtra.type,
@@ -1127,7 +1133,12 @@ function* saveImageSaga() {
       yield call(checkAndroidPermission);
 
       let path: string;
-      if (/^data:image\/png;base64,.+/.test(source)) {
+      if (/^file:\/\/.+/.test(source)) {
+        // 本地临时文件（解密图/base64 图的处理结果），直接存入相册
+        yield call(CameraRoll.save, source);
+        yield put(toastMessage('保存成功'));
+        return;
+      } else if (/^data:image\/png;base64,.+/.test(source)) {
         path = CacheManager.config.baseDir + nanoid() + '.png';
         yield call(
           FileSystem.writeFile,

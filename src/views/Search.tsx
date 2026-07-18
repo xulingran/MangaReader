@@ -100,13 +100,13 @@ export const SearchOption = () => {
   }
 
   return (
-    <HStack safeAreaX px={2} pb={2} bg="purple.500">
+    <HStack safeAreaX px={2} pb={2} bg="white" borderBottomWidth={1} borderColor="black">
       {searchOptions.map((item) => {
         return (
           <Button
             key={item.name}
             variant="ghost"
-            _text={{ color: 'white', fontWeight: 'bold' }}
+            _text={{ color: 'black', fontWeight: 'bold' }}
             onPress={handlePress(item.name, item.options)}
           >
             {item.label}

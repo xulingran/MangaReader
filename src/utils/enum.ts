@@ -83,18 +83,6 @@ export enum Sequence {
   Desc = 'Desc',
 }
 
-export enum Volume {
-  Up = 'Up',
-  Down = 'Down',
-}
-
-export enum LightSwitch {
-  /** 关灯 */
-  Off = 'Off',
-  /** 开灯 */
-  On = 'On',
-}
-
 /** 任务类型 */
 export enum TaskType {
   Download,
@@ -138,7 +126,7 @@ export enum MultipleSeat {
   BToA,
 }
 
-export enum Hearing {
+export enum PageKeys {
   Enable,
   Disabled,
 }
@@ -167,9 +155,4 @@ export enum TemplateKey {
   STATUS = 'STATUS',
   HASH = 'HASH',
   TIME = 'TIME',
-}
-
-export enum Animated {
-  Enable,
-  Disabled,
 }

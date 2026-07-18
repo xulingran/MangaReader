@@ -1,19 +1,29 @@
-import React, { useCallback, useState, useMemo, useRef, memo } from 'react';
+import React, { useCallback, useState, useMemo, useRef, memo, useEffect } from 'react';
 import { aspectFit, AsyncStatus, LayoutMode, Orientation, ScrambleType, unscramble } from '~/utils';
-import { Image as ReactNativeImage, StyleSheet, Dimensions, DimensionValue } from 'react-native';
+import {
+  Image as ReactNativeImage,
+  StyleSheet,
+  Dimensions,
+  DimensionValue,
+  ImageResizeMode,
+  ImageLoadEventData,
+  NativeSyntheticEvent,
+} from 'react-native';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import { CachedImage, CacheManager } from '@georstat/react-native-image-cache';
 import { useFocusEffect } from '@react-navigation/native';
-import { Center, Image } from 'native-base';
+import { Box, Center, Text, Icon } from 'native-base';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
-import FastImage, { ResizeMode } from 'react-native-fast-image';
 import Canvas, { Image as CanvasImage } from 'react-native-canvas';
-import { FileSystem } from 'react-native-file-access';
+import { Dirs, FileSystem } from 'react-native-file-access';
+import { nanoid } from '@reduxjs/toolkit';
 
-const groundPoundGif = require('~/assets/ground_pound.gif');
+/** Canvas 解码像素上限：8MP */
+const maxPixelSize = 8000000;
 const windowScale = Dimensions.get('window').scale;
-const maxPixelSize = 4096 * 4096;
-const resizeModeDict: Record<LayoutMode, ResizeMode> = {
+const unscrambleDir = `${Dirs.CacheDir}/unscramble`;
+const resizeModeDict: Record<LayoutMode, ImageResizeMode> = {
   [LayoutMode.Horizontal]: 'contain',
   [LayoutMode.Vertical]: 'cover',
   [LayoutMode.Multiple]: 'contain',
@@ -27,13 +37,13 @@ const defaultState = {
 };
 
 export interface ImageState {
+  /** 图片地址：普通图为原始 URL，解密/base64 图为 file:// 临时文件 */
   dataUrl: string;
   landscapeHeight?: number;
   portraitHeight?: number;
   multipleFitWidth?: number;
   multipleFitHeight?: number;
   loadStatus: AsyncStatus;
-  base64?: string;
 }
 export interface ImageProps {
   uri: string;
@@ -52,20 +62,24 @@ export interface ComicImageProps extends ImageProps {
   isBase64Image?: boolean;
 }
 
-const DefaultImage = ({
-  uri,
-  index,
-  headers = {},
-  layoutMode = LayoutMode.Horizontal,
-  prevState = defaultState,
-  defaultPortraitHeight,
-  defaultLandscapeHeight,
-  onChange,
-}: ImageProps) => {
-  const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
-  const [imageState, setImageState] = useState(prevState);
-  const style = useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
+/** 电子墨水版静态加载占位（替代 GIF） */
+const StaticPlaceholder = () => (
+  <Center position="absolute" top={0} left={0} right={0} bottom={0}>
+    <Icon as={MaterialIcons} name="image" size={10} color="gray.300" />
+    <Text color="gray.400" fontSize="sm" pt={1}>
+      加载中…
+    </Text>
+  </Center>
+);
+
+const useFillStyle = (
+  layoutMode: LayoutMode,
+  imageState: ImageState,
+  orientation: Orientation,
+  defaultPortraitHeight: number,
+  defaultLandscapeHeight: number
+) => {
+  return useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
     if (layoutMode === LayoutMode.Horizontal) {
       return {
         width: '100%',
@@ -86,80 +100,74 @@ const DefaultImage = ({
       height: imageState.multipleFitHeight || '100%',
     };
   }, [layoutMode, imageState, orientation, defaultPortraitHeight, defaultLandscapeHeight]);
+};
+
+/** 普通漫画图：直接交给 CachedImage 渲染，通过 onLoad 获取尺寸，不再生成整张 base64 */
+const DefaultImage = ({
+  uri,
+  index,
+  headers = {},
+  layoutMode = LayoutMode.Horizontal,
+  prevState = defaultState,
+  defaultPortraitHeight,
+  defaultLandscapeHeight,
+  onChange,
+}: ImageProps) => {
+  const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
+  const [imageState, setImageState] = useState(prevState);
+  const style = useFillStyle(
+    layoutMode,
+    imageState,
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
+  );
   const uriRef = useRef(uri);
 
   const updateData = useCallback(
     (data: ImageState) => {
-      let isUnmounted = false;
       onChange && onChange(data, index);
-      !isUnmounted && setImageState(data);
-
-      return () => {
-        isUnmounted = true;
-      };
+      setImageState(data);
     },
     [index, onChange]
   );
   const handleError = useCallback(() => {
     updateData({ ...imageState, loadStatus: AsyncStatus.Rejected });
   }, [imageState, updateData]);
-  const loadImage = useCallback(() => {
-    setImageState({ ...imageState, loadStatus: AsyncStatus.Pending });
-    CacheManager.prefetchBlob(uri, { headers })
-      .then((base64) => {
-        if (!base64) {
-          handleError();
-          return;
+  const handleLoad = useCallback(
+    (event: NativeSyntheticEvent<ImageLoadEventData>) => {
+      const { width, height } = event.nativeEvent.source;
+      if (!width || !height) {
+        handleError();
+        return;
+      }
+      const { dWidth, dHeight } = aspectFit(
+        { width, height },
+        {
+          width: (windowWidth - left - right) / 2,
+          height: windowHeight - top - bottom,
         }
-        if (layoutMode === LayoutMode.Horizontal) {
-          updateData({ ...imageState, dataUrl: uri, loadStatus: AsyncStatus.Fulfilled });
-          return;
-        }
+      );
+      updateData({
+        ...imageState,
+        dataUrl: uri,
+        multipleFitWidth: dWidth,
+        multipleFitHeight: dHeight,
+        landscapeHeight: (height / width) * Math.max(windowWidth, windowHeight),
+        portraitHeight: (height / width) * Math.min(windowWidth, windowHeight),
+        loadStatus: AsyncStatus.Fulfilled,
+      });
+    },
+    [imageState, updateData, handleError, uri, windowWidth, windowHeight, top, left, right, bottom]
+  );
 
-        ReactNativeImage.getSize(
-          'data:image/png;base64,' + base64,
-          (width, height) => {
-            const { dWidth, dHeight } = aspectFit(
-              { width, height },
-              {
-                width: (windowWidth - left - right) / 2,
-                height: windowHeight - top - bottom,
-              }
-            );
-            updateData({
-              ...imageState,
-              dataUrl: uri,
-              multipleFitWidth: dWidth,
-              multipleFitHeight: dHeight,
-              landscapeHeight: (height / width) * Math.max(windowWidth, windowHeight),
-              portraitHeight: (height / width) * Math.min(windowWidth, windowHeight),
-              loadStatus: AsyncStatus.Fulfilled,
-            });
-          },
-          handleError
-        );
-      })
-      .catch(handleError);
-  }, [
-    uri,
-    headers,
-    imageState,
-    layoutMode,
-    updateData,
-    handleError,
-    windowWidth,
-    windowHeight,
-    top,
-    left,
-    right,
-    bottom,
-  ]);
   useFocusEffect(
     useCallback(() => {
       if (imageState.loadStatus === AsyncStatus.Default) {
-        loadImage();
+        setImageState({ ...imageState, loadStatus: AsyncStatus.Pending });
       }
-    }, [imageState, loadImage])
+    }, [imageState])
   );
   useFocusEffect(
     useCallback(() => {
@@ -177,23 +185,6 @@ const DefaultImage = ({
       .finally(() => updateData({ ...imageState, loadStatus: AsyncStatus.Default }));
   };
 
-  if (
-    imageState.loadStatus === AsyncStatus.Pending ||
-    imageState.loadStatus === AsyncStatus.Default
-  ) {
-    return (
-      <Center style={style}>
-        <Image
-          style={{ width: Math.min(windowWidth * 0.3, 180), height: windowHeight }}
-          resizeMode="contain"
-          resizeMethod="resize"
-          fadeDuration={0}
-          source={groundPoundGif}
-          alt="groundpound"
-        />
-      </Center>
-    );
-  }
   if (imageState.loadStatus === AsyncStatus.Rejected) {
     return (
       <Center style={style}>
@@ -203,16 +194,21 @@ const DefaultImage = ({
   }
 
   return (
-    <CachedImage
-      source={uri}
-      options={{ headers }}
-      style={style}
-      resizeMode={resizeModeDict[layoutMode]}
-      onError={handleError}
-    />
+    <Box style={style}>
+      <CachedImage
+        source={uri}
+        options={{ headers }}
+        style={styles.fill}
+        resizeMode={resizeModeDict[layoutMode]}
+        onLoad={handleLoad}
+        onError={handleError}
+      />
+      {imageState.loadStatus !== AsyncStatus.Fulfilled && <StaticPlaceholder />}
+    </Box>
   );
 };
 
+/** 加密图：canvas 解密结果写入临时文件，React 状态只保存 file:// URI 与尺寸 */
 const ScrambleImage = ({
   uri,
   index,
@@ -227,39 +223,28 @@ const ScrambleImage = ({
   const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
   const [imageState, setImageState] = useState(prevState);
-  const style = useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
-    if (layoutMode === LayoutMode.Horizontal) {
-      return {
-        width: '100%',
-        height: '100%',
-      };
-    } else if (layoutMode === LayoutMode.Vertical) {
-      return {
-        width: '100%',
-        height:
-          orientation === Orientation.Landscape
-            ? imageState.landscapeHeight || defaultLandscapeHeight
-            : imageState.portraitHeight || defaultPortraitHeight,
-      };
-    }
-    // LayoutMode.Multiple
-    return {
-      width: imageState.multipleFitWidth || '100%',
-      height: imageState.multipleFitHeight || '100%',
-    };
-  }, [layoutMode, imageState, orientation, defaultPortraitHeight, defaultLandscapeHeight]);
+  const style = useFillStyle(
+    layoutMode,
+    imageState,
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
+  );
   const canvasRef = useRef<Canvas>(null);
   const uriRef = useRef(uri);
+  const tempFileRef = useRef<string | null>(null);
+
+  const releaseTempFile = useCallback(() => {
+    if (tempFileRef.current) {
+      FileSystem.unlink(tempFileRef.current).catch(() => {});
+      tempFileRef.current = null;
+    }
+  }, []);
 
   const updateData = useCallback(
     (data: ImageState) => {
-      let isUnmounted = false;
       onChange && onChange(data, index);
-      !isUnmounted && setImageState(data);
-
-      return () => {
-        isUnmounted = true;
-      };
+      setImageState(data);
     },
     [index, onChange]
   );
@@ -287,7 +272,7 @@ const ScrambleImage = ({
             return;
           }
 
-          // if image size more than maxPixelSize, scale image to smaller
+          // if image size more than maxPixelSize(8MP), scale image to smaller
           const imageScale = Math.floor(Math.min(maxPixelSize / (width * height), 1) * 100) / 100;
           const scale = imageScale / windowScale;
 
@@ -301,7 +286,20 @@ const ScrambleImage = ({
 
           canvasRef.current
             .toDataURL()
-            .then((res) => {
+            .then(async (res) => {
+              const dataUrl = res.replace(/^"|"$/g, '');
+              const base64Body = dataUrl.split(',')[1];
+              if (!base64Body) {
+                handleError();
+                return;
+              }
+              // 解密结果写入临时文件，状态只保存 file:// URI，释放内存中的大 base64 对象
+              await FileSystem.mkdir(unscrambleDir).catch(() => {});
+              const path = `${unscrambleDir}/${nanoid()}.png`;
+              await FileSystem.writeFile(path, base64Body, 'base64');
+              releaseTempFile();
+              tempFileRef.current = path;
+
               const { dWidth, dHeight } = aspectFit(
                 { width, height },
                 {
@@ -311,7 +309,7 @@ const ScrambleImage = ({
               );
               updateData({
                 ...imageState,
-                dataUrl: res.replace(/^"|"$/g, ''),
+                dataUrl: 'file://' + path,
                 multipleFitWidth: dWidth,
                 multipleFitHeight: dHeight,
                 landscapeHeight: (height / width) * Math.max(windowWidth, windowHeight),
@@ -337,6 +335,7 @@ const ScrambleImage = ({
       left,
       right,
       bottom,
+      releaseTempFile,
     ]
   );
   const loadImage = useCallback(() => {
@@ -358,10 +357,26 @@ const ScrambleImage = ({
     useCallback(() => {
       if (uriRef.current !== uri) {
         uriRef.current = uri;
+        releaseTempFile();
         setImageState(prevState);
       }
-    }, [uri, prevState])
+    }, [uri, prevState, releaseTempFile])
   );
+  // 离屏（屏幕失焦）后释放临时文件与大对象
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        releaseTempFile();
+        setImageState(prevState);
+      };
+    }, [prevState, releaseTempFile])
+  );
+  // 组件卸载时释放临时文件
+  useEffect(() => {
+    return () => {
+      releaseTempFile();
+    };
+  }, [releaseTempFile]);
 
   const handleRetry = () => {
     CacheManager.removeCacheEntry(uri)
@@ -383,24 +398,14 @@ const ScrambleImage = ({
   ) {
     return (
       <Center style={style}>
-        <Image
-          style={{ width: Math.min(windowWidth * 0.3, 180), height: windowHeight }}
-          resizeMode="contain"
-          resizeMethod="resize"
-          fadeDuration={0}
-          source={groundPoundGif}
-          alt="groundpound"
-        />
+        <StaticPlaceholder />
         <Canvas ref={canvasRef} style={styles.canvas} />
       </Center>
     );
   }
 
-  // https://github.com/facebook/react-native/issues/21301
-  // https://github.com/facebook/fresco/issues/2397
-  // https://github.com/facebook/react-native/issues/32411
   return (
-    <FastImage
+    <ReactNativeImage
       style={style}
       resizeMode={resizeModeDict[layoutMode]}
       source={{ uri: imageState.dataUrl }}
@@ -408,7 +413,8 @@ const ScrambleImage = ({
   );
 };
 
-// happy漫画返回的图片格式不太一样，需要单独处理成base64，然后用FileSystem来实现缓存，CachedImage不支持传递base64
+// happy漫画返回的图片格式不太一样，需要单独处理：
+// 下载后写入本地缓存文件，React 状态只保存 file:// URI 与尺寸
 const Base64Image = ({
   uri,
   index,
@@ -422,38 +428,19 @@ const Base64Image = ({
   const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
   const [imageState, setImageState] = useState(prevState);
-  const style = useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
-    if (layoutMode === LayoutMode.Horizontal) {
-      return {
-        width: '100%',
-        height: '100%',
-      };
-    } else if (layoutMode === LayoutMode.Vertical) {
-      return {
-        width: '100%',
-        height:
-          orientation === Orientation.Landscape
-            ? imageState.landscapeHeight || defaultLandscapeHeight
-            : imageState.portraitHeight || defaultPortraitHeight,
-      };
-    }
-    // LayoutMode.Multiple
-    return {
-      width: imageState.multipleFitWidth || '100%',
-      height: imageState.multipleFitHeight || '100%',
-    };
-  }, [layoutMode, imageState, orientation, defaultPortraitHeight, defaultLandscapeHeight]);
+  const style = useFillStyle(
+    layoutMode,
+    imageState,
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
+  );
   const uriRef = useRef(uri);
 
   const updateData = useCallback(
     (data: ImageState) => {
-      let isUnmounted = false;
       onChange && onChange(data, index);
-      !isUnmounted && setImageState(data);
-
-      return () => {
-        isUnmounted = true;
-      };
+      setImageState(data);
     },
     [index, onChange]
   );
@@ -464,41 +451,37 @@ const Base64Image = ({
     setImageState({ ...imageState, loadStatus: AsyncStatus.Pending });
     const path = CacheManager.defaultConfig.baseDir + '/' + uri.split('/').at(-1);
     try {
-      // 读缓存
-      let base64 = '';
       const isExist = await FileSystem.exists(path);
-      if (isExist) {
-        base64 = await FileSystem.readFile(path);
-      }
-      if (!base64) {
+      if (!isExist) {
         const res = await fetch(uri, { headers });
         const blob = await res.blob();
         const reader = new FileReader();
         reader.readAsDataURL(blob);
-        base64 = await new Promise<string>((resolve, reject) => {
+        const base64Body = await new Promise<string>((resolve, reject) => {
           reader.onloadend = () => {
-            resolve('data:image/png;base64,' + (reader.result as string).split(',')[1]);
+            resolve((reader.result as string).split(',')[1] || '');
           };
           reader.onerror = reject;
         });
+        if (!base64Body) {
+          handleError();
+          return;
+        }
+        // 以真实图片字节写入缓存文件（而非 base64 文本）
+        await FileSystem.writeFile(path, base64Body, 'base64');
       }
-      if (!base64) {
-        handleError();
-        return;
-      }
-      // 写入缓存
-      FileSystem.writeFile(path, base64);
+
+      const fileUri = 'file://' + path;
       if (layoutMode === LayoutMode.Horizontal) {
         updateData({
           ...imageState,
-          base64,
-          dataUrl: uri,
+          dataUrl: fileUri,
           loadStatus: AsyncStatus.Fulfilled,
         });
         return;
       }
       ReactNativeImage.getSize(
-        base64,
+        fileUri,
         (width, height) => {
           const { dWidth, dHeight } = aspectFit(
             { width, height },
@@ -509,8 +492,7 @@ const Base64Image = ({
           );
           updateData({
             ...imageState,
-            dataUrl: uri,
-            base64,
+            dataUrl: fileUri,
             multipleFitWidth: dWidth,
             multipleFitHeight: dHeight,
             landscapeHeight: (height / width) * Math.max(windowWidth, windowHeight),
@@ -555,8 +537,8 @@ const Base64Image = ({
   );
 
   const handleRetry = () => {
-    CacheManager.removeCacheEntry(uri)
-      .then(() => {})
+    const path = CacheManager.defaultConfig.baseDir + '/' + uri.split('/').at(-1);
+    FileSystem.unlink(path)
       .catch(() => {})
       .finally(() => updateData({ ...imageState, loadStatus: AsyncStatus.Default }));
   };
@@ -567,14 +549,7 @@ const Base64Image = ({
   ) {
     return (
       <Center style={style}>
-        <Image
-          style={{ width: Math.min(windowWidth * 0.3, 180), height: windowHeight }}
-          resizeMode="contain"
-          resizeMethod="resize"
-          fadeDuration={0}
-          source={groundPoundGif}
-          alt="groundpound"
-        />
+        <StaticPlaceholder />
       </Center>
     );
   }
@@ -588,7 +563,7 @@ const Base64Image = ({
 
   return (
     <ReactNativeImage
-      source={{ uri: imageState.base64 }}
+      source={{ uri: imageState.dataUrl }}
       style={style}
       resizeMode={resizeModeDict[layoutMode]}
       onError={handleError}
@@ -597,6 +572,10 @@ const Base64Image = ({
 };
 
 const styles = StyleSheet.create({
+  fill: {
+    width: '100%',
+    height: '100%',
+  },
   canvas: {
     zIndex: -1,
     opacity: 0,

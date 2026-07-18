@@ -1,17 +1,15 @@
-import React, { useRef, useMemo, useState, useCallback, Fragment } from 'react';
+import React, { useRef, useMemo, useState, useCallback, Fragment, useEffect } from 'react';
 import {
   AsyncStatus,
-  Volume,
   LayoutMode,
-  LightSwitch,
   ReaderDirection,
   PositionX,
   Orientation,
   ScrambleType,
   MultipleSeat,
-  Hearing,
+  PageKeys,
   Timer,
-  Animated,
+  PageKeyDirection,
 } from '~/utils';
 import Cache from '~/utils/cache';
 import {
@@ -20,15 +18,14 @@ import {
   Flex,
   Center,
   HStack,
-  Stagger,
+  Pressable,
   StatusBar,
   useToast,
   useDisclose,
 } from 'native-base';
-import { usePrevNext, useVolumeUpDown, useDebouncedSafeAreaFrame, useInterval } from '~/hooks';
+import { usePrevNext, usePageKeys, useDebouncedSafeAreaFrame, useInterval } from '~/hooks';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { useFocusEffect } from '@react-navigation/native';
-import PageSlider, { PageSliderRef } from '~/components/PageSlider';
 import Reader, { ReaderRef } from '~/components/Reader';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
@@ -36,6 +33,7 @@ import SpinLoading from '~/components/SpinLoading';
 import InputModal from '~/components/InputModal';
 import VectorIcon from '~/components/VectorIcon';
 import Empty from '~/components/Empty';
+import { CacheManager } from '@georstat/react-native-image-cache';
 
 const {
   loadChapter,
@@ -44,12 +42,10 @@ const {
   viewImage,
   setMode,
   setDirection,
-  setLight,
   setSeat,
-  setHearing,
+  setPageKeys,
   setTimer,
   setTimerGap,
-  setAnimated,
   saveImage,
 } = action;
 const lastPageToastId = 'LAST_PAGE_TOAST_ID';
@@ -59,6 +55,10 @@ const layoutIconDict = {
   [LayoutMode.Vertical]: 'filmstrip',
   [LayoutMode.Multiple]: 'book-open-outline',
 };
+
+/** 电子墨水版：阅读页固定白底黑字 */
+const bg = 'white';
+const color = 'black';
 
 const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) => {
   return useMemo(() => {
@@ -95,7 +95,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const toast = useToast();
   const dispatch = useAppDispatch();
   const { isOpen, onOpen, onClose } = useDisclose();
-  const { isOpen: isStaggerOpen, onOpen: onStaggerOpen, onClose: onStaggerClose } = useDisclose();
+  const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
+  const { isOpen: isJumpOpen, onOpen: onJumpOpen, onClose: onJumpClose } = useDisclose();
   const {
     isOpen: isTimerGapOpen,
     onOpen: onTimerGapOpen,
@@ -111,11 +112,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const loadStatus = useAppSelector((state) => state.chapter.loadStatus);
   const seat = useAppSelector((state) => state.setting.seat);
   const mode = useAppSelector((state) => state.setting.mode);
-  const light = useAppSelector((state) => state.setting.light);
   const timer = useAppSelector((state) => state.setting.timer);
   const timerGap = useAppSelector((state) => state.setting.timerGap);
-  const animated = useAppSelector((state) => state.setting.animated);
-  const hearing = useAppSelector((state) => state.setting.hearing);
+  const pageKeys = useAppSelector((state) => state.setting.pageKeys);
   const direction = useAppSelector((state) => state.setting.direction);
   const mangaDict = useAppSelector((state) => state.dict.manga);
   const chapterDict = useAppSelector((state) => state.dict.chapter);
@@ -138,28 +137,19 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       max: (chapter?.images || []).length,
     };
   }, [chapterDict, chapterHash]);
-  const { lightOn, color, bg } = useMemo(
-    () => ({
-      lightOn: light === LightSwitch.On,
-      color: light === LightSwitch.On ? 'black' : 'white',
-      bg: light === LightSwitch.On ? 'white' : 'black',
-    }),
-    [light]
-  );
   const [prev, next] = usePrevNext(chapterList, chapterHash);
   const [, more] = usePrevNext(chapterList, hashList[hashList.length - 1]);
   const readerRef = useRef<ReaderRef>(null);
-  const pageSliderRef = useRef<PageSliderRef>(null);
-  const callbackRef = useRef<(type: Volume) => void>();
+  const callbackRef = useRef<(direction: PageKeyDirection) => void>();
   const sourceRef = useRef('');
   const [render, setRender] = useState(false);
   const cache = useMemo(() => new Cache(mangaHash), [mangaHash]);
 
-  callbackRef.current = (type) => {
-    if (type === Volume.Down) {
+  callbackRef.current = (pageKeyDirection) => {
+    if (pageKeyDirection === 'next') {
       handleNextPage();
     }
-    if (type === Volume.Up) {
+    if (pageKeyDirection === 'previous') {
       handlePrevPage();
     }
   };
@@ -198,37 +188,41 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       };
     }, [init, cache])
   );
-  useVolumeUpDown(
-    useCallback((type) => callbackRef.current && callbackRef.current(type), []),
-    hearing === Hearing.Enable
+  usePageKeys(
+    useCallback(
+      (pageKeyDirection: PageKeyDirection) =>
+        callbackRef.current && callbackRef.current(pageKeyDirection),
+      []
+    ),
+    pageKeys === PageKeys.Enable
   );
   useInterval(
-    useCallback(() => callbackRef.current && callbackRef.current(Volume.Down), []),
+    useCallback(() => callbackRef.current && callbackRef.current('next'), []),
     timer === Timer.Enable && timerSwitch,
     timerGap
   );
+  // 仅预取下一页（电子墨水版内存控制）
+  useEffect(() => {
+    const nextImage = data[page + 1];
+    if (nextImage && !nextImage.needUnscramble && !nextImage.isBase64Image) {
+      CacheManager.prefetch(nextImage.uri, { headers });
+    }
+  }, [page, data, headers]);
 
   const handlePrevPage = () => {
     if (mode !== LayoutMode.Multiple) {
-      readerRef.current?.scrollToIndex(Math.max(page - 1, 0), animated === Animated.Enable);
+      readerRef.current?.scrollToIndex(Math.max(page - 1, 0));
     } else {
-      readerRef.current?.scrollToIndex(
-        Math.max(multiplePre + Math.ceil(current / 2) - 2, 0),
-        animated === Animated.Enable
-      );
+      readerRef.current?.scrollToIndex(Math.max(multiplePre + Math.ceil(current / 2) - 2, 0));
     }
   };
   const handleNextPage = () => {
     if (mode !== LayoutMode.Multiple) {
-      readerRef.current?.scrollToIndex(
-        Math.min(page + 1, Math.max(data.length - 1, 0)),
-        animated === Animated.Enable
-      );
+      readerRef.current?.scrollToIndex(Math.min(page + 1, Math.max(data.length - 1, 0)));
     } else {
       const multipleMax = data[data.length - 1].multiplePre + data[data.length - 1].current;
       readerRef.current?.scrollToIndex(
-        Math.min(multiplePre + Math.ceil(current / 2), Math.max(multipleMax - 1, 0)),
-        animated === Animated.Enable
+        Math.min(multiplePre + Math.ceil(current / 2), Math.max(multipleMax - 1, 0))
       );
     }
   };
@@ -237,9 +231,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       setChapterHash(prev.hash);
       setHashList([prev.hash]);
       setPage(0);
-      pageSliderRef.current?.changePage(1);
       readerRef.current?.clearStateRef();
-      readerRef.current?.scrollToIndex(0, false);
+      readerRef.current?.scrollToIndex(0);
     } else {
       toast.show({ title: '第一话' });
     }
@@ -249,9 +242,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       setChapterHash(next.hash);
       setHashList([next.hash]);
       setPage(0);
-      pageSliderRef.current?.changePage(1);
       readerRef.current?.clearStateRef();
-      readerRef.current?.scrollToIndex(0, false);
+      readerRef.current?.scrollToIndex(0);
     } else {
       toast.show({ title: '最后一话' });
     }
@@ -259,7 +251,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const handleTap = (position: PositionX) => {
     if (position === PositionX.Mid) {
       setShowExtra(!showExtra);
-      showExtra && onStaggerClose();
+      showExtra && onMenuClose();
     }
     if (inverted) {
       if (position === PositionX.Right) {
@@ -309,7 +301,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
 
     setChapterHash(image.chapterHash);
     setPage(newPage);
-    pageSliderRef.current?.changePage(image.current);
   };
   const handleLoadMore = () => {
     if (more && !hashList.includes(more.hash)) {
@@ -336,13 +327,13 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       dispatch(setSeat(MultipleSeat.AToB));
     }
   };
-  const handleHearingToggle = () => {
-    if (hearing === Hearing.Enable) {
-      toast.show({ title: '已关闭音量翻页' });
-      dispatch(setHearing(Hearing.Disabled));
+  const handlePageKeysToggle = () => {
+    if (pageKeys === PageKeys.Enable) {
+      toast.show({ title: '已关闭实体键翻页' });
+      dispatch(setPageKeys(PageKeys.Disabled));
     } else {
-      toast.show({ title: '已开启音量翻页' });
-      dispatch(setHearing(Hearing.Enable));
+      toast.show({ title: '已开启实体键翻页' });
+      dispatch(setPageKeys(PageKeys.Enable));
     }
   };
   const handleTimerToggle = () => {
@@ -352,15 +343,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     } else {
       toast.show({ title: `已开启定时翻页，间隔${(timerGap / 1000).toFixed(1)}s` });
       dispatch(setTimer(Timer.Enable));
-    }
-  };
-  const handleAnimatedToggle = () => {
-    if (animated === Animated.Enable) {
-      toast.show({ title: '已关闭翻页动画' });
-      dispatch(setAnimated(Animated.Disabled));
-    } else {
-      toast.show({ title: '已开启翻页动画' });
-      dispatch(setAnimated(Animated.Enable));
     }
   };
   const handleOrientationToggle = () =>
@@ -373,7 +355,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     readerRef.current?.clearStateRef();
     dispatch(loadChapter({ chapterHash }));
   };
-  const handleLightToggle = () => dispatch(setLight(lightOn ? LightSwitch.Off : LightSwitch.On));
   const handleDirectionToggle = () => {
     if (inverted) {
       toast.show({ title: '阅读方向: 从左向右' });
@@ -402,7 +383,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   };
   const handleVertical = () => {
     toast.show({ title: '条漫模式' });
-    readerRef.current?.scrollToIndex(page, false);
+    readerRef.current?.scrollToIndex(page);
     dispatch(setMode(LayoutMode.Vertical));
   };
   const handleHorizontal = () => {
@@ -411,7 +392,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   };
   const handleMultiple = () => {
     toast.show({ title: '双页模式' });
-    readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 1, false);
+    readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 1);
     dispatch(setMode(LayoutMode.Multiple));
   };
   const handleTimerGapOpen = () => {
@@ -428,14 +409,22 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       toast.show({ title: '间隔不能低于500ms' });
     }
   };
-  const handleSliderChangeEnd = (newStep: number) => {
-    const newPage = pre + Math.floor(newStep - 1);
-    const multiplePage = multiplePre + Math.floor((newStep - 1) / 2);
-    if (newStep > max - 5) {
+  /** 数字跳页：瞬时定位，无动画 */
+  const handleJumpPage = (value: string) => {
+    const newStep = Number(value);
+    if (!Number.isInteger(newStep) || newStep < 1) {
+      onJumpClose();
+      return;
+    }
+    const step = Math.min(newStep, Math.max(max, 1));
+    const newPage = pre + Math.floor(step - 1);
+    const multiplePage = multiplePre + Math.floor((step - 1) / 2);
+    if (step > max - 5) {
       handleLoadMore();
     }
     setPage(newPage);
-    readerRef.current?.scrollToIndex(mode !== LayoutMode.Multiple ? newPage : multiplePage, false);
+    readerRef.current?.scrollToIndex(mode !== LayoutMode.Multiple ? newPage : multiplePage);
+    onJumpClose();
   };
 
   if (data.length <= 0) {
@@ -460,19 +449,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
 
   return (
     <Box w="full" h="full" bg={bg}>
-      <StatusBar
-        backgroundColor={bg}
-        hidden={!showExtra}
-        barStyle={
-          showExtra
-            ? lightOn
-              ? 'dark-content'
-              : 'light-content'
-            : lightOn
-            ? 'light-content'
-            : 'dark-content'
-        }
-      />
+      <StatusBar backgroundColor={bg} hidden={!showExtra} barStyle="dark-content" />
       {render && (
         <Reader
           key={orientation}
@@ -513,6 +490,13 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         defaultValue={timerGap.toString()}
         onClose={handleTimerGapClose}
       />
+      <InputModal
+        title="跳转到第几页："
+        isOpen={isJumpOpen}
+        keyboardType="number-pad"
+        defaultValue={current.toString()}
+        onClose={handleJumpPage}
+      />
 
       {showExtra && (
         <Fragment>
@@ -521,35 +505,19 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             top={0}
             left={0}
             right={0}
+            bg={bg}
+            borderBottomWidth={1}
+            borderColor="black"
             safeAreaTop
             safeAreaLeft
             safeAreaRight
           >
             <Flex position="relative" flexDirection="row" alignItems="center">
-              <VectorIcon
-                name="arrow-back"
-                size="2xl"
-                shadow="icon"
-                color={color}
-                onPress={handleGoBack}
-              />
-              <Text
-                flexShrink={1}
-                shadow="icon"
-                fontSize="md"
-                fontWeight="bold"
-                numberOfLines={1}
-                color={color}
-              >
+              <VectorIcon name="arrow-back" size="2xl" color={color} onPress={handleGoBack} />
+              <Text flexShrink={1} fontSize="md" fontWeight="bold" numberOfLines={1} color={color}>
                 {title}
               </Text>
-              <VectorIcon
-                name="replay"
-                size="md"
-                shadow="icon"
-                color={color}
-                onPress={handleReload}
-              />
+              <VectorIcon name="replay" size="md" color={color} onPress={handleReload} />
 
               <Box w={0} flexGrow={1} />
 
@@ -560,143 +528,110 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                     : 'stay-primary-landscape'
                 }
                 size="lg"
-                shadow="icon"
                 color={color}
                 onPress={handleOrientationToggle}
               />
               <VectorIcon
-                name="lightbulb"
-                size="lg"
-                shadow="icon"
-                color={color}
-                onPress={handleLightToggle}
-              />
-              <Text shadow="icon" px={1} color={color} fontWeight="bold">
-                {current} / {max}
-              </Text>
-              <VectorIcon
                 name="dots-horizontal"
                 size="lg"
-                shadow="icon"
                 source="materialCommunityIcons"
                 color={color}
-                onPress={isStaggerOpen ? onStaggerClose : onStaggerOpen}
+                onPress={isMenuOpen ? onMenuClose : onMenuOpen}
               />
-
-              <Box position="absolute" right={0} top="100%">
-                <Stagger visible={isStaggerOpen} initial={{ opacity: 0, scale: 0 }}>
-                  <HStack>
-                    <VectorIcon
-                      name={layoutIconDict[mode]}
-                      size="lg"
-                      shadow="icon"
-                      source="materialCommunityIcons"
-                      color={color}
-                      onPress={handleModeToggle}
-                    />
-                    {mode !== LayoutMode.Vertical ? (
-                      <VectorIcon
-                        name={inverted ? 'west' : 'east'}
-                        size="lg"
-                        shadow="icon"
-                        color={color}
-                        onPress={handleDirectionToggle}
-                      />
-                    ) : (
-                      <Box />
-                    )}
-                    {mode === LayoutMode.Multiple ? (
-                      <VectorIcon
-                        name={
-                          seat === MultipleSeat.AToB
-                            ? 'format-letter-starts-with'
-                            : 'format-letter-ends-with'
-                        }
-                        size="lg"
-                        source="materialCommunityIcons"
-                        shadow="icon"
-                        color={color}
-                        onPress={handleSeatToggle}
-                      />
-                    ) : (
-                      <Box />
-                    )}
-                    <VectorIcon
-                      name={hearing === Hearing.Enable ? 'earbuds-outline' : 'earbuds-off-outline'}
-                      size="lg"
-                      shadow="icon"
-                      source="materialCommunityIcons"
-                      color={color}
-                      onPress={handleHearingToggle}
-                    />
-                    <VectorIcon
-                      name={timer === Timer.Enable ? 'timer-outline' : 'timer-off-outline'}
-                      size="lg"
-                      shadow="icon"
-                      source="materialCommunityIcons"
-                      color={color}
-                      onPress={handleTimerToggle}
-                      onLongPress={handleTimerGapOpen}
-                    />
-                    <VectorIcon
-                      name={
-                        animated === Animated.Enable
-                          ? 'arrow-left-right-bold'
-                          : 'arrow-horizontal-lock'
-                      }
-                      size="lg"
-                      shadow="icon"
-                      source="materialCommunityIcons"
-                      color={color}
-                      onPress={handleAnimatedToggle}
-                    />
-                  </HStack>
-                </Stagger>
-              </Box>
             </Flex>
+
+            {isMenuOpen && (
+              <HStack borderTopWidth={1} borderColor="black" justifyContent="space-around" py={1}>
+                <VectorIcon
+                  name={layoutIconDict[mode]}
+                  size="lg"
+                  source="materialCommunityIcons"
+                  color={color}
+                  onPress={handleModeToggle}
+                />
+                {mode !== LayoutMode.Vertical && (
+                  <VectorIcon
+                    name={inverted ? 'west' : 'east'}
+                    size="lg"
+                    color={color}
+                    onPress={handleDirectionToggle}
+                  />
+                )}
+                {mode === LayoutMode.Multiple && (
+                  <VectorIcon
+                    name={
+                      seat === MultipleSeat.AToB
+                        ? 'format-letter-starts-with'
+                        : 'format-letter-ends-with'
+                    }
+                    size="lg"
+                    source="materialCommunityIcons"
+                    color={color}
+                    onPress={handleSeatToggle}
+                  />
+                )}
+                <VectorIcon
+                  name={pageKeys === PageKeys.Enable ? 'keyboard-outline' : 'keyboard-off-outline'}
+                  size="lg"
+                  source="materialCommunityIcons"
+                  color={color}
+                  onPress={handlePageKeysToggle}
+                />
+                <VectorIcon
+                  name={timer === Timer.Enable ? 'timer-outline' : 'timer-off-outline'}
+                  size="lg"
+                  source="materialCommunityIcons"
+                  color={color}
+                  onPress={handleTimerToggle}
+                  onLongPress={handleTimerGapOpen}
+                />
+              </HStack>
+            )}
           </Box>
 
           <Flex
             position="absolute"
             left={0}
             right={0}
-            bottom={6}
+            bottom={0}
             flexDirection="row"
             alignItems="center"
-            justifyContent="center"
+            justifyContent="space-between"
+            bg={bg}
+            borderTopWidth={1}
+            borderColor="black"
             safeAreaX
             safeAreaBottom
           >
-            {prev ? (
-              <VectorIcon
-                name="skip-previous"
-                size="lg"
-                shadow="icon"
-                color={color}
-                onPress={handlePrevChapter}
-              />
-            ) : (
-              <Box w={45} />
-            )}
-            <PageSlider
-              mx={1}
-              flex={1}
-              ref={pageSliderRef}
-              max={max}
-              defaultValue={current}
-              onSliderChangeEnd={handleSliderChangeEnd}
+            <VectorIcon
+              name="skip-previous"
+              size="lg"
+              color={color}
+              disabled={!prev}
+              opacity={prev ? 1 : 0.3}
+              onPress={handlePrevChapter}
             />
-            {next ? (
-              <VectorIcon
-                name="skip-next"
-                size="lg"
-                shadow="icon"
-                color={color}
-                onPress={handleNextChapter}
-              />
-            ) : (
-              <Box w={45} />
-            )}
+            <Pressable
+              flex={1}
+              mx={2}
+              py={2}
+              borderWidth={1}
+              borderColor="black"
+              alignItems="center"
+              onPress={onJumpOpen}
+            >
+              <Text color={color} fontWeight="bold">
+                {current} / {max}
+              </Text>
+            </Pressable>
+            <VectorIcon
+              name="skip-next"
+              size="lg"
+              color={color}
+              disabled={!next}
+              opacity={next ? 1 : 0.3}
+              onPress={handleNextChapter}
+            />
           </Flex>
         </Fragment>
       )}

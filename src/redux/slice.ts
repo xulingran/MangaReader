@@ -3,12 +3,10 @@ import {
   MangaStatus,
   Sequence,
   LayoutMode,
-  LightSwitch,
   ReaderDirection,
   MultipleSeat,
-  Hearing,
+  PageKeys,
   Timer,
-  Animated,
 } from '~/utils';
 import { createSlice, combineReducers, PayloadAction } from '@reduxjs/toolkit';
 import { Plugin, defaultPlugin, defaultPluginList } from '~/plugins';
@@ -33,13 +31,11 @@ export const initialState: RootState = {
   },
   setting: {
     mode: LayoutMode.Horizontal,
-    light: LightSwitch.Off,
     direction: ReaderDirection.Right,
     sequence: Sequence.Desc,
     seat: MultipleSeat.AToB,
-    hearing: Hearing.Enable,
+    pageKeys: PageKeys.Enable,
     timer: Timer.Disabled,
-    animated: Animated.Enable,
     timerGap: 5000,
     androidDownloadPath: Dirs.SDCardDir + '/DCIM/{{CHAPTER_NAME}}',
   },
@@ -206,9 +202,6 @@ const settingSlice = createSlice({
     setMode(state, action: PayloadAction<LayoutMode>) {
       state.mode = action.payload;
     },
-    setLight(state, action: PayloadAction<LightSwitch>) {
-      state.light = action.payload;
-    },
     setDirection(state, action: PayloadAction<ReaderDirection>) {
       state.direction = action.payload;
     },
@@ -218,17 +211,14 @@ const settingSlice = createSlice({
     setSeat(state, action: PayloadAction<MultipleSeat>) {
       state.seat = action.payload;
     },
-    setHearing(state, action: PayloadAction<Hearing>) {
-      state.hearing = action.payload;
+    setPageKeys(state, action: PayloadAction<PageKeys>) {
+      state.pageKeys = action.payload;
     },
     setTimer(state, action: PayloadAction<Timer>) {
       state.timer = action.payload;
     },
     setTimerGap(state, action: PayloadAction<number>) {
       state.timerGap = action.payload;
-    },
-    setAnimated(state, action: PayloadAction<Animated>) {
-      state.animated = action.payload;
     },
     setAndroidDownloadPath(state, action: PayloadAction<string>) {
       state.androidDownloadPath = action.payload;

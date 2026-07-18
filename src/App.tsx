@@ -15,7 +15,6 @@ import ErrorFallback from '~/components/ErrorFallback';
 import RNBootSplash from 'react-native-bootsplash';
 import loadable from '@loadable/component';
 import Header from '~/components/Header';
-import ThemeBridge from '~/utils/theme/ThemeBridge';
 
 interface NavigationScreenProps {
   ready?: boolean;
@@ -54,7 +53,7 @@ const NavigationScreen = ({ ready = false }: NavigationScreenProps) => {
     <ErrorBoundary fallbackRender={ErrorFallback}>
       <Navigator
         initialRouteName="Home"
-        screenOptions={{ header: DefaultHeader, freezeOnBlur: true }}
+        screenOptions={{ header: DefaultHeader, freezeOnBlur: true, animation: 'none' }}
       >
         <Screen name="Home" component={Home} />
         <Screen
@@ -83,7 +82,7 @@ const App = () => {
   return (
     <GestureHandlerRootView style={styles.wrapper}>
       <Provider store={store}>
-        <NativeBaseProvider theme={customTheme} colorModeManager={ThemeBridge}>
+        <NativeBaseProvider theme={customTheme}>
           <NavigationContainer ref={navigationRef} onReady={() => setReady(true)}>
             <NavigationScreen ready={ready} />
             <PrehandleDrawer />

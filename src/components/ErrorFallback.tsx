@@ -1,21 +1,21 @@
 import React from 'react';
-import { Button, VStack, Image, Text } from 'native-base';
+import { Button, VStack, Text, Icon } from 'native-base';
 import { FallbackProps } from 'react-error-boundary';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
-const thisIsTrueGif = require('~/assets/this_is_true.gif');
-
+/** 电子墨水版：GIF 改为静态图标 */
 const ErrorFallback = ({ error, resetErrorBoundary }: FallbackProps) => {
   return (
-    <VStack w="full" h="full" px={1} space={1} alignItems="center" justifyContent="center">
-      <Image
-        w={32}
-        h={32}
-        resizeMode="contain"
-        resizeMethod="resize"
-        fadeDuration={0}
-        source={thisIsTrueGif}
-        alt="this_is_true"
-      />
+    <VStack
+      w="full"
+      h="full"
+      px={1}
+      space={1}
+      alignItems="center"
+      justifyContent="center"
+      bg="white"
+    >
+      <Icon as={MaterialIcons} name="error-outline" size={16} color="black" />
       <Text pt={3} pb={1} fontSize="md" fontWeight="bold">
         非常抱歉，应用遇到未知错误:
       </Text>

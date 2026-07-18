@@ -1,16 +1,14 @@
 import React, { Fragment, useMemo } from 'react';
-import { StatusBar, HStack, Text, useTheme } from 'native-base';
+import { StatusBar, HStack, Text, Box } from 'native-base';
 import { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { getHeaderTitle } from '@react-navigation/elements';
 import VectorIcon from '~/components/VectorIcon';
-import Shake from '~/components/Shake';
 
 interface HeaderProps extends NativeStackHeaderProps {
   enableShake?: boolean;
 }
 
 const Header = ({ navigation, options, route, enableShake = false }: HeaderProps) => {
-  const { colors } = useTheme();
   const title = getHeaderTitle(options, route.name);
   const canGoBack = useMemo(() => navigation.canGoBack(), [navigation]);
 
@@ -27,13 +25,15 @@ const Header = ({ navigation, options, route, enableShake = false }: HeaderProps
 
   return (
     <Fragment>
-      <StatusBar animated backgroundColor={colors.purple[500]} barStyle="light-content" />
+      <StatusBar backgroundColor="white" barStyle="dark-content" />
       <HStack
-        bg="purple.500"
+        bg="white"
         p={1}
         w="full"
         justifyContent="space-between"
         alignItems="center"
+        borderBottomWidth={1}
+        borderColor="black"
         safeAreaTop
         safeAreaLeft
         safeAreaRight
@@ -42,12 +42,23 @@ const Header = ({ navigation, options, route, enableShake = false }: HeaderProps
           {canGoBack ? (
             <VectorIcon name="arrow-back" size="2xl" onPress={handleBack} />
           ) : (
-            <Shake enable={enableShake}>
+            <Box>
               <VectorIcon name="home" size="2xl" onPress={handleAbout} />
-            </Shake>
+              {enableShake && (
+                <Box
+                  position="absolute"
+                  top={1}
+                  right={1}
+                  w={2}
+                  h={2}
+                  borderRadius="full"
+                  bg="black"
+                />
+              )}
+            </Box>
           )}
           {title !== '' && (
-            <Text flex={1} color="white" fontSize={25} fontWeight="bold" numberOfLines={1}>
+            <Text flex={1} color="black" fontSize={25} fontWeight="bold" numberOfLines={1}>
               {title}
             </Text>
           )}

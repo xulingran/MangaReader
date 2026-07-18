@@ -5,17 +5,18 @@ import { useEffect, useState } from 'react';
 interface SplitWidthLimit {
   gap?: number;
   width?: number;
+  reservedWidth?: number;
   minNumColumns?: number;
   maxSplitWidth?: number;
 }
 
-function splitWidth(
+export function splitWidth(
   dimensions: ScaledSize,
   insets: EdgeInsets,
-  { gap, width, minNumColumns, maxSplitWidth }: Required<SplitWidthLimit>
+  { gap, width, reservedWidth, minNumColumns, maxSplitWidth }: Required<SplitWidthLimit>
 ) {
   const { width: windowWidth, height: windowHeight } = dimensions;
-  const defaultWidth = windowWidth - insets.left - insets.right;
+  const defaultWidth = windowWidth - insets.left - insets.right - reservedWidth;
   const maxWindowSplitWidth = Math.min(windowWidth, windowHeight) / minNumColumns;
 
   const numColumns = Math.max(
@@ -30,21 +31,36 @@ function splitWidth(
 export const useSplitWidth = ({
   gap = 0,
   width = 0,
+  reservedWidth = 0,
   minNumColumns = 3,
   maxSplitWidth = Infinity,
 }: SplitWidthLimit) => {
   const insets = useSafeAreaInsets();
   const windowDimensions = useWindowDimensions();
   const [split, setSplit] = useState(
-    splitWidth(windowDimensions, insets, { gap, width, minNumColumns, maxSplitWidth })
+    splitWidth(windowDimensions, insets, {
+      gap,
+      width,
+      reservedWidth,
+      minNumColumns,
+      maxSplitWidth,
+    })
   );
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      setSplit(splitWidth(windowDimensions, insets, { gap, width, minNumColumns, maxSplitWidth }));
+      setSplit(
+        splitWidth(windowDimensions, insets, {
+          gap,
+          width,
+          reservedWidth,
+          minNumColumns,
+          maxSplitWidth,
+        })
+      );
     }, 1000);
     return () => timeout && clearTimeout(timeout);
-  }, [insets, windowDimensions, gap, width, minNumColumns, maxSplitWidth]);
+  }, [insets, windowDimensions, gap, width, reservedWidth, minNumColumns, maxSplitWidth]);
 
   return split;
 };

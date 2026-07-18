@@ -1,6 +1,8 @@
 package com.mangareader;
 
 import android.os.Bundle;
+import android.view.KeyEvent;
+import com.mangareader.eink.EInkKeyModule;
 import com.zoontek.rnbootsplash.RNBootSplash;
 import com.facebook.react.ReactActivity;
 import com.facebook.react.ReactActivityDelegate;
@@ -36,5 +38,14 @@ public class MainActivity extends ReactActivity {
   protected void onCreate(Bundle savedInstanceState) {
     RNBootSplash.init(this); // ⬅️ initialize the splash screen
     super.onCreate(savedInstanceState); // or super.onCreate(null) with react-native-screens
+  }
+
+  @Override
+  public boolean dispatchKeyEvent(KeyEvent event) {
+    // 阅读页激活时拦截实体翻页键（音量键/翻页键/方向键）
+    if (EInkKeyModule.handleKeyEvent(event)) {
+      return true;
+    }
+    return super.dispatchKeyEvent(event);
   }
 }

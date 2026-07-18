@@ -15,6 +15,8 @@ import {
   MultipleSeat,
   SafeArea,
   Orientation,
+  resolveDragTargetIndex,
+  DRAG_PAGE_THRESHOLD_RATIO,
 } from '~/utils';
 import { FlashList, ListRenderItemInfo, ViewToken } from '@shopify/flash-list';
 import { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
@@ -53,9 +55,12 @@ export interface ReaderProps {
   cache: Cache;
 }
 
+/**
+ * 电子墨水版：所有程序化定位均为瞬时（animated: false），不再接受动画参数
+ */
 export interface ReaderRef {
-  scrollToIndex: (index: number, animated?: boolean) => void;
-  scrollToOffset: (offset: number, animated?: boolean) => void;
+  scrollToIndex: (index: number) => void;
+  scrollToOffset: (offset: number) => void;
   clearStateRef: () => void;
 }
 
@@ -110,6 +115,11 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
   const verticalStateRef = useRef<(ImageState | null)[]>([]);
   const multipleStateRef = useRef<Record<string, ImageState | null>[]>([]);
 
+  // 横向模式拖拽定位：记录拖动起始 offset 与起始 index
+  const dragStartXRef = useRef<number | null>(null);
+  const dragStartIndexRef = useRef(0);
+  const currentIndexRef = useRef(0);
+
   const portraitHeight = (Math.max(windowWidth, windowHeight) * 3) / 5;
   const landscapeHeight = (Math.min(windowWidth, windowHeight) * 3) / 5;
   const defaultPortraitHeightRef = useRef(portraitHeight);
@@ -136,12 +146,31 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     }, [])
   );
 
-  useImperativeHandle(ref, () => ({
-    scrollToIndex: (index: number, animated = true) => {
-      flashListRef.current?.scrollToIndex({ index, animated });
+  /** 将列表 index 换算成全局页码并上报 */
+  const reportPage = useCallback(
+    (index: number) => {
+      if (!onPageChangeRef.current) {
+        return;
+      }
+      if (layoutMode === LayoutMode.Multiple) {
+        const pair = multipleData[index];
+        if (pair && pair.length > 0) {
+          onPageChangeRef.current(pair[0].pre + pair[0].current - 1);
+        }
+      } else {
+        onPageChangeRef.current(index);
+      }
     },
-    scrollToOffset: (offset: number, animated = true) => {
-      flashListRef.current?.scrollToOffset({ offset, animated });
+    [layoutMode, multipleData]
+  );
+
+  useImperativeHandle(ref, () => ({
+    scrollToIndex: (index: number) => {
+      currentIndexRef.current = index;
+      flashListRef.current?.scrollToIndex({ index, animated: false });
+    },
+    scrollToOffset: (offset: number) => {
+      flashListRef.current?.scrollToOffset({ offset, animated: false });
     },
     clearStateRef: () => {
       horizontalStateRef.current = [];
@@ -149,6 +178,51 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       multipleStateRef.current = [];
     },
   }));
+
+  /**
+   * 横向拖拽结束决策：按拖动距离与方向确定目标页（最多一页），
+   * 通过 scrollToIndex(animated: false) 瞬时对齐，并终止原生惯性
+   */
+  const settleHorizontalDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (layoutMode === LayoutMode.Vertical || dragStartXRef.current === null) {
+        return;
+      }
+      const deltaX = event.nativeEvent.contentOffset.x - dragStartXRef.current;
+      dragStartXRef.current = null;
+
+      const maxIndex = (layoutMode === LayoutMode.Multiple ? multipleData.length : data.length) - 1;
+      const target = resolveDragTargetIndex({
+        deltaX,
+        currentIndex: dragStartIndexRef.current,
+        maxIndex,
+        threshold: windowWidth * DRAG_PAGE_THRESHOLD_RATIO,
+      });
+
+      currentIndexRef.current = target;
+      flashListRef.current?.scrollToIndex({ index: target, animated: false });
+      reportPage(target);
+    },
+    [layoutMode, multipleData.length, data.length, windowWidth, reportPage]
+  );
+
+  const handleScrollBeginDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (layoutMode !== LayoutMode.Vertical) {
+        dragStartXRef.current = event.nativeEvent.contentOffset.x;
+        dragStartIndexRef.current = currentIndexRef.current;
+      }
+      onScrollBeginDrag && onScrollBeginDrag(event);
+    },
+    [layoutMode, onScrollBeginDrag]
+  );
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      settleHorizontalDrag(event);
+      onScrollEndDrag && onScrollEndDrag(event);
+    },
+    [settleHorizontalDrag, onScrollEndDrag]
+  );
 
   // https://github.com/Shopify/flash-list/issues/637
   // onViewableItemsChanged is bound in constructor and do not get updated when those props change
@@ -163,6 +237,7 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     }
 
     const last = viewableItems[viewableItems.length - 1];
+    currentIndexRef.current = last.index || 0;
     onPageChangeRef.current && onPageChangeRef.current(last.index || 0);
   };
   const HandleMultipleViewableItemsChanged = ({
@@ -176,6 +251,7 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     }
 
     const last = viewableItems[viewableItems.length - 1];
+    currentIndexRef.current = last.index || 0;
     onPageChangeRef.current && onPageChangeRef.current(last.item[0].pre + last.item[0].current - 1);
   };
   const renderHorizontalItem = ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
@@ -328,15 +404,14 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={multipleData}
         inverted={inverted}
         horizontal
-        pagingEnabled
         extraData={{ inverted, onTap, onLongPress, onImageLoad }}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         initialScrollIndex={initialScrollIndex}
         estimatedItemSize={windowWidth}
         estimatedListSize={{ width: windowWidth, height: windowHeight }}
         onScroll={onScroll}
-        onScrollBeginDrag={onScrollBeginDrag}
-        onScrollEndDrag={onScrollEndDrag}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={3}
         onViewableItemsChanged={HandleMultipleViewableItemsChanged}
@@ -354,15 +429,14 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={data}
         inverted={inverted}
         horizontal
-        pagingEnabled
         extraData={{ inverted, onTap, onLongPress, onImageLoad }}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
         initialScrollIndex={initialScrollIndex}
         estimatedItemSize={windowWidth}
         estimatedListSize={{ width: windowWidth, height: windowHeight }}
         onScroll={onScroll}
-        onScrollBeginDrag={onScrollBeginDrag}
-        onScrollEndDrag={onScrollEndDrag}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={5}
         onViewableItemsChanged={HandleViewableItemsChanged}

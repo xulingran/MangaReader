@@ -19,7 +19,7 @@ export interface VectorIconProps extends IIconButtonProps {
 const VectorIcon = ({
   name = 'check',
   size = 'xl',
-  color = 'white',
+  color = 'black',
   onPress,
   shadow,
   source = 'materialIcons',

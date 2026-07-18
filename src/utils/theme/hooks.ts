@@ -1,15 +1,15 @@
-﻿import { useAppSelector } from '~/redux';
-import { LightSwitch } from '~/utils';
 import { ThemeTokenKey, themeTokens } from '~/utils/theme/tokens';
 
-export function useThemeColor<T = string>(lightValue: T, darkValue: T): T {
-  const light = useAppSelector((s) => s.setting.light);
-  return light === LightSwitch.On ? lightValue : darkValue;
+/**
+ * 电子墨水版：暗色模式已移除，始终返回 light 值
+ * 保留双参数签名以兼容既有调用点
+ */
+export function useThemeColor<T = string>(lightValue: T, _darkValue?: T): T {
+  return lightValue;
 }
 
 export function useTokenColor(key: ThemeTokenKey) {
-  const { light, dark } = themeTokens[key];
-  return useThemeColor(light, dark);
+  return themeTokens[key].light;
 }
 
 export const useBackgroundColor = () => useTokenColor('bg');

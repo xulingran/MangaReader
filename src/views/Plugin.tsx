@@ -1,8 +1,5 @@
 import React from 'react';
-import DraggableFlatList, {
-  ScaleDecorator,
-  RenderItemParams,
-} from 'react-native-draggable-flatlist';
+import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { Box, Text, VStack, HStack, Switch } from 'native-base';
 import { useDebouncedSafeAreaInsets } from '~/hooks';
@@ -23,41 +20,48 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
     dispatch(disablePlugin(plugin));
   };
   const renderItem = ({ item, drag, isActive }: RenderItemParams<(typeof list)[0]>) => (
-    <ScaleDecorator>
-      <TouchableOpacity onLongPress={drag} disabled={isActive}>
-        <HStack space={6} key={item.value} alignItems="center" flexDirection="row" px={4} py={3}>
-          <VStack space={1} flexGrow={1} w={0}>
-            <Text
-              fontSize="lg"
-              fontWeight="bold"
-              color="purple.500"
-              onPress={() =>
-                navigate('Webview', {
-                  uri: item.href,
-                  source: item.value,
-                  userAgent: item.userAgent,
-                  injectedJavascript: item.injectedJavaScript,
-                })
-              }
-              textDecorationLine={item.disabled ? 'line-through' : 'none'}
-            >
-              {item.name} - {item.label} 🔗
-            </Text>
-            {item.description && <Text fontSize="sm">{item.description}</Text>}
-            <HStack alignItems="center">
-              <Text fontSize="sm">推荐指数：</Text>
-              <ScoreRate score={item.score} />
-            </HStack>
-          </VStack>
-          <Switch
-            size="md"
-            onTrackColor="purple.500"
-            value={!item.disabled}
-            onToggle={() => handleToggle(item.value)}
-          />
-        </HStack>
-      </TouchableOpacity>
-    </ScaleDecorator>
+    <TouchableOpacity onLongPress={drag} disabled={isActive}>
+      <HStack
+        space={6}
+        key={item.value}
+        alignItems="center"
+        flexDirection="row"
+        px={4}
+        py={3}
+        borderBottomWidth={1}
+        borderColor="gray.200"
+      >
+        <VStack space={1} flexGrow={1} w={0}>
+          <Text
+            fontSize="lg"
+            fontWeight="bold"
+            color="black"
+            onPress={() =>
+              navigate('Webview', {
+                uri: item.href,
+                source: item.value,
+                userAgent: item.userAgent,
+                injectedJavascript: item.injectedJavaScript,
+              })
+            }
+            textDecorationLine={item.disabled ? 'line-through' : 'none'}
+          >
+            {item.name} - {item.label} 🔗
+          </Text>
+          {item.description && <Text fontSize="sm">{item.description}</Text>}
+          <HStack alignItems="center">
+            <Text fontSize="sm">推荐指数：</Text>
+            <ScoreRate score={item.score} />
+          </HStack>
+        </VStack>
+        <Switch
+          size="md"
+          onTrackColor="gray.500"
+          value={!item.disabled}
+          onToggle={() => handleToggle(item.value)}
+        />
+      </HStack>
+    </TouchableOpacity>
   );
 
   return (

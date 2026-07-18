@@ -1,10 +1,5 @@
 import React, { ReactNode, useState, memo, useCallback, useMemo } from 'react';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  runOnJS,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useDebouncedSafeAreaInsets, useDebouncedSafeAreaFrame } from '~/hooks';
 import { emptyFn, PositionX, SafeArea } from '~/utils';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -122,22 +117,24 @@ const Controller = ({
       'worklet';
       runOnJS(onZoomStart)(scale.value);
       if (savedScale.value > 1) {
-        scale.value = withTiming(1, { duration: 300 });
-        translationX.value = withTiming(0, { duration: 300 });
-        translationY.value = withTiming(0, { duration: 300 });
+        // 电子墨水版：双击复位瞬时完成，无补间动画
+        scale.value = 1;
+        translationX.value = 0;
+        translationY.value = 0;
 
         savedScale.value = 1;
         savedTranslationX.value = 0;
         savedTranslationY.value = 0;
         runOnJS(setEnabled)(false);
       } else {
-        scale.value = withTiming(doubleTapScaleValue, { duration: 300 });
+        // 电子墨水版：双击放大瞬时完成，无补间动画
+        scale.value = doubleTapScaleValue;
         const currentX = (windowWidth / doubleTapScaleValue - e.x) * (doubleTapScaleValue - 1);
         const currentY = (windowHeight / doubleTapScaleValue - e.y) * (doubleTapScaleValue - 1);
         const dX = width.value * doubleTapScaleValue - windowWidth;
         const dY = height.value * doubleTapScaleValue - windowHeight;
-        translationX.value = withTiming(currentX, { duration: 300 });
-        translationY.value = withTiming(currentY, { duration: 300 });
+        translationX.value = currentX;
+        translationY.value = currentY;
         top.value = Math.max(dY / 2, 0);
         bottom.value = Math.max(dY / 2, 0);
         left.value = Math.max(dX / 2, 0);

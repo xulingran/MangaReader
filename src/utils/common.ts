@@ -1,4 +1,4 @@
-import { ErrorMessage, MangaStatus, ScrambleType } from './enum';
+import { ErrorMessage, LayoutMode, MangaStatus, ScrambleType } from './enum';
 import { Draft, Draft07, JsonError, JsonSchema } from 'json-schema-library';
 import { delay, race, Effect } from 'redux-saga/effects';
 import { ImageState } from '~/components/ComicImage';
@@ -73,6 +73,34 @@ export function* raceTimeout(fn: Effect, ms: number = 5000) {
 
 export function haveError(payload: any): payload is { error: Error } {
   return payload && payload.error instanceof Error;
+}
+
+/**
+ * 迁移旧版本设置（电子墨水版）：
+ * - 剔除已删除的 light / animated 字段
+ * - 旧的 hearing 字段映射为 pageKeys
+ * - 检测到旧字段（首次升级）时强制使用横向单页模式
+ * 收藏、插件、阅读记录、下载路径、定时翻页等其余设置保持不变
+ */
+export function migrateSetting(raw: any): RootState['setting'] {
+  if (!raw || typeof raw !== 'object') {
+    return raw;
+  }
+  const setting = { ...raw };
+  const isLegacy = 'light' in setting || 'animated' in setting || 'hearing' in setting;
+
+  delete setting.light;
+  delete setting.animated;
+  if ('hearing' in setting) {
+    if (!('pageKeys' in setting)) {
+      setting.pageKeys = setting.hearing;
+    }
+    delete setting.hearing;
+  }
+  if (isLegacy) {
+    setting.mode = LayoutMode.Horizontal;
+  }
+  return setting;
 }
 
 export function validate<T = any>(

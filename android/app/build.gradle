@@ -80,6 +80,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 54
         versionName "0.7.10"
+        ndk {
+            // 电子墨水版：仅构建 ARMv7/ARM64
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
     }
     signingConfigs {
         debug {
@@ -106,7 +110,20 @@ android {
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+        // 个人侧载包：继承 release 的全部优化（R8 + 资源裁剪），用 debug 签名方便直接安装
+        sideload {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
+    }
+    sourceSets {
+        // sideload 复用 release 源集（含 ReactNativeFlipper 空实现）
+        sideload {
+            java.srcDirs += ['src/release/java']
         }
     }
 }
@@ -118,11 +135,7 @@ dependencies {
     // react-native-bootsplash
     implementation("androidx.core:core-splashscreen:1.0.0")
 
-      // For animated GIF support
-    implementation 'com.facebook.fresco:animated-gif:2.5.0'
-
-    // For WebP support, including animated WebP
-    implementation 'com.facebook.fresco:animated-webp:2.5.0'
+    // For static WebP support（电子墨水版：移除动态 GIF / 动态 WebP 解码）
     implementation 'com.facebook.fresco:webpsupport:2.5.0'
 
     debugImplementation("com.facebook.flipper:flipper:${FLIPPER_VERSION}")

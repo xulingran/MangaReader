@@ -1,11 +1,11 @@
 # MangaReader
 
-![platform](https://img.shields.io/badge/platform-android%20%7C%20ios-brightgreen)
+![platform](https://img.shields.io/badge/platform-android-brightgreen)
 ![last commit](https://img.shields.io/github/last-commit/youniaogu/MangaReader/master)
 ![license](https://img.shields.io/github/license/youniaogu/MangaReader)
 ![issues](https://img.shields.io/github/issues-raw/youniaogu/MangaReader)
 
-一个漫画 APP📱，基于 react-native 构建，兼容 Android、Ios，尽可能适配平板
+一个漫画 APP📱，基于 react-native 构建。**本仓库为安卓电子墨水版**：仅支持 Android，全局黑白高对比静态 UI，无任何翻页动画，适配电子纸设备（支持音量键/翻页键/方向键翻页）。
 
 - 插件式设计、近十个可用[插件](#插件)
 - 收藏、搜索、批量更新、下载、导出
@@ -44,11 +44,7 @@
 
 ## 下载
 
-Android：<a href='https://play.google.com/store/apps/details?id=com.youniaogu.mangareader&pcampaignid=pcampaignidMKT-Other-global-all-co-prtnr-py-PartBadge-Mar2515-1'><img width="120" alt='下载应用，请到 Google Play' src='https://play.google.com/intl/en_us/badges/static/images/badges/zh-cn_badge_web_generic.png'/></a>&emsp;/&emsp;[下载 apk](https://github.com/youniaogu/MangaReader/releases)
-
-Ios：[未签名 ipa](https://github.com/youniaogu/MangaReader/releases)（可能会有 webp 格式的图片，需要 ios14 及以上，否则图片会[什么都不显示](https://github.com/youniaogu/MangaReader/issues/92)）
-
-[使用 Altstore 安装 ipa 文件](https://faq.altstore.io/)
+Android：[下载 apk](https://github.com/youniaogu/MangaReader/releases)（电子墨水设备请使用侧载包安装）
 
 ## cloudflare 校验
 
