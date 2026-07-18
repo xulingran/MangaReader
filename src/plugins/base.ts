@@ -25,20 +25,10 @@ interface FilterItem {
 }
 
 export enum Plugin {
-  MHG = 'MHG',
   MHGM = 'MHGM',
-  COPY = 'COPY',
-  MHDB = 'MHDB',
-  DMZJ = 'DMZJ',
-  JMC = 'JMC',
-  MHM = 'MHM',
-  KL = 'KL',
-  NH = 'NH',
-  PICA = 'PICA',
   MBZ = 'MBZ',
   BZM = 'BZM',
   RM5 = 'RM5',
-  HAPPY = 'HAPPY',
 }
 
 export enum Options {

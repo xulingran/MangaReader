@@ -8,7 +8,6 @@ import CookieManager from '@react-native-cookies/cookies';
 import queryString from 'query-string';
 import CryptoJS from 'crypto-js';
 import base64 from 'base-64';
-import md5 from 'blueimp-md5';
 
 export const PATTERN_VERSION = /v?([0-9]+)\.([0-9]+)\.([0-9]+)/;
 export const PATTERN_PUBLISH_TIME = /([0-9]+)-([0-9]+)-([0-9]+)/;
@@ -289,87 +288,6 @@ export function pairsToDict(list: KeyValuePair[]) {
   }, {});
 }
 
-function getChapterId(uri: string) {
-  const [, id] = uri.match(/\/([0-9]+)\//) || [];
-  return Number(id);
-}
-function getPicIndex(uri: string) {
-  const [, index] = uri.match(/\/([0-9]+)\./) || [];
-  return index;
-}
-function getSplitNum(id: number, index: string) {
-  var a = 10;
-  if (id >= 268850) {
-    const str = md5(id + index);
-    const nub = str.substring(str.length - 1).charCodeAt(0) % (id >= 421926 ? 8 : 10);
-
-    switch (nub) {
-      case 0:
-        a = 2;
-        break;
-      case 1:
-        a = 4;
-        break;
-      case 2:
-        a = 6;
-        break;
-      case 3:
-        a = 8;
-        break;
-      case 4:
-        a = 10;
-        break;
-      case 5:
-        a = 12;
-        break;
-      case 6:
-        a = 14;
-        break;
-      case 7:
-        a = 16;
-        break;
-      case 8:
-        a = 18;
-        break;
-      case 9:
-        a = 20;
-    }
-  }
-  return a;
-}
-export function unscrambleJMC(uri: string, width: number, height: number) {
-  const step = [];
-  const id = getChapterId(uri);
-  const index = getPicIndex(uri);
-  const numSplit = getSplitNum(id, index);
-  const perheight = height % numSplit;
-
-  for (let i = 0; i < numSplit; i++) {
-    let sHeight = Math.floor(height / numSplit);
-    let dy = sHeight * i;
-    const sy = height - sHeight * (i + 1) - perheight;
-
-    if (i === 0) {
-      sHeight += perheight;
-    } else {
-      dy += perheight;
-    }
-
-    step.push({
-      sx: 0,
-      sy,
-      sWidth: width,
-      sHeight,
-      dx: 0,
-      dy,
-      dWidth: width,
-      dHeight: sHeight,
-    });
-  }
-
-  return step;
-}
-
 export function unscrambleRM5(uri: string, width: number, height: number) {
   const step = [];
   const list = uri.split('/');
@@ -406,16 +324,11 @@ export function unscrambleRM5(uri: string, width: number, height: number) {
   return step;
 }
 
-export function unscramble(uri: string, width: number, height: number, type = ScrambleType.JMC) {
-  switch (type) {
-    case ScrambleType.RM5: {
-      return unscrambleRM5(uri, width, height);
-    }
-    case ScrambleType.JMC:
-    default: {
-      return unscrambleJMC(uri, width, height);
-    }
+export function unscramble(uri: string, width: number, height: number, type = ScrambleType.RM5) {
+  if (type === ScrambleType.RM5) {
+    return unscrambleRM5(uri, width, height);
   }
+  return [];
 }
 
 export function emptyFn() {}

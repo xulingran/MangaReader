@@ -3,20 +3,10 @@
     "definitions": {
         "Plugin": {
             "enum": [
-                "MHG",
                 "MHGM",
-                "COPY",
-                "MHDB",
-                "DMZJ",
-                "JMC",
-                "MHM",
-                "KL",
-                "NH",
-                "PICA",
                 "MBZ",
                 "BZM",
-                "RM5",
-                "HAPPY"
+                "RM5"
             ],
             "type": "string"
         },

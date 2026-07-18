@@ -2982,11 +2982,6 @@
   resolved "https://registry.npmjs.org/@types/base-64/-/base-64-1.0.0.tgz#de9c6070ea457fbd65a1b5ebf13976b3ac0bdad0"
   integrity sha512-AvCJx/HrfYHmOQRFdVvgKMplXfzTUizmh0tz9GFTpDePWgCY4uoKll84zKlaRoeiYiCr7c9ZnqSTzkl0BUVD6g==
 
-"@types/blueimp-md5@^2.18.0":
-  version "2.18.0"
-  resolved "https://registry.npmjs.org/@types/blueimp-md5/-/blueimp-md5-2.18.0.tgz#a5c44fa0a61f5840e95a7965eafcec2c30d6c4df"
-  integrity sha512-f4A+++lGZGJvVSgeyMkqA7BEf2BVQli6F+qEykKb49c5ieWQBkfpn6CP5c1IZr2Yi2Ofl6Fj+v0e1fN18Z8Cnw==
-
 "@types/cheerio@^0.22.31":
   version "0.22.32"
   resolved "https://registry.npmjs.org/@types/cheerio/-/cheerio-0.22.32.tgz#1a41608fd072544c3ed6c0d6cc3fcf08d07715de"
@@ -3666,11 +3661,6 @@ bl@^4.0.3, bl@^4.1.0:
     buffer "^5.5.0"
     inherits "^2.0.4"
     readable-stream "^3.4.0"
-
-blueimp-md5@2.2.0:
-  version "2.2.0"
-  resolved "https://registry.npmjs.org/blueimp-md5/-/blueimp-md5-2.2.0.tgz#3925f524676b5ce9431039c3854cb75b881d3460"
-  integrity sha512-sVRehv8oo1PFAQGdUaPDiTuAUqwEnSSveqz9OV1ukzkIiAtEUWlyeZ4RCzz9pX+gC5ycqQzmUGbofubCRGQ8xg==
 
 boolbase@^1.0.0, boolbase@~1.0.0:
   version "1.0.0"

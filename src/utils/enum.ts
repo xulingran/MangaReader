@@ -115,8 +115,7 @@ export enum PositionXY {
 
 /** 图片加密类型 */
 export enum ScrambleType {
-  JMC,
-  RM5,
+  RM5 = 1,
 }
 
 export enum MultipleSeat {

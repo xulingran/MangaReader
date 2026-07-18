@@ -131,6 +131,97 @@ const {
   syncDict,
 } = action;
 
+function isRegisteredHash(hash: unknown): hash is string {
+  if (typeof hash !== 'string') {
+    return false;
+  }
+  const [source] = splitHash(hash);
+  return PluginMap.has(source);
+}
+
+function filterPluginRecord<T>(record: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([hash]) => isRegisteredHash(hash)));
+}
+
+function migratePluginState(pluginState: RootState['plugin']): RootState['plugin'] {
+  const disabled = new Map(pluginState.list.map((item) => [item.value, item.disabled]));
+  const order = pluginState.list
+    .map((item) => item.value)
+    .filter((source, index, list) => PluginMap.has(source) && list.indexOf(source) === index);
+
+  PluginMap.forEach((_plugin, source) => {
+    if (!order.includes(source)) {
+      order.push(source);
+    }
+  });
+
+  const list = order.flatMap<RootState['plugin']['list'][number]>((source) => {
+    const plugin = PluginMap.get(source);
+    if (!plugin) {
+      return [];
+    }
+    return [
+      {
+        name: plugin.name,
+        label: plugin.shortName,
+        value: plugin.id,
+        score: plugin.score,
+        href: plugin.href,
+        userAgent: plugin.userAgent,
+        description: plugin.description,
+        injectedJavaScript: plugin.injectedJavaScript,
+        disabled: disabled.get(source) ?? plugin.disabled,
+      },
+    ];
+  });
+
+  return {
+    source: PluginMap.has(pluginState.source)
+      ? pluginState.source
+      : list[0]?.value || initialState.plugin.source,
+    list,
+    // 剩余插件均不使用额外登录数据，移除已删除源遗留的 Cookie/Token。
+    extra: {},
+  };
+}
+
+function migratePluginDict(dict: RootState['dict']): RootState['dict'] {
+  return {
+    manga: filterPluginRecord(dict.manga),
+    chapter: filterPluginRecord(dict.chapter),
+    record: filterPluginRecord(dict.record),
+    lastWatch: filterPluginRecord(dict.lastWatch),
+  };
+}
+
+function migratePluginTask(task: RootState['task']): RootState['task'] {
+  const list = task.list.filter((item) => isRegisteredHash(item.chapterHash));
+  const taskIds = new Set(list.map((item) => item.taskId));
+  const jobs = task.job.list.filter(
+    (item) => taskIds.has(item.taskId) && isRegisteredHash(item.chapterHash)
+  );
+  const jobIds = new Set(jobs.map((item) => item.jobId));
+
+  return {
+    list,
+    job: {
+      ...task.job,
+      list: jobs,
+      thread: task.job.thread.filter((item) => taskIds.has(item.taskId) && jobIds.has(item.jobId)),
+    },
+  };
+}
+
+export function migrateDeletedPluginData<
+  T extends Pick<RootState, 'dict' | 'favorites' | 'plugin' | 'task'>
+>(data: T): T {
+  data.dict = migratePluginDict(data.dict);
+  data.favorites = data.favorites.filter((item) => isRegisteredHash(item.mangaHash));
+  data.plugin = migratePluginState(data.plugin);
+  data.task = migratePluginTask(data.task);
+  return data;
+}
+
 function* initSaga() {
   yield put(launch());
 }
@@ -210,15 +301,17 @@ function* syncDataSaga() {
           }
         }
 
-        if (validate(dict, dictSchema)) {
-          yield put(syncDict(dict));
+        const migratedDict = migratePluginDict(dict);
+        if (validate(migratedDict, dictSchema)) {
+          yield put(syncDict(migratedDict));
         } else {
           yield put(toastMessage('同步字典数据失败：格式错误'));
         }
       } else {
         const dict: RootState['dict'] = JSON.parse(dictData);
-        if (validate(dict, dictSchema)) {
-          yield put(syncDict(dict));
+        const migratedDict = migratePluginDict(dict);
+        if (validate(migratedDict, dictSchema)) {
+          yield put(syncDict(migratedDict));
         } else {
           yield put(toastMessage('同步字典数据失败：格式错误'));
         }
@@ -237,14 +330,17 @@ function* syncDataSaga() {
         const jobDict = pairsToDict(jobPairs);
         task.job.list = jobIndex.map((item) => jobDict[item]);
       }
-      if (validate(task, taskSchema)) {
-        yield put(syncTask(task));
+      const migratedTask = migratePluginTask(task);
+      if (validate(migratedTask, taskSchema)) {
+        yield put(syncTask(migratedTask));
       } else {
         yield put(toastMessage('同步任务数据失败：格式错误'));
       }
 
       if (favoritesData) {
-        const favorites: RootState['favorites'] = JSON.parse(favoritesData);
+        const favorites: RootState['favorites'] = JSON.parse(favoritesData).filter(
+          (item: RootState['favorites'][number]) => isRegisteredHash(item.mangaHash)
+        );
         if (validate(favorites, favoritesSchema)) {
           yield put(syncFavorites(favorites));
         } else {
@@ -253,27 +349,9 @@ function* syncDataSaga() {
       }
 
       if (pluginData) {
-        const plugin: RootState['plugin'] = JSON.parse(pluginData);
-        const list: RootState['plugin']['list'] = [];
-        plugin.list.forEach((item) => {
-          const finded = PluginMap.get(item.value);
-          if (nonNullable(finded)) {
-            finded.syncExtraData(plugin.extra);
-            list.push({
-              name: finded.name,
-              label: finded.shortName,
-              value: finded.id,
-              score: finded.score,
-              href: finded.href,
-              userAgent: finded.userAgent,
-              description: finded.description,
-              injectedJavaScript: finded.injectedJavaScript,
-              disabled: item ? item.disabled : true,
-            });
-          }
-        });
-        if (validate({ ...plugin, list }, pluginSchema)) {
-          yield put(syncPlugin({ ...plugin, list }));
+        const plugin = migratePluginState(JSON.parse(pluginData));
+        if (validate(plugin, pluginSchema)) {
+          yield put(syncPlugin(plugin));
         } else {
           yield put(toastMessage('同步插件数据失败：格式错误'));
         }
@@ -344,6 +422,7 @@ function* restoreSaga() {
         decodeURIComponent(base64.decode(source.replace('datatext/plainbase64', '')))
       );
       data.setting = migrateSetting(data.setting);
+      migrateDeletedPluginData(data);
 
       if (!validate(data, rootSchema, initialState)) {
         throw new Error('数据格式错误');
