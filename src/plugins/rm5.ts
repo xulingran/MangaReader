@@ -116,6 +116,62 @@ interface ChapterImageData {
   description: string;
 }
 
+const SITE_URL = 'https://rouman5.com';
+const BOOK_PATH_PATTERN = /^(?:https:\/\/rouman5\.com)?\/books\/([^/?#]+)\/?$/;
+const DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
+
+function parseNextData<T>($: cheerio.Root): T | undefined {
+  const script = $('script#__NEXT_DATA__').first().html();
+  return script ? (JSON.parse(script) as T) : undefined;
+}
+
+function extractBackgroundImage(style: string): string {
+  const match = style.match(/background-image\s*:\s*url\(["']?([^"')]+)["']?\)/i);
+  return match?.[1] || '';
+}
+
+function formatDate(value: string): string | undefined {
+  if (!value || !dayjs(value).isValid()) {
+    return undefined;
+  }
+  return dayjs(value).format('YYYY-MM-DD');
+}
+
+/**
+ * Next.js App Router 会把 React Flight 数据拆到多个 script 中，甚至可能从 URL 中间切开。
+ * 先按脚本顺序还原 Flight 字符串，再提取阅读图片，不能直接在原始 HTML 上匹配 URL。
+ */
+function extractFlightImages($: cheerio.Root): string[] {
+  let flightData = '';
+
+  $('script').each((_index, element) => {
+    const script = $(element).html() || '';
+    const match = script.match(/self\.__next_f\.push\((\[[\s\S]*\])\)\s*$/);
+    if (!match) {
+      return;
+    }
+
+    try {
+      const chunk = JSON.parse(match[1]);
+      if (chunk[0] === 1 && typeof chunk[1] === 'string') {
+        flightData += chunk[1];
+      }
+    } catch (_error) {
+      // 忽略无关或不完整的 Flight 脚本，最终由空图片校验给出统一解析错误。
+    }
+  });
+
+  const images: string[] = [];
+  const pattern = /"imageUrl":"([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(flightData))) {
+    if (!images.includes(match[1])) {
+      images.push(match[1]);
+    }
+  }
+  return images;
+}
+
 const discoveryOptions = [
   {
     name: 'type',
@@ -180,7 +236,8 @@ class RouMan5 extends Base {
         tag: type === Options.Default ? undefined : type,
         continued: status === Options.Default ? undefined : status,
         sort: sort === Options.Default ? undefined : sort,
-        page,
+        // 新版站点分页从 0 开始，应用内部页码从 1 开始。
+        page: Math.max(0, page - 1),
       },
       headers: new Headers(this.defaultHeaders),
     };
@@ -190,7 +247,7 @@ class RouMan5 extends Base {
       url: 'https://rouman5.com/search',
       body: {
         term: keyword,
-        page,
+        page: Math.max(0, page - 1),
       },
       headers: new Headers(this.defaultHeaders),
     };
@@ -212,85 +269,194 @@ class RouMan5 extends Base {
     };
   };
 
-  handleDiscovery: Base['handleDiscovery'] = (text: string | null) => {
-    const $ = cheerio.load(text || '');
-    const scriptLabel =
-      ($('script[id=__NEXT_DATA__]')[0] as cheerio.TagElement).children[0].data || '';
-    const data: DiscoverySearchData = JSON.parse(scriptLabel);
-    return {
-      discovery: data.props.pageProps.books.map((item) => ({
-        href: `https://rouman5.com/books/${item.id}`,
-        hash: Base.combineHash(this.id, item.id),
+  private mapLegacyList = (data: DiscoverySearchData): IncreaseManga[] =>
+    data.props.pageProps.books.map((item) => ({
+      href: `${SITE_URL}/books/${item.id}`,
+      hash: Base.combineHash(this.id, item.id),
+      source: this.id,
+      sourceName: this.name,
+      mangaId: item.id,
+      bookCover: item.coverUrl,
+      title: item.name,
+      updateTime: formatDate(item.updatedAt),
+      headers: this.defaultHeaders,
+      status: item.continued ? MangaStatus.Serial : MangaStatus.End,
+      author: [item.author],
+      tag: item.tags,
+    }));
+
+  private parseCurrentList = ($: cheerio.Root): IncreaseManga[] => {
+    const result: IncreaseManga[] = [];
+    const seen = new Set<string>();
+
+    $('a[href]').each((_index, element) => {
+      const href = $(element).attr('href') || '';
+      const pathMatch = href.match(BOOK_PATH_PATTERN);
+      if (!pathMatch || seen.has(pathMatch[1])) {
+        return;
+      }
+
+      const mangaId = pathMatch[1];
+      const title = $(element).find('.truncate').first().text().trim();
+      const coverStyle = $(element).find('[style*="background-image"]').first().attr('style') || '';
+      const bookCover = extractBackgroundImage(coverStyle);
+      if (!title || !bookCover) {
+        return;
+      }
+
+      const dateText = $(element).text().match(DATE_PATTERN)?.[0] || '';
+      seen.add(mangaId);
+      result.push({
+        href: `${SITE_URL}/books/${mangaId}`,
+        hash: Base.combineHash(this.id, mangaId),
         source: this.id,
         sourceName: this.name,
-        mangaId: item.id,
-        bookCover: item.coverUrl,
-        title: item.name,
-        updateTime: dayjs(item.updatedAt).format('YYYY-MM-DD'),
+        mangaId,
+        bookCover,
+        title,
+        updateTime: formatDate(dateText),
         headers: this.defaultHeaders,
-        status: item.continued ? MangaStatus.Serial : MangaStatus.End,
-        author: [item.author],
-        tag: item.tags,
-      })),
+      });
+    });
+
+    return result;
+  };
+
+  handleDiscovery: Base['handleDiscovery'] = (text: string | null) => {
+    const $ = cheerio.load(text || '');
+    const data = parseNextData<DiscoverySearchData>($);
+    return {
+      discovery: data ? this.mapLegacyList(data) : this.parseCurrentList($),
     };
   };
 
   handleSearch: Base['handleSearch'] = (text: string | null) => {
     const $ = cheerio.load(text || '');
-    const scriptLabel =
-      ($('script[id=__NEXT_DATA__]')[0] as cheerio.TagElement).children[0].data || '';
-    const data: DiscoverySearchData = JSON.parse(scriptLabel);
+    const data = parseNextData<DiscoverySearchData>($);
     return {
-      search: data.props.pageProps.books.map((item) => ({
-        href: `https://rouman5.com/books/${item.id}`,
-        hash: Base.combineHash(this.id, item.id),
-        source: this.id,
-        sourceName: this.name,
-        mangaId: item.id,
-        bookCover: item.coverUrl,
-        title: item.name,
-        updateTime: dayjs(item.updatedAt).format('YYYY-MM-DD'),
-        headers: this.defaultHeaders,
-        status: item.continued ? MangaStatus.Serial : MangaStatus.End,
-        author: [item.author],
-        tag: item.tags,
-      })),
+      search: data ? this.mapLegacyList(data) : this.parseCurrentList($),
     };
   };
 
-  handleMangaInfo: Base['handleMangaInfo'] = (text: string | null) => {
+  handleMangaInfo: Base['handleMangaInfo'] = (text: string | null, mangaId: string) => {
     const $ = cheerio.load(text || '');
-    const scriptLabel =
-      ($('script[id=__NEXT_DATA__]')[0] as cheerio.TagElement).children[0].data || '';
-    const data: MangaData = JSON.parse(scriptLabel);
-    const { id, name, tags, author, continued, updatedAt, activeResource } =
-      data.props.pageProps.book;
+    const data = parseNextData<MangaData>($);
+    if (data) {
+      const { id, name, tags, author, continued, updatedAt, activeResource } =
+        data.props.pageProps.book;
+
+      return {
+        manga: {
+          href: `${SITE_URL}/books/${id}`,
+          hash: Base.combineHash(this.id, id),
+          source: this.id,
+          sourceName: this.name,
+          mangaId: id,
+          title: name,
+          latest:
+            activeResource.chapters.length > 0
+              ? activeResource.chapters[activeResource.chapters.length - 1]
+              : undefined,
+          updateTime: formatDate(updatedAt),
+          author: [author],
+          tag: tags,
+          status: continued ? MangaStatus.Serial : MangaStatus.End,
+          chapters: activeResource.chapters
+            .map((title, index) => ({
+              hash: Base.combineHash(this.id, id, String(index)),
+              mangaId: id,
+              chapterId: String(index),
+              href: `${SITE_URL}/books/${id}/${index}`,
+              title,
+            }))
+            .reverse(),
+        },
+      };
+    }
+
+    const coverElement = $('img[alt$=" cover"]').first();
+    const info = coverElement.parent().next();
+    const title =
+      info.find('.text-xl.text-foreground').first().text().trim() ||
+      (coverElement.attr('alt') || '').replace(/\s+cover$/, '').trim();
+    if (!mangaId || !title || !coverElement.attr('src')) {
+      throw new Error(`${ErrorMessage.WrongResponse}${this.name}页面结构无法识别`);
+    }
+
+    const findInfoRow = (label: string) =>
+      info
+        .find('div')
+        .filter((_index, element) => {
+          const ownText = $(element).clone().children().remove().end().text().trim();
+          return ownText === label;
+        })
+        .first();
+    const authorText = findInfoRow('作者:').find('span').first().text().trim();
+    const statusText = findInfoRow('狀態:').find('span').first().text().trim();
+    const tagRow = findInfoRow('標籤:');
+    const tags = tagRow
+      .find('a')
+      .toArray()
+      .map((element) => $(element).text().trim())
+      .filter(Boolean);
+    if (tags.length === 0) {
+      tags.push(
+        ...tagRow
+          .find('span')
+          .first()
+          .text()
+          .split(/[,，、\s]+/)
+          .map((value) => value.trim())
+          .filter(Boolean)
+      );
+    }
+
+    const chapters = new Map<string, ChapterItem>();
+    $(`a[href^="/books/${mangaId}/"]`).each((_index, element) => {
+      const href = $(element).attr('href') || '';
+      const match = href.match(new RegExp(`^/books/${mangaId}/([^/?#]+)/?$`));
+      if (!match) {
+        return;
+      }
+      const chapterId = match[1];
+      const chapterTitle =
+        $(element).find('.truncate').first().text().trim() || $(element).text().trim();
+      if (!chapterTitle) {
+        return;
+      }
+      chapters.set(chapterId, {
+        hash: Base.combineHash(this.id, mangaId, chapterId),
+        mangaId,
+        chapterId,
+        href: `${SITE_URL}/books/${mangaId}/${chapterId}`,
+        title: chapterTitle,
+      });
+    });
+
+    const chapterList = Array.from(chapters.values());
+    const dateText = info.text().match(DATE_PATTERN)?.[0] || '';
+    const status = statusText.includes('完結')
+      ? MangaStatus.End
+      : statusText.includes('連載')
+      ? MangaStatus.Serial
+      : MangaStatus.Unknown;
 
     return {
       manga: {
-        href: `https://rouman5.com/books/${id}`,
-        hash: Base.combineHash(this.id, id),
+        href: `${SITE_URL}/books/${mangaId}`,
+        hash: Base.combineHash(this.id, mangaId),
         source: this.id,
         sourceName: this.name,
-        mangaId: id,
-        title: name,
-        latest:
-          activeResource.chapters.length > 0
-            ? activeResource.chapters[activeResource.chapters.length - 1]
-            : undefined,
-        updateTime: dayjs(updatedAt).format('YYYY-MM-DD'),
-        author: [author],
+        mangaId,
+        title,
+        bookCover: coverElement.attr('src'),
+        infoCover: coverElement.attr('src'),
+        latest: chapterList.at(-1)?.title,
+        updateTime: formatDate(dateText),
+        author: authorText ? [authorText] : [],
         tag: tags,
-        status: continued ? MangaStatus.Serial : MangaStatus.End,
-        chapters: activeResource.chapters
-          .map((title, index) => ({
-            hash: Base.combineHash(this.id, id, String(index)),
-            mangaId: id,
-            chapterId: String(index),
-            href: `https://rouman5.com/books/${id}/${index}`,
-            title,
-          }))
-          .reverse(),
+        status,
+        chapters: chapterList.reverse(),
       },
     };
   };
@@ -305,13 +471,39 @@ class RouMan5 extends Base {
   ) => {
     if (typeof res === 'string') {
       const $ = cheerio.load(res || '');
-      const scriptLabel =
-        ($('script[id=__NEXT_DATA__]')[0] as cheerio.TagElement).children[0].data || '';
-      const data: ChapterData = JSON.parse(scriptLabel);
-      const { bookName, chapterName, images = [], chapterAPIPath } = data.props.pageProps;
+      const data = parseNextData<ChapterData>($);
+      if (data) {
+        const { bookName, chapterName, images = [], chapterAPIPath } = data.props.pageProps;
+
+        return {
+          canLoadMore: typeof chapterAPIPath === 'string',
+          chapter: {
+            hash: Base.combineHash(this.id, mangaId, chapterId),
+            mangaId,
+            chapterId,
+            name: bookName,
+            title: chapterName,
+            headers: this.defaultHeaders,
+            images: images.map((item) => ({
+              uri: item.src,
+              scrambleType: ScrambleType.RM5,
+              needUnscramble: !item.src.includes('.gif') && item.scramble,
+            })),
+          },
+          nextExtra: { path: chapterAPIPath },
+        };
+      }
+
+      const images = extractFlightImages($);
+      if (images.length === 0) {
+        throw new Error(`${ErrorMessage.WrongResponse}${this.name}章节图片无法识别`);
+      }
+      const nameElement = $('main .text-lg.text-foreground.flex.justify-center').first();
+      const bookName = nameElement.text().trim();
+      const chapterName = nameElement.next('div').first().text().trim() || chapterId;
 
       return {
-        canLoadMore: typeof chapterAPIPath === 'string' ? true : false,
+        canLoadMore: false,
         chapter: {
           hash: Base.combineHash(this.id, mangaId, chapterId),
           mangaId,
@@ -319,13 +511,12 @@ class RouMan5 extends Base {
           name: bookName,
           title: chapterName,
           headers: this.defaultHeaders,
-          images: images.map((item) => ({
-            uri: item.src,
+          images: images.map((uri) => ({
+            uri,
             scrambleType: ScrambleType.RM5,
-            needUnscramble: !item.src.includes('.gif') && item.scramble,
+            needUnscramble: !uri.includes('.gif') && uri.includes('/sr:1/'),
           })),
         },
-        nextExtra: { path: chapterAPIPath },
       };
     } else {
       const { name, images } = res.chapter;

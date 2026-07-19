@@ -237,7 +237,10 @@ abstract class Base {
    * @return {*}  {FetchData}
    * @memberof Base
    */
-  abstract prepareMangaInfoFetch(mangaId: string): FetchData;
+  abstract prepareMangaInfoFetch(
+    mangaId: string,
+    manga?: Pick<IncreaseManga, 'href' | 'title'>
+  ): FetchData;
 
   /**
    * @description accept mangaId and page param, return body or void

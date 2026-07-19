@@ -92,6 +92,8 @@ function joinImageUrl(server: string, path: string): string {
 }
 
 class MoeImg extends Base {
+  private readonly imageHeaders: Record<string, string>;
+
   constructor() {
     const userAgent =
       'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36';
@@ -121,6 +123,11 @@ class MoeImg extends Base {
         ],
       },
     });
+    this.imageHeaders = {
+      'User-Agent': userAgent,
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      Referer: 'https://moeimg.fan/',
+    };
   }
 
   private listItemToManga(item: MoeImgListItem): IncreaseManga {
@@ -132,7 +139,7 @@ class MoeImg extends Base {
       sourceName: this.name,
       mangaId,
       bookCover: item.manga_cover_img || '',
-      headers: this.defaultHeaders,
+      headers: this.imageHeaders,
       title: item.manga_name?.trim() || '未知标题',
       tag: item.language ? [item.language] : [],
       status: MangaStatus.End,
@@ -212,7 +219,7 @@ class MoeImg extends Base {
         sourceName: this.name,
         mangaId,
         infoCover: detail.manga_cover_img || detail.manga_cover_img_full || '',
-        headers: this.defaultHeaders,
+        headers: this.imageHeaders,
         title,
         latest: chapterTitle,
         updateTime: updateTime ? dayjs(updateTime).format('YYYY-MM-DD') : undefined,
@@ -241,6 +248,9 @@ class MoeImg extends Base {
     if (!detail) {
       throw new Error('MoeImg 阅读数据缺失');
     }
+    if (detail.chapter_id && String(detail.chapter_id) !== chapterId) {
+      throw new Error('MoeImg 返回了错误的章节数据');
+    }
     const server = detail.server || (detail.slaves || []).find(Boolean) || '';
     const content = detail.chapter_content || '';
     const imagePaths = Array.from(
@@ -254,6 +264,9 @@ class MoeImg extends Base {
           .map((path) => joinImageUrl(server, path))
       )
     );
+    if (images.length === 0) {
+      throw new Error('MoeImg 图片数据缺失');
+    }
     return {
       canLoadMore: false,
       chapter: {
@@ -262,7 +275,7 @@ class MoeImg extends Base {
         chapterId,
         name: detail.manga_name,
         title: detail.chapter_title?.trim() || '全一话',
-        headers: this.defaultHeaders,
+        headers: this.imageHeaders,
         images: images.map((uri) => ({ uri })),
       },
     };

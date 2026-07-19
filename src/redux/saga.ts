@@ -822,9 +822,11 @@ function* loadMangaInfoSaga() {
         return;
       }
 
+      const cachedManga = ((state: RootState) => state.dict.manga[mangaHash])(yield select());
+
       const { error: fetchError, data } = yield call(
         fetchData,
-        plugin.prepareMangaInfoFetch(mangaId)
+        plugin.prepareMangaInfoFetch(mangaId, cachedManga)
       );
       const { error: pluginError, manga } = trycatch(
         () => plugin.handleMangaInfo(data, mangaId),

@@ -4,6 +4,8 @@ import HComic from '~/plugins/hcomic';
 import Bika from '~/plugins/bika';
 import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
+import RM5 from '~/plugins/rm5';
+import { MangaStatus, ScrambleType } from '~/utils';
 
 const hcomicItem = {
   _id: 'mongo-1',
@@ -12,7 +14,7 @@ const hcomicItem = {
   comic_source: 'MMCG_SHORT',
   num_pages: 2,
   thumbnail: 'https://h-comic.link/api/mms/456',
-  title: { display: 'HComic 测试漫画' },
+  title: { english: 'HComic 测试漫画', display: 'HComic 测试漫画' },
   upload_date: 1_700_000_000,
   tags: [
     { type: 'artist', name: '作者甲' },
@@ -39,6 +41,12 @@ test('HComic 解析页面负载并生成单话图片地址', () => {
     author: ['作者甲'],
     tag: ['标签'],
   });
+  expect(discovery.discovery[0].href).toBe(
+    'https://h-comic.com/comics/HComic%20%E6%B5%8B%E8%AF%95%E6%BC%AB%E7%94%BB?id=123'
+  );
+  expect(HComic.prepareMangaInfoFetch('123', discovery.discovery[0]).url).toBe(
+    'https://h-comic.com/comics/HComic%20%E6%B5%8B%E8%AF%95%E6%BC%AB%E7%94%BB/1?id=123'
+  );
 
   const chapter = HComic.handleChapter(hcomicHtml, '123', '1', 1) as {
     chapter: Chapter;
@@ -47,6 +55,9 @@ test('HComic 解析页面负载并生成单话图片地址', () => {
     { uri: 'https://h-comic.link/api/mms/456/pages/1' },
     { uri: 'https://h-comic.link/api/mms/456/pages/2' },
   ]);
+  expect(() => HComic.handleMangaInfo(hcomicHtml, '999')).toThrow(
+    'HComic 返回了错误的漫画数据'
+  );
 });
 
 test('MoeImg 解析列表、详情与阅读图片', () => {
@@ -97,6 +108,14 @@ test('MoeImg 解析列表、详情与阅读图片', () => {
     { uri: 'https://cdn.example/data/path/001.webp' },
     { uri: 'https://cdn2.example/002.webp' },
   ]);
+  expect(() =>
+    MoeImg.handleChapter(
+      { chapter_detail: { chapter_id: '294777', chapter_content: '' } },
+      '288926',
+      '294777',
+      1
+    )
+  ).toThrow('MoeImg 图片数据缺失');
 });
 
 test('NHentai 解析 API v2 列表和详情图片', () => {
@@ -114,12 +133,13 @@ test('NHentai 解析 API v2 列表和详情图片', () => {
   expect(discovery.discovery[0]).toMatchObject({
     mangaId: '665425',
     title: 'NH 测试漫画',
-    bookCover: 'https://t.nhentai.net/galleries/4060527/thumb.jpg.webp',
+    bookCover: 'https://h-comic.link/api/nh/4060527',
   });
 
   const chapter = NH.handleChapter(
     {
       id: 665425,
+      media_id: '4060527',
       title: { pretty: 'NH 测试漫画' },
       pages: [
         { number: 1, path: 'galleries/4060527/1.jpg' },
@@ -131,9 +151,12 @@ test('NHentai 解析 API v2 列表和详情图片', () => {
     1
   ) as { chapter: Chapter };
   expect(chapter.chapter.images).toEqual([
-    { uri: 'https://i.nhentai.net/galleries/4060527/1.jpg' },
-    { uri: 'https://i.nhentai.net/galleries/4060527/2.webp' },
+    { uri: 'https://h-comic.link/api/nh/4060527/pages/1' },
+    { uri: 'https://h-comic.link/api/nh/4060527/pages/2' },
   ]);
+  expect(() =>
+    NH.handleChapter({ id: 665425, pages: [] }, '665425', '1', 1)
+  ).toThrow('NHentai 图片数据缺失');
 });
 
 test('Bika 使用参考协议签名并解析章节分页', () => {
@@ -193,4 +216,102 @@ test('Bika 使用参考协议签名并解析章节分页', () => {
 
   Bika.syncExtraData({});
   expect(Bika.prepareDiscoveryFetch(1, { sort: 'dd' }).headers?.get('authorization')).toBe('');
+});
+
+test('肉漫屋适配新版列表、零基分页与搜索结果', () => {
+  const listHtml = `
+    <a href="/books/rm5-book-1">
+      <div class="sm:hidden">
+        <div style="background-image:url(&quot;https://r5.rmcdn10.xyz/cover.webp&quot;)"></div>
+        <div class="truncate text-foreground">肉漫屋测试漫画</div>
+        <div>7/19/2026</div>
+      </div>
+    </a>
+  `;
+  const discoveryRequest = RM5.prepareDiscoveryFetch(1, {
+    type: '$$DEFAULT$$',
+    status: '$$DEFAULT$$',
+    sort: '$$DEFAULT$$',
+  });
+  const searchRequest = RM5.prepareSearchFetch('测试', 2, {});
+  expect((discoveryRequest.body as Record<string, unknown>).page).toBe(0);
+  expect((searchRequest.body as Record<string, unknown>).page).toBe(1);
+
+  const discovery = RM5.handleDiscovery(listHtml) as { discovery: IncreaseManga[] };
+  const search = RM5.handleSearch(listHtml) as { search: IncreaseManga[] };
+  expect(discovery.discovery[0]).toMatchObject({
+    mangaId: 'rm5-book-1',
+    title: '肉漫屋测试漫画',
+    bookCover: 'https://r5.rmcdn10.xyz/cover.webp',
+    updateTime: '2026-07-19',
+  });
+  expect(search.search).toEqual(discovery.discovery);
+});
+
+test('肉漫屋解析新版详情页与章节目录', () => {
+  const detailHtml = `
+    <div class="flex">
+      <div><img src="https://r5.rmcdn10.xyz/cover.webp" alt="肉漫屋测试漫画 cover"></div>
+      <div class="basis-3/5">
+        <div class="text-xl text-foreground">肉漫屋测试漫画</div>
+        <div><div>作者: <span>测试作者</span></div></div>
+        <div><div>狀態: <span>連載中</span></div></div>
+        <div><div>標籤: <span><a>标签甲</a><a>标签乙</a></span></div></div>
+        <div>7/19/2026</div>
+      </div>
+    </div>
+    <a href="/books/rm5-book-1/0">開始閱讀</a>
+    <a href="/books/rm5-book-1/0"><div class="truncate">第一话</div></a>
+    <a href="/books/rm5-book-1/1"><div class="truncate">第二话</div></a>
+  `;
+
+  const detail = RM5.handleMangaInfo(detailHtml, 'rm5-book-1') as { manga: IncreaseManga };
+  expect(detail.manga).toMatchObject({
+    mangaId: 'rm5-book-1',
+    title: '肉漫屋测试漫画',
+    latest: '第二话',
+    updateTime: '2026-07-19',
+    author: ['测试作者'],
+    tag: ['标签甲', '标签乙'],
+    status: MangaStatus.Serial,
+  });
+  expect(detail.manga.chapters?.map((item) => item.chapterId)).toEqual(['1', '0']);
+});
+
+test('肉漫屋还原拆分的 Flight 数据并识别图片扰乱标记', () => {
+  const firstChunk = '1:["$","div",null,{"imageUrl":"https://r5.rmcdn10.xyz/m/split';
+  const secondChunk =
+    '/sr:1/001.webp"}]\n2:["$","div",null,{"imageUrl":"https://r5.rmcdn11.xyz/m/full/sr:0/002.webp"}]';
+  const chapterHtml = `
+    <main>
+      <div class="px-1">
+        <div class="text-lg text-foreground flex justify-center">肉漫屋测试漫画</div>
+        <div class="text-foreground flex justify-center">第一话</div>
+      </div>
+    </main>
+    <script>self.__next_f.push(${JSON.stringify([1, firstChunk])})</script>
+    <script>self.__next_f.push(${JSON.stringify([1, secondChunk])})</script>
+  `;
+
+  const result = RM5.handleChapter(chapterHtml, 'rm5-book-1', '0', 1) as {
+    chapter: Chapter;
+    canLoadMore: boolean;
+  };
+  expect(result.canLoadMore).toBe(false);
+  expect(result.chapter).toMatchObject({
+    name: '肉漫屋测试漫画',
+    title: '第一话',
+  });
+  expect(result.chapter.images).toEqual([
+    {
+      uri: 'https://r5.rmcdn10.xyz/m/split/sr:1/001.webp',
+      scrambleType: ScrambleType.RM5,
+      needUnscramble: true,
+    },
+    {
+      uri: 'https://r5.rmcdn11.xyz/m/full/sr:0/002.webp',
+      scrambleType: ScrambleType.RM5,
+      needUnscramble: false,
+    },
+  ]);
 });

@@ -7,7 +7,6 @@ import { Buffer } from 'buffer';
 import CookieManager from '@react-native-cookies/cookies';
 import queryString from 'query-string';
 import CryptoJS from 'crypto-js';
-import base64 from 'base-64';
 
 export const PATTERN_VERSION = /v?([0-9]+)\.([0-9]+)\.([0-9]+)/;
 export const PATTERN_PUBLISH_TIME = /([0-9]+)-([0-9]+)-([0-9]+)/;
@@ -290,10 +289,16 @@ export function pairsToDict(list: KeyValuePair[]) {
 
 export function unscrambleRM5(uri: string, width: number, height: number) {
   const step = [];
-  const list = uri.split('/');
-  const id = list[list.length - 1].replace('.jpg', '');
+  const path = uri.split(/[?#]/, 1)[0];
+  const filename = path.split('/').at(-1) || '';
+  // RM5 目前会在 base64 路径后追加真实图片扩展名（例如 `<base64>.webp`）。
+  // 旧实现只移除 `.jpg`，把整个文件名交给严格的 base-64 解码器，遇到 `.webp`
+  // 会抛 InvalidCharacterError 并导致阅读页崩溃。Buffer 的 base64 解码同时兼容无 padding
+  // 的新地址；无法解码时则使用原文件名生成稳定分片数，至少不让异常逃出渲染流程。
+  const encodedId = filename.replace(/\.(?:avif|gif|jpe?g|png|webp)$/i, '');
+  const decodedId = Buffer.from(encodedId, 'base64').toString('utf8') || encodedId;
 
-  const buffer = Buffer.from(CryptoJS.MD5(base64.decode(id)).toString(), 'hex');
+  const buffer = Buffer.from(CryptoJS.MD5(decodedId).toString(), 'hex');
   const nub = buffer[buffer.length - 1];
   const numSplit = (nub % 10) + 5;
   const perheight = height % numSplit;

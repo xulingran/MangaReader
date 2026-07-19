@@ -24,6 +24,8 @@ CacheManager.config = {
   baseDir: `${Dirs.CacheDir}/images_cache/`,
   // 电子墨水版：缓存上限 512MB，图片无淡入
   cacheLimit: 512 * 1024 * 1024,
+  maxRetries: 2,
+  retryDelay: 500,
   sourceAnimationDuration: 0,
   thumbnailAnimationDuration: 0,
 };

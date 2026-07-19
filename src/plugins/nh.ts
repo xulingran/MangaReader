@@ -53,6 +53,8 @@ const languageOptions = [
 ];
 
 class NHentai extends Base {
+  private readonly imageHeaders: Record<string, string>;
+
   constructor() {
     const userAgent = 'Mozilla/5.0 (Linux; Android 13; rv:120.0) Gecko/120.0 Firefox/120.0';
     super({
@@ -79,16 +81,25 @@ class NHentai extends Base {
         ],
       },
     });
+    this.imageHeaders = {
+      'User-Agent': userAgent,
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      Referer: 'https://nhentai.net/',
+    };
   }
 
-  private buildThumbnail(path = ''): string {
-    if (!path) {
+  private buildThumbnail(path = '', mediaId?: string | number): string {
+    const id = String(mediaId || path.match(/galleries\/(\d+)\//)?.[1] || '');
+    if (!id) {
       return '';
     }
-    return `https://t.nhentai.net/${path.endsWith('.') ? path + 'jpg' : path}`;
+    return `https://h-comic.link/api/nh/${id}`;
   }
 
-  private buildImage(path = ''): string {
+  private buildImage(path = '', mediaId?: string | number, pageNumber?: number): string {
+    if (mediaId && pageNumber) {
+      return `https://h-comic.link/api/nh/${String(mediaId)}/pages/${pageNumber}`;
+    }
     if (!path.startsWith('galleries/')) {
       return '';
     }
@@ -104,8 +115,8 @@ class NHentai extends Base {
       source: this.id,
       sourceName: this.name,
       mangaId,
-      bookCover: this.buildThumbnail(item.thumbnail),
-      headers: this.defaultHeaders,
+      bookCover: this.buildThumbnail(item.thumbnail, item.media_id),
+      headers: this.imageHeaders,
       title: item.japanese_title || item.english_title || '未知标题',
       author: tags
         .filter((tag) => tag.type === 'artist' && tag.name)
@@ -175,7 +186,7 @@ class NHentai extends Base {
   });
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: NhDetailResponse, mangaId) => {
-    if (!response.id) {
+    if (!response.id || String(response.id) !== mangaId) {
       throw new Error('NHentai 详情数据缺失');
     }
     const tags = response.tags || [];
@@ -189,8 +200,11 @@ class NHentai extends Base {
         source: this.id,
         sourceName: this.name,
         mangaId,
-        infoCover: this.buildThumbnail(response.thumbnail?.path || response.cover?.path),
-        headers: this.defaultHeaders,
+        infoCover: this.buildThumbnail(
+          response.thumbnail?.path || response.cover?.path,
+          response.media_id
+        ),
+        headers: this.imageHeaders,
         title,
         latest: '全一话',
         updateTime: response.upload_date
@@ -221,10 +235,18 @@ class NHentai extends Base {
   });
 
   handleChapter: Base['handleChapter'] = (response: NhDetailResponse, mangaId, chapterId) => {
+    if (!response.id || String(response.id) !== mangaId) {
+      throw new Error('NHentai 返回了错误的漫画数据');
+    }
     const images = (response.pages || [])
-      .map((page) => this.buildImage(page.path))
+      .map((page, index) =>
+        this.buildImage(page.path, response.media_id, Number(page.number || index + 1))
+      )
       .filter(Boolean)
       .map((uri) => ({ uri }));
+    if (images.length === 0) {
+      throw new Error('NHentai 图片数据缺失');
+    }
     return {
       canLoadMore: false,
       chapter: {
@@ -237,7 +259,7 @@ class NHentai extends Base {
           response.title?.english ||
           '未知标题',
         title: '全一话',
-        headers: this.defaultHeaders,
+        headers: this.imageHeaders,
         images,
       },
     };
