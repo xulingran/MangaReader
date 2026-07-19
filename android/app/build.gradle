@@ -71,6 +71,9 @@ def enableProguardInReleaseBuilds = true
  * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+def targetArchitectures = providers.gradleProperty('reactNativeArchitectures')
+        .getOrElse('armeabi-v7a,arm64-v8a')
+        .split(',')
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -85,8 +88,8 @@ android {
         versionCode 54
         versionName "0.7.10"
         ndk {
-            // 电子墨水版：仅构建 ARMv7/ARM64
-            abiFilters "armeabi-v7a", "arm64-v8a"
+            // 正式包由 gradle.properties 固定为 ARMv7/ARM64；本地模拟器可用 -P 覆盖 ABI。
+            abiFilters(*targetArchitectures)
         }
     }
     signingConfigs {

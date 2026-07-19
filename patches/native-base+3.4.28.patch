@@ -20,3 +20,375 @@ index 43b4bd1..77803a3 100644
                </ToastProvider>
              </OverlayProvider>
            </HybridProvider>
+diff --git a/node_modules/native-base/src/hooks/useKeyboardDismissable.ts b/node_modules/native-base/src/hooks/useKeyboardDismissable.ts
+index f3cfa44..b25a484 100644
+--- a/node_modules/native-base/src/hooks/useKeyboardDismissable.ts
++++ b/node_modules/native-base/src/hooks/useKeyboardDismissable.ts
+@@ -45,15 +45,17 @@ export const useKeyboardDismissable = ({ enabled, callback }: IParams) => {
+ export function useBackHandler({ enabled, callback }: IParams) {
+   useEffect(() => {
+-    let backHandler = () => {
++    const backHandler = () => {
+       callback();
+       return true;
+     };
+-    if (enabled) {
+-      BackHandler.addEventListener('hardwareBackPress', backHandler);
+-    } else {
+-      BackHandler.removeEventListener('hardwareBackPress', backHandler);
++    if (!enabled) {
++      return;
+     }
+-    return () =>
+-      BackHandler.removeEventListener('hardwareBackPress', backHandler);
++
++    const subscription = BackHandler.addEventListener(
++      'hardwareBackPress',
++      backHandler
++    );
++    return () => subscription.remove();
+   }, [enabled, callback]);
+ }
+diff --git a/node_modules/native-base/src/hooks/useScreenReaderEnabled.ts b/node_modules/native-base/src/hooks/useScreenReaderEnabled.ts
+index b84e939..05f9815 100644
+--- a/node_modules/native-base/src/hooks/useScreenReaderEnabled.ts
++++ b/node_modules/native-base/src/hooks/useScreenReaderEnabled.ts
+@@ -21,4 +21,4 @@ export function useScreenReaderEnabled() {
+-    let handler: any = AccessibilityInfo.addEventListener(
++    const subscription = AccessibilityInfo.addEventListener(
+       'screenReaderChanged',
+       (event: any) => {
+         handleSetEnabled(event);
+@@ -28,6 +28,6 @@ export function useScreenReaderEnabled() {
+     setInitialValue();
+     return () => {
+       mountedRef.current = false;
+-      AccessibilityInfo.removeEventListener('screenReaderChanged', handler);
++      subscription.remove();
+     };
+   });
+diff --git a/node_modules/native-base/src/theme/components/actionsheet.ts b/node_modules/native-base/src/theme/components/actionsheet.ts
+index 90f9686..7a2bc3a 100644
+--- a/node_modules/native-base/src/theme/components/actionsheet.ts
++++ b/node_modules/native-base/src/theme/components/actionsheet.ts
+@@ -77,7 +77,7 @@ export const ActionsheetItem = {
+     },
+     _focusVisible: {
+       _web: {
+-        outlineWidth: '0',
++        outlineWidth: 0,
+         style: { boxShadow: `none` },
+         bg: 'muted.300',
+       },
+@@ -100,7 +100,7 @@ export const ActionsheetItem = {
+       },
+       _focusVisible: {
+         _web: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           style: { boxShadow: `none` },
+           bg: 'muted.600',
+         },
+diff --git a/node_modules/native-base/src/theme/components/button.ts b/node_modules/native-base/src/theme/components/button.ts
+index 3a0695a..575d51c 100644
+--- a/node_modules/native-base/src/theme/components/button.ts
++++ b/node_modules/native-base/src/theme/components/button.ts
+@@ -20,14 +20,14 @@ const baseStyle = (props: InterfaceButtonProps & { theme: any }) => {
+     },
+     _focusVisible: {
+       _web: {
+-        outlineWidth: '0',
++        outlineWidth: 0,
+         style: { boxShadow: `${primary[400]} 0px 0px 0px 2px` },
+       },
+     },
+     _dark: {
+       _focusVisible: {
+         _web: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           style: { boxShadow: `${primary[500]} 0px 0px 0px 2px` },
+         },
+       },
+diff --git a/node_modules/native-base/src/theme/components/checkbox.ts b/node_modules/native-base/src/theme/components/checkbox.ts
+index aef8f10..b0ab44e 100644
+--- a/node_modules/native-base/src/theme/components/checkbox.ts
++++ b/node_modules/native-base/src/theme/components/checkbox.ts
+@@ -98,7 +98,7 @@ const baseStyle = (props: Record<string, any>) => {
+     _focusVisible: {
+       _web: {
+         style: {
+-          outlineWidth: '2px',
++          outlineWidth: 2,
+           outlineColor: colors[c][400],
+           outlineStyle: 'solid',
+         },
+diff --git a/node_modules/native-base/src/theme/components/icon-button.ts b/node_modules/native-base/src/theme/components/icon-button.ts
+index cfb7309..9fcfbc8 100644
+--- a/node_modules/native-base/src/theme/components/icon-button.ts
++++ b/node_modules/native-base/src/theme/components/icon-button.ts
+@@ -23,7 +23,7 @@ const baseStyle = (props: any) => {
+     _focusVisible: {
+       _web: {
+         style: {
+-          outlineWidth: '2px',
++          outlineWidth: 2,
+           outlineColor: `${colors[colorScheme][600]}`,
+           outlineStyle: 'solid',
+         },
+@@ -39,7 +39,7 @@ const baseStyle = (props: any) => {
+       _focusVisible: {
+         _web: {
+           style: {
+-            outlineWidth: '2px',
++            outlineWidth: 2,
+             outlineColor: `${colors[colorScheme][500]}`,
+             outlineStyle: 'solid',
+           },
+diff --git a/node_modules/native-base/src/theme/components/input.ts b/node_modules/native-base/src/theme/components/input.ts
+index ed3047c..efb63dd 100644
+--- a/node_modules/native-base/src/theme/components/input.ts
++++ b/node_modules/native-base/src/theme/components/input.ts
+@@ -17,7 +17,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+       },
+     },
+     _web: {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+       overflow: 'auto',
+       lineHeight: 'lg', // Todo: Move to _web inside size so that sm and xs don't have this much height
+       style: { outline: 'none' },
+@@ -47,7 +47,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+       _hover: { borderColor: 'error.600' },
+       _stack: {
+         style: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           boxShadow: `0 0 0 1px ${error[600]}`,
+         },
+       },
+@@ -60,7 +60,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+         _hover: { borderColor: 'error.600' },
+         _stack: {
+           style: {
+-            outlineWidth: '0',
++            outlineWidth: 0,
+             boxShadow: `0 0 0 1px ${error[600]}`,
+           },
+         },
+@@ -79,7 +79,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+       },
+       _stack: {
+         style: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           boxShadow: `0 0 0 1px ${primary[600]}`,
+         },
+       },
+@@ -96,7 +96,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+         _hover: { borderColor: 'primary.500' },
+         _stack: {
+           style: {
+-            outlineWidth: '0',
++            outlineWidth: 0,
+             boxShadow: `0 0 0 1px ${primary[500]}`,
+           },
+         },
+@@ -105,7 +105,7 @@ const baseStyle = (props: InterfaceInputProps & { theme: any }) => {
+         borderColor: 'error.500',
+         _stack: {
+           style: {
+-            outlineWidth: '0',
++            outlineWidth: 0,
+             boxShadow: `0 0 0 1px ${error[500]}`,
+           },
+         },
+@@ -190,7 +190,7 @@ function unstyledStyle() {
+     _stack: {
+       _focus: {
+         style: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+         },
+       },
+     },
+@@ -206,7 +206,7 @@ function underlinedStyle(props: InterfaceInputProps & { theme: any }) {
+     _focus: {
+       _stack: {
+         style: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           boxShadow: `0 1px 0 0 ${primary[600]}`,
+         },
+       },
+@@ -224,7 +224,7 @@ function underlinedStyle(props: InterfaceInputProps & { theme: any }) {
+       _focus: {
+         _stack: {
+           style: {
+-            outlineWidth: '0',
++            outlineWidth: 0,
+             boxShadow: `0 1px 0 0 ${primary[500]}`,
+           },
+         },
+diff --git a/node_modules/native-base/src/theme/components/menu.ts b/node_modules/native-base/src/theme/components/menu.ts
+index 84fced0..ae3bd4c 100644
+--- a/node_modules/native-base/src/theme/components/menu.ts
++++ b/node_modules/native-base/src/theme/components/menu.ts
+@@ -79,7 +79,7 @@ export const MenuItem = {
+     },
+     _focusVisible: {
+       _web: {
+-        outlineWidth: '0',
++        outlineWidth: 0,
+         style: { boxShadow: `none` },
+         bg: 'muted.300',
+       },
+@@ -108,7 +108,7 @@ export const MenuItem = {
+       },
+       _focusVisible: {
+         _web: {
+-          outlineWidth: '0',
++          outlineWidth: 0,
+           style: { boxShadow: `none` },
+           bg: 'muted.600',
+         },
+diff --git a/node_modules/native-base/src/theme/components/radio.ts b/node_modules/native-base/src/theme/components/radio.ts
+index 215548c..83fc56d 100644
+--- a/node_modules/native-base/src/theme/components/radio.ts
++++ b/node_modules/native-base/src/theme/components/radio.ts
+@@ -110,7 +110,7 @@ const baseStyle = (props: Record<string, any>) => {
+     _focusVisible: {
+       _web: {
+         style: {
+-          outlineWidth: '2px',
++          outlineWidth: 2,
+           outlineColor: colors[c][400],
+           outlineStyle: 'solid',
+         },
+diff --git a/node_modules/native-base/src/theme/components/slider.ts b/node_modules/native-base/src/theme/components/slider.ts
+index 3c009b3..7d7a3ed 100644
+--- a/node_modules/native-base/src/theme/components/slider.ts
++++ b/node_modules/native-base/src/theme/components/slider.ts
+@@ -47,14 +47,14 @@ export const SliderThumb = {
+       bg: `${colorScheme}.600`,
+       _hover: {
+         _web: {
+-          outlineWidth: '4px',
++          outlineWidth: 4,
+           outlineColor: primary[300],
+           outlineStyle: 'solid',
+         },
+       },
+       _focus: {
+         _web: {
+-          outlineWidth: '2px',
++          outlineWidth: 2,
+           outlineColor: primary[400],
+           outlineStyle: 'solid',
+         },
+@@ -70,14 +70,14 @@ export const SliderThumb = {
+         bg: `${colorScheme}.500`,
+         _hover: {
+           _web: {
+-            outlineWidth: '4px',
++            outlineWidth: 4,
+             outlineColor: primary[800],
+             outlineStyle: 'solid',
+           },
+         },
+         _focus: {
+           _web: {
+-            outlineWidth: '2px',
++            outlineWidth: 2,
+             outlineColor: primary[400],
+             outlineStyle: 'solid',
+           },
+diff --git a/node_modules/native-base/src/theme/v33x-theme/components/button.ts b/node_modules/native-base/src/theme/v33x-theme/components/button.ts
+index 1210b2b..cff0595 100644
+--- a/node_modules/native-base/src/theme/v33x-theme/components/button.ts
++++ b/node_modules/native-base/src/theme/v33x-theme/components/button.ts
+@@ -65,7 +65,7 @@ function variantGhost(props: Dict) {
+     },
+     bg: 'transparent',
+     _web: {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+     },
+     _hover: {
+       borderColor: mode(`${c}.500`, `${c}.200`)(props),
+@@ -110,6 +110,6 @@ function variantSolid(props: Dict) {
+   const styleObject = {
+     _web: {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+     },
+     bg,
+     _hover: {
+@@ -166,7 +166,7 @@ function variantSubtle(props: Dict) {
+       color: color,
+     },
+     _web: {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+     },
+     bg,
+     _hover: {
+diff --git a/node_modules/native-base/src/theme/v33x-theme/components/input.ts b/node_modules/native-base/src/theme/v33x-theme/components/input.ts
+index e1fc405..f4f9856 100644
+--- a/node_modules/native-base/src/theme/v33x-theme/components/input.ts
++++ b/node_modules/native-base/src/theme/v33x-theme/components/input.ts
+@@ -50,7 +50,7 @@ const baseStyle = (props: Record<string, any>) => {
+       borderColor: mode('primary.400', 'primary.500')(props),
+     },
+     _web: {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+       overflow: 'auto',
+       lineHeight: 'lg', // Todo: Move to _web inside size so that sm and xs don't have this much height
+       outline: 'none',
+diff --git a/node_modules/native-base/src/utils/resolveStackStyleInput.ts b/node_modules/native-base/src/utils/resolveStackStyleInput.ts
+index 358f797..2759469 100644
+--- a/node_modules/native-base/src/utils/resolveStackStyleInput.ts
++++ b/node_modules/native-base/src/utils/resolveStackStyleInput.ts
+@@ -1,7 +1,7 @@
+ export const resolveStackStyleInput = (variant: any, color: any) => {
+   if (variant === 'underlined') {
+     return {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+       boxShadow: `0 1px 0 0 ${color}`,
+     };
+   } else if (variant === 'unstyled') {
+@@ -10,7 +10,7 @@ export const resolveStackStyleInput = (variant: any, color: any) => {
+     };
+   } else {
+     return {
+-      outlineWidth: '0',
++      outlineWidth: 0,
+       boxShadow: `0 0 0 1px ${color}`,
+     };
+   }
+diff --git a/node_modules/native-base/src/utils/useResponsiveQuery/common.ts b/node_modules/native-base/src/utils/useResponsiveQuery/common.ts
+index a8123c0..a9f0689 100644
+--- a/node_modules/native-base/src/utils/useResponsiveQuery/common.ts
++++ b/node_modules/native-base/src/utils/useResponsiveQuery/common.ts
+@@ -72,8 +72,8 @@ export const useDimensionsWithEnable = ({ enable }: { enable?: boolean }) => {
+           setDimensions(window);
+         }
+       }
+-      Dimensions.addEventListener('change', handleChange);
++      const subscription = Dimensions.addEventListener('change', handleChange);
+       // We might have missed an update between calling `get` in render and
+       // `addEventListener` in this handler, so we set it here. If there was
+       // no change, React will filter out this update as a no-op.
+       handleChange({ window: Dimensions.get('window') });
+@@ -81,8 +81,8 @@ export const useDimensionsWithEnable = ({ enable }: { enable?: boolean }) => {
+       return () => {
+-        Dimensions.removeEventListener('change', handleChange);
++        subscription.remove();
+       };
+     }
+     return () => {};
+   }, [dimensions, enable]);
+   return dimensions;
+ };
