@@ -9,7 +9,11 @@ import { Dimensions } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { SafeAreaProvider, Metrics } from 'react-native-safe-area-context';
 import Reader, { ReaderRef } from '~/components/Reader';
-import { resolveDragTargetIndex, DRAG_PAGE_THRESHOLD_RATIO } from '~/utils';
+import {
+  resolveDragTargetIndex,
+  DRAG_PAGE_THRESHOLD_RATIO,
+  getReaderPrefetchUris,
+} from '~/utils';
 
 const windowWidth = Dimensions.get('window').width;
 const threshold = windowWidth * DRAG_PAGE_THRESHOLD_RATIO;
@@ -30,6 +34,7 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('@shopify/flash-list', () => {
   const mockReact = require('react');
   const FlashList = mockReact.forwardRef((props: any, ref: any) => {
+    mockStore.__flashListRenderCount += 1;
     mockStore.__flashListProps = props;
     mockReact.useImperativeHandle(ref, () => ({
       scrollToIndex: (args: any) => {
@@ -57,16 +62,17 @@ const makeData = (count: number) =>
     chapterHash: 'chapter#1',
   }));
 
-const renderReader = (ref: React.RefObject<ReaderRef | null>, data = makeData(5)) => {
+const renderReader = (ref: React.RefObject<ReaderRef | null>, data = makeData(5), initPage = 0) => {
   let tree: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(
       <SafeAreaProvider initialMetrics={initialMetrics}>
-        <Reader ref={ref} data={data} cache={mockCache} />
+        <Reader ref={ref} data={data} initPage={initPage} cache={mockCache} />
       </SafeAreaProvider>
     );
   });
   renderedReaders.push(tree!);
+  return tree!;
 };
 
 describe('resolveDragTargetIndex 纯函数', () => {
@@ -112,11 +118,38 @@ describe('resolveDragTargetIndex 纯函数', () => {
   });
 });
 
+describe('getReaderPrefetchUris 预取窗口', () => {
+  it('优先保留前后相邻页，并额外预取后一页', () => {
+    const data = makeData(6);
+
+    expect(getReaderPrefetchUris(data, 2)).toEqual([
+      'https://example.com/3.jpg',
+      'https://example.com/1.jpg',
+      'https://example.com/4.jpg',
+    ]);
+  });
+
+  it('在边界内过滤解密图和 base64 图', () => {
+    const data = [
+      ...makeData(3),
+      { ...makeData(1)[0], uri: 'https://example.com/3.jpg', needUnscramble: true },
+      { ...makeData(1)[0], uri: 'https://example.com/4.jpg', isBase64Image: true },
+    ];
+
+    expect(getReaderPrefetchUris(data, 0)).toEqual([
+      'https://example.com/1.jpg',
+      'https://example.com/2.jpg',
+    ]);
+    expect(getReaderPrefetchUris(data, 2)).toEqual(['https://example.com/1.jpg']);
+  });
+});
+
 describe('Reader 组件', () => {
   beforeEach(() => {
     mockStore.__scrollToIndexCalls = [];
     mockStore.__scrollToOffsetCalls = [];
     mockStore.__flashListProps = undefined;
+    mockStore.__flashListRenderCount = 0;
   });
 
   afterEach(() => {
@@ -134,11 +167,28 @@ describe('Reader 组件', () => {
     expect(mockStore.__scrollToOffsetCalls).toEqual([{ offset: 120, animated: false }]);
   });
 
-  it('横向模式未开启 pagingEnabled（惯性由松手决策取代）', () => {
+  it('横向模式无惯性，并保留小幅离屏绘制距离用于相邻页预加载', () => {
     const ref = React.createRef<ReaderRef>();
     renderReader(ref);
     expect(mockStore.__flashListProps.pagingEnabled).toBeUndefined();
     expect(mockStore.__flashListProps.horizontal).toBe(true);
+    expect(mockStore.__flashListProps.drawDistance).toBe(64);
+  });
+
+  it('父页面仅更新 initPage 时不重渲染图片列表', () => {
+    const ref = React.createRef<ReaderRef>();
+    const data = makeData(5);
+    const tree = renderReader(ref, data, 0);
+
+    act(() => {
+      tree.update(
+        <SafeAreaProvider initialMetrics={initialMetrics}>
+          <Reader ref={ref} data={data} initPage={3} cache={mockCache} />
+        </SafeAreaProvider>
+      );
+    });
+
+    expect(mockStore.__flashListRenderCount).toBe(1);
   });
 
   it('短距离拖拽松手瞬时回当前页（animated: false）', () => {

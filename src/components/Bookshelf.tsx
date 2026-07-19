@@ -2,12 +2,12 @@ import React, { memo, useMemo } from 'react';
 import { useDelayRender, useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import { Box, Text, Icon, HStack, VStack, Pressable } from 'native-base';
 import { Keyboard, StyleSheet } from 'react-native';
-import { CachedImage } from '@georstat/react-native-image-cache';
 import { FlashList } from '@shopify/flash-list';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import Loading from '~/components/Loading';
 import Empty from '~/components/Empty';
+import StaticCachedImage from '~/components/StaticCachedImage';
 import { useBackgroundColor } from '~/utils/theme/hooks';
 
 /** 书架行高（固定）：小封面 + 标题/来源/状态 */
@@ -144,14 +144,9 @@ const Bookshelf = ({
               borderColor="gray.200"
               bg={isSelected ? 'gray.200' : 'white'}
             >
-              <Box
-                style={styles.cover}
-                borderWidth={1}
-                borderColor="black"
-                overflow="hidden"
-              >
-                <CachedImage
-                  options={{ headers: item.headers }}
+              <Box style={styles.cover} borderWidth={1} borderColor="black" overflow="hidden">
+                <StaticCachedImage
+                  headers={item.headers}
                   source={item.bookCover || item.infoCover || item.cover || ''}
                   style={styles.img}
                   resizeMode="contain"

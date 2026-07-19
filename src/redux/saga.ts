@@ -40,6 +40,7 @@ import { Storage, KeyValuePair } from '~/utils/storage';
 import base64 from 'base-64';
 import dayjs from 'dayjs';
 import Share from 'react-native-share';
+import { buildChapterIndex, buildMangaIndex, buildProgressPairs } from './persistence';
 
 import rootSchema from '~/schema/root.json';
 import dictSchema from '~/schema/dict.json';
@@ -213,6 +214,7 @@ function migratePluginTask(task: RootState['task']): RootState['task'] {
     list,
     job: {
       ...task.job,
+      max: Math.min(Math.max(Number(task.job.max) || initialState.task.job.max, 1), 2),
       list: jobs,
       thread: task.job.thread.filter((item) => taskIds.has(item.taskId) && jobIds.has(item.jobId)),
     },
@@ -285,7 +287,10 @@ function* syncDataSaga() {
         storageKey.setting,
         storageKey.dict,
       ]);
-      const task: RootState['task'] = { list: [], job: { max: 5, list: [], thread: [] } };
+      const task: RootState['task'] = {
+        list: [],
+        job: { max: initialState.task.job.max, list: [], thread: [] },
+      };
 
       if (!dictData) {
         const dict: RootState['dict'] = { manga: {}, chapter: {}, lastWatch: {}, record: {} };
@@ -457,15 +462,13 @@ function* restoreSaga() {
 }
 
 function* saveData() {
-  const favorites = ((state: RootState) => state.favorites)(yield select());
-  const dict = ((state: RootState) => state.dict)(yield select());
-  const plugin = ((state: RootState) => state.plugin)(yield select());
-  const setting = ((state: RootState) => state.setting)(yield select());
-  const task = ((state: RootState) => state.task)(yield select());
+  yield call(waitForInteractions);
+  const rootState = ((state: RootState) => state)(yield select());
 
   const fn = () => {
-    const mangaIndex: string[] = [];
-    const chapterIndex: string[] = [];
+    const { favorites, dict, plugin, setting, task } = rootState;
+    const mangaIndex = buildMangaIndex(rootState);
+    const chapterIndex = buildChapterIndex(rootState);
     const taskIndex: string[] = [];
     const jobIndex: string[] = [];
     const mangaDict: Record<string, any> = {};
@@ -473,23 +476,16 @@ function* saveData() {
     const taskDict: Record<string, any> = {};
     const jobDict: Record<string, any> = {};
 
-    favorites.forEach(({ mangaHash }) => {
+    mangaIndex.forEach((mangaHash) => {
       const manga = dict.manga[mangaHash];
       const lastWatch = dict.lastWatch[mangaHash];
-      if (nonNullable(manga) || nonNullable(lastWatch)) {
-        mangaDict[mangaHash] = { manga, lastWatch };
-        mangaIndex.push(mangaHash);
-      }
-      if (nonNullable(manga)) {
-        manga.chapters.forEach(({ hash: chapterHash }) => {
-          const chapter = dict.chapter[chapterHash];
-          const record = dict.record[chapterHash];
-          if (nonNullable(chapter) || nonNullable(record)) {
-            chapterDict[chapterHash] = { chapter, record };
-            chapterIndex.push(chapterHash);
-          }
-        });
-      }
+      mangaDict[mangaHash] = { manga, lastWatch };
+    });
+    chapterIndex.forEach((chapterHash) => {
+      chapterDict[chapterHash] = {
+        chapter: dict.chapter[chapterHash],
+        record: dict.record[chapterHash],
+      };
     });
     task.list.forEach((item) => {
       taskDict[item.taskId] = item;
@@ -519,8 +515,135 @@ function* saveData() {
     });
   };
 
-  // 9MB 大小的备份数据可以优化 100ms 性能，大概 6fps
-  yield call(InteractionManager.runAfterInteractions, { name: 'saveData', gen: fn });
+  yield call(fn);
+}
+
+const waitForInteractions = () =>
+  new Promise<void>((resolve) => {
+    InteractionManager.runAfterInteractions(() => resolve());
+  });
+
+const saveProgressWorker = (function () {
+  const mangaHashes = new Set<string>();
+  const chapterHashes = new Set<string>();
+  let rebuildIndexes = false;
+  let isPending = false;
+
+  return function* ({ type, payload }: PayloadAction<any>) {
+    if (type === viewChapter.type || type === viewPage.type) {
+      mangaHashes.add(payload.mangaHash);
+    } else if (type === viewImage.type) {
+      chapterHashes.add(payload.chapterHash);
+    } else if (type === loadSearchCompletion.type || type === loadDiscoveryCompletion.type) {
+      if (!haveError(payload)) {
+        payload.data.forEach((manga: IncreaseManga) => mangaHashes.add(manga.hash));
+      }
+    } else if (type === loadMangaCompletion.type) {
+      if (!haveError(payload)) {
+        mangaHashes.add(payload.data.hash);
+        rebuildIndexes = true;
+      }
+    } else if (type === loadChapterCompletion.type) {
+      const chapterHash = payload.data?.hash || payload.actionId;
+      if (chapterHash) {
+        chapterHashes.add(chapterHash);
+        rebuildIndexes = true;
+      }
+    }
+
+    if (isPending || (mangaHashes.size === 0 && chapterHashes.size === 0)) {
+      return;
+    }
+
+    isPending = true;
+    try {
+      yield delay(250);
+      while (mangaHashes.size > 0 || chapterHashes.size > 0) {
+        const dirtyManga = Array.from(mangaHashes);
+        const dirtyChapter = Array.from(chapterHashes);
+        const shouldRebuildIndexes = rebuildIndexes;
+        mangaHashes.clear();
+        chapterHashes.clear();
+        rebuildIndexes = false;
+
+        yield call(waitForInteractions);
+        const state = ((root: RootState) => root)(yield select());
+        const pairs = buildProgressPairs(state, dirtyManga, dirtyChapter);
+        if (shouldRebuildIndexes) {
+          pairs.push(
+            [storageKey.mangaIndex, JSON.stringify(buildMangaIndex(state))],
+            [storageKey.chapterIndex, JSON.stringify(buildChapterIndex(state))]
+          );
+        }
+        if (pairs.length > 0) {
+          yield call(Storage.multiSet, pairs);
+        }
+
+        if (mangaHashes.size > 0 || chapterHashes.size > 0) {
+          yield delay(250);
+        }
+      }
+    } finally {
+      isPending = false;
+    }
+  };
+})();
+
+function* saveProgressSaga() {
+  yield takeEverySuspense(
+    [
+      viewChapter.type,
+      viewPage.type,
+      viewImage.type,
+      loadSearchCompletion.type,
+      loadDiscoveryCompletion.type,
+      loadMangaCompletion.type,
+      loadChapterCompletion.type,
+    ],
+    saveProgressWorker
+  );
+}
+
+function* saveSettingSaga() {
+  yield takeLatestSuspense(
+    [
+      setMode.type,
+      setPageKeys.type,
+      setDirection.type,
+      setSequence.type,
+      setSeat.type,
+      setTimer.type,
+      setTimerGap.type,
+      setAndroidDownloadPath.type,
+    ],
+    function* () {
+      yield call(waitForInteractions);
+      const setting = ((state: RootState) => state.setting)(yield select());
+      yield call(Storage.setItem, storageKey.setting, JSON.stringify(setting));
+    }
+  );
+}
+
+function* savePluginSaga() {
+  yield takeLatestSuspense(
+    [setSource.type, setExtra.type, sortPlugin.type, disablePlugin.type],
+    function* () {
+      yield call(waitForInteractions);
+      const plugin = ((state: RootState) => state.plugin)(yield select());
+      yield call(Storage.setItem, storageKey.plugin, JSON.stringify(plugin));
+    }
+  );
+}
+
+function* saveFavoritesSaga() {
+  yield takeLatestSuspense(
+    [viewFavorites.type, enabledBatch.type, disabledBatch.type],
+    function* () {
+      yield call(waitForInteractions);
+      const favorites = ((state: RootState) => state.favorites)(yield select());
+      yield call(Storage.setItem, storageKey.favorites, JSON.stringify(favorites));
+    }
+  );
 }
 const saveDataWorker = (function () {
   let count = 0;
@@ -545,30 +668,8 @@ function* saveDataSaga() {
     [
       clearCacheCompletion.type,
       restoreCompletion.type,
-      setMode.type,
-      setPageKeys.type,
-      setDirection.type,
-      setSequence.type,
-      setSeat.type,
-      setTimer.type,
-      setTimerGap.type,
-      setAndroidDownloadPath.type,
-      setSource.type,
-      setExtra.type,
-      sortPlugin.type,
-      disablePlugin.type,
-      viewChapter.type,
-      viewPage.type,
-      viewImage.type,
-      viewFavorites.type,
       addFavorites.type,
       removeFavorites.type,
-      enabledBatch.type,
-      disabledBatch.type,
-      loadSearchCompletion.type,
-      loadDiscoveryCompletion.type,
-      loadMangaCompletion.type,
-      loadChapterCompletion.type,
       pushTask.type,
       removeTask.type,
       finishTask.type,
@@ -914,7 +1015,12 @@ function* loadChapterSaga() {
       const plugin = PluginMap.get(source);
 
       if (!plugin) {
-        yield put(loadChapterCompletion({ error: new Error(ErrorMessage.PluginMissing) }));
+        yield put(
+          loadChapterCompletion({
+            error: new Error(ErrorMessage.PluginMissing),
+            actionId: chapterHash,
+          })
+        );
         return;
       }
 
@@ -957,15 +1063,20 @@ function* loadChapterSaga() {
       }
 
       if (error) {
-        yield put(loadChapterCompletion({ error }));
+        yield put(loadChapterCompletion({ error, actionId: chapterHash }));
         return;
       }
       if (!chapter) {
-        yield put(loadChapterCompletion({ error: new Error(ErrorMessage.MissingChapterInfo) }));
+        yield put(
+          loadChapterCompletion({
+            error: new Error(ErrorMessage.MissingChapterInfo),
+            actionId: chapterHash,
+          })
+        );
         return;
       }
 
-      yield put(loadChapterCompletion({ error, data: chapter }));
+      yield put(loadChapterCompletion({ error, data: chapter, actionId: chapterHash }));
     }
   );
 }
@@ -1023,11 +1134,19 @@ function* replaceDownloadPath(
   }
   return path;
 }
-function* fileDownload({ source, headers }: { source: string; headers?: Record<string, string> }) {
-  const blob: string | undefined = yield call(CacheManager.prefetchBlob, source, { headers });
-  if (blob === undefined) {
+export function* fileDownload({
+  source,
+  headers,
+}: {
+  source: string;
+  headers?: Record<string, string>;
+}) {
+  const cacheEntry = CacheManager.get(source, { headers });
+  const path: string | undefined = yield call(cacheEntry.getPath.bind(cacheEntry));
+  if (!path) {
     throw new Error('图片加载失败');
   }
+  return path;
 }
 function* checkAndroidPermission() {
   // https://stackoverflow.com/questions/76116840/write-external-storage-permission-is-always-blocked-in-react-native-android-plat
@@ -1055,19 +1174,16 @@ function* checkAndroidPath(path: string) {
   }
 }
 function* fileExport({
-  source,
+  path,
   chapterHash,
   downloadPath,
   filename,
 }: {
-  source: string;
+  path: string;
   chapterHash: string;
   downloadPath: string;
   filename?: string;
 }) {
-  const cacheEntry = CacheManager.get(source, undefined);
-  const path: string = yield call(cacheEntry.getPath.bind(cacheEntry));
-
   if (Platform.OS === 'ios') {
     const [pluginId, mangaId] = splitHash(chapterHash);
     const mangaHash = combineHash(pluginId, mangaId);
@@ -1105,8 +1221,8 @@ function* thread() {
         throw new Error(ErrorMessage.ExecutionJobFail);
       }
 
-      const { timeout } = yield race({
-        download: call(fileDownload, { source, headers }),
+      const { cachedPath, timeout } = yield race({
+        cachedPath: call(fileDownload, { source, headers }),
         timeout: delay(10000),
       });
       if (timeout) {
@@ -1116,7 +1232,7 @@ function* thread() {
       yield put(viewImage({ chapterHash, index, isVisited: false }));
       if (type === TaskType.Export) {
         yield call(fileExport, {
-          source,
+          path: cachedPath,
           filename: String(index),
           chapterHash,
           downloadPath: task.downloadPath,
@@ -1239,9 +1355,7 @@ function* saveImageSaga() {
           'base64'
         );
       } else {
-        yield call(fileDownload, { source, headers });
-        const cacheEntry = CacheManager.get(source, undefined);
-        path = yield call(cacheEntry.getPath.bind(cacheEntry));
+        path = yield call(fileDownload, { source, headers });
       }
 
       // https://storage-b.picacomic.com/static/36ec684d-82e8-4c0d-b164-745ce93070e6.png
@@ -1333,6 +1447,10 @@ export default function* rootSaga() {
     fork(backupSaga),
     fork(restoreSaga),
     fork(saveDataSaga),
+    fork(saveProgressSaga),
+    fork(saveSettingSaga),
+    fork(savePluginSaga),
+    fork(saveFavoritesSaga),
     fork(clearCacheSaga),
     fork(loadLatestReleaseSaga),
     fork(batchUpdateSaga),

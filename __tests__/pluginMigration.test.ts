@@ -69,5 +69,6 @@ test('删除漫画源后清理旧数据并回退当前源', () => {
   expect(Object.keys(migrated.dict.lastWatch)).toEqual([mbzMangaHash]);
   expect(migrated.task.list.map((item) => item.taskId)).toEqual(['mbz-task']);
   expect(migrated.task.job.list.map((item) => item.jobId)).toEqual(['mbz-job']);
+  expect(migrated.task.job.max).toBe(2);
   expect(migrated.task.job.thread).toEqual([{ taskId: 'mbz-task', jobId: 'mbz-job' }]);
 });

@@ -59,7 +59,9 @@ export const useSplitWidth = ({
         })
       );
     }, 1000);
-    return () => timeout && clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+    };
   }, [insets, windowDimensions, gap, width, reservedWidth, minNumColumns, maxSplitWidth]);
 
   return split;

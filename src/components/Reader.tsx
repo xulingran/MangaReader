@@ -27,6 +27,17 @@ import Controller, { LongPressController } from '~/components/Controller';
 import ComicImage, { ImageState } from '~/components/ComicImage';
 import Cache from '~/utils/cache';
 
+/**
+ * 保留一个很小的离屏绘制缓冲。横向页占满整个视口，只要越过边界少量像素，
+ * RecyclerListView 就会保留前后相邻页；无需把完整屏宽都作为 render-ahead。
+ */
+const READER_DRAW_DISTANCE = 64;
+const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+const imageKeyExtractor = (item: { uri: string }) => item.uri;
+const multipleKeyExtractor = (item: { uri: string }[]) => item.map(({ uri }) => uri).join('#');
+const VerticalListHeader = () => <Box height={0} safeAreaTop />;
+const VerticalListFooter = () => <Box height={0} safeAreaBottom />;
+
 export interface ReaderProps {
   initPage?: number;
   inverted?: boolean;
@@ -114,6 +125,14 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
   const horizontalStateRef = useRef<(ImageState | null)[]>([]);
   const verticalStateRef = useRef<(ImageState | null)[]>([]);
   const multipleStateRef = useRef<Record<string, ImageState | null>[]>([]);
+  const extraData = useMemo(
+    () => ({ inverted, onTap, onLongPress, onImageLoad }),
+    [inverted, onTap, onLongPress, onImageLoad]
+  );
+  const estimatedListSize = useMemo(
+    () => ({ width: windowWidth, height: windowHeight }),
+    [windowWidth, windowHeight]
+  );
 
   // 横向模式拖拽定位：记录拖动起始 offset 与起始 index
   const dragStartXRef = useRef<number | null>(null);
@@ -226,89 +245,43 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
 
   // https://github.com/Shopify/flash-list/issues/637
   // onViewableItemsChanged is bound in constructor and do not get updated when those props change
-  const HandleViewableItemsChanged = ({
-    viewableItems,
-  }: {
-    viewableItems: ViewToken[];
-    changed: ViewToken[];
-  }) => {
-    if (!viewableItems || viewableItems.length <= 0) {
-      return;
-    }
+  const handleViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[]; changed: ViewToken[] }) => {
+      if (!viewableItems || viewableItems.length <= 0) {
+        return;
+      }
 
-    const last = viewableItems[viewableItems.length - 1];
-    currentIndexRef.current = last.index || 0;
-    onPageChangeRef.current && onPageChangeRef.current(last.index || 0);
-  };
-  const HandleMultipleViewableItemsChanged = ({
-    viewableItems,
-  }: {
-    viewableItems: ViewToken[];
-    changed: ViewToken[];
-  }) => {
-    if (!viewableItems || viewableItems.length <= 0) {
-      return;
-    }
+      const last = viewableItems[viewableItems.length - 1];
+      currentIndexRef.current = last.index || 0;
+      onPageChangeRef.current && onPageChangeRef.current(last.index || 0);
+    },
+    []
+  );
+  const handleMultipleViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[]; changed: ViewToken[] }) => {
+      if (!viewableItems || viewableItems.length <= 0) {
+        return;
+      }
 
-    const last = viewableItems[viewableItems.length - 1];
-    currentIndexRef.current = last.index || 0;
-    onPageChangeRef.current && onPageChangeRef.current(last.item[0].pre + last.item[0].current - 1);
-  };
-  const renderHorizontalItem = ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
-    const { uri, scrambleType, needUnscramble, isBase64Image = false } = item;
-    const horizontalState = horizontalStateRef.current[index] || undefined;
-    return (
-      <Controller
-        horizontal
-        onTap={onTap}
-        onLongPress={(position) => onLongPress && onLongPress(position, horizontalState?.dataUrl)}
-        onZoomStart={onZoomStart}
-        onZoomEnd={onZoomEnd}
-        safeAreaType={SafeArea.All}
-      >
-        <ComicImage
-          uri={uri}
-          index={index}
-          scrambleType={scrambleType}
-          needUnscramble={needUnscramble}
-          isBase64Image={isBase64Image}
-          headers={headers}
-          prevState={horizontalState}
-          defaultPortraitHeight={defaultPortraitHeightRef.current}
-          defaultLandscapeHeight={defaultLandscapeHeightRef.current}
-          layoutMode={LayoutMode.Horizontal}
-          onChange={(state, idx = index) => {
-            horizontalStateRef.current[idx] = state;
-            onImageLoad && onImageLoad(uri, item.chapterHash, item.current);
-          }}
-        />
-      </Controller>
-    );
-  };
-  const renderVerticalItem = ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
-    const { uri, scrambleType, needUnscramble, isBase64Image = false } = item;
-    const verticalState = verticalStateRef.current[index] || undefined;
-    const cacheState = cache.getImageState(uri);
-    return (
-      <Box
-        overflow="hidden"
-        style={{
-          height:
-            orientation === Orientation.Portrait
-              ? verticalState?.portraitHeight ||
-                cacheState?.portraitHeight ||
-                defaultPortraitHeightRef.current
-              : verticalState?.landscapeHeight ||
-                cacheState?.landscapeHeight ||
-                defaultLandscapeHeightRef.current,
-        }}
-      >
+      const last = viewableItems[viewableItems.length - 1];
+      currentIndexRef.current = last.index || 0;
+      onPageChangeRef.current &&
+        onPageChangeRef.current(last.item[0].pre + last.item[0].current - 1);
+    },
+    []
+  );
+  const renderHorizontalItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
+      const { uri, scrambleType, needUnscramble, isBase64Image = false } = item;
+      const horizontalState = horizontalStateRef.current[index] || undefined;
+      return (
         <Controller
+          horizontal
           onTap={onTap}
-          onLongPress={(position) => onLongPress && onLongPress(position, verticalState?.dataUrl)}
+          onLongPress={(position) => onLongPress && onLongPress(position, horizontalState?.dataUrl)}
           onZoomStart={onZoomStart}
           onZoomEnd={onZoomEnd}
-          safeAreaType={SafeArea.X}
+          safeAreaType={SafeArea.All}
         >
           <ComicImage
             uri={uri}
@@ -317,84 +290,168 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
             needUnscramble={needUnscramble}
             isBase64Image={isBase64Image}
             headers={headers}
-            prevState={verticalState}
+            prevState={horizontalState}
             defaultPortraitHeight={defaultPortraitHeightRef.current}
             defaultLandscapeHeight={defaultLandscapeHeightRef.current}
-            layoutMode={LayoutMode.Vertical}
+            layoutMode={LayoutMode.Horizontal}
+            onRelease={(idx = index) => {
+              horizontalStateRef.current[idx] = null;
+            }}
             onChange={(state, idx = index) => {
-              cache.setImageState(uri, state);
-              verticalStateRef.current[idx] = state;
+              horizontalStateRef.current[idx] = state;
               onImageLoad && onImageLoad(uri, item.chapterHash, item.current);
-
-              const defaultHeight = getDefaultFillMedianHeight(
-                verticalStateRef.current.filter(
-                  (imageState): imageState is ImageState => imageState !== null
-                ),
-                { portrait: portraitHeight, landscape: landscapeHeight }
-              );
-              defaultPortraitHeightRef.current = defaultHeight.portrait;
-              defaultLandscapeHeightRef.current = defaultHeight.landscape;
             }}
           />
         </Controller>
-      </Box>
-    );
-  };
-  const renderMultipleItem = ({ item, index }: ListRenderItemInfo<(typeof multipleData)[0]>) => {
-    return (
-      <Controller
-        horizontal
-        safeAreaType={SafeArea.All}
-        onTap={onTap}
-        onZoomStart={onZoomStart}
-        onZoomEnd={onZoomEnd}
-      >
-        <Flex w="full" h="full" flexDirection="row" alignItems="center" justifyContent="center">
-          {item.map(
-            ({
-              uri,
-              scrambleType,
-              needUnscramble,
-              chapterHash,
-              current,
-              isBase64Image = false,
-            }) => {
-              const multipleState = (multipleStateRef.current[index] || [])[uri] || undefined;
-              return (
-                <Box key={uri}>
-                  <LongPressController
-                    onLongPress={() =>
-                      onLongPress && onLongPress(PositionX.Mid, multipleState?.dataUrl)
-                    }
-                  >
-                    <ComicImage
-                      uri={uri}
-                      index={index}
-                      scrambleType={scrambleType}
-                      needUnscramble={needUnscramble}
-                      isBase64Image={isBase64Image}
-                      headers={headers}
-                      prevState={multipleState}
-                      defaultPortraitHeight={defaultPortraitHeightRef.current}
-                      defaultLandscapeHeight={defaultLandscapeHeightRef.current}
-                      layoutMode={LayoutMode.Multiple}
-                      onChange={(state, idx = index) => {
-                        if (typeof multipleStateRef.current[idx] !== 'object') {
-                          multipleStateRef.current[idx] = {};
-                        }
-                        multipleStateRef.current[idx][uri] = state;
-                        onImageLoad && onImageLoad(uri, chapterHash, current);
-                      }}
-                    />
-                  </LongPressController>
-                </Box>
-              );
-            }
-          )}
-        </Flex>
-      </Controller>
-    );
-  };
+      );
+    },
+    [headers, onImageLoad, onLongPress, onTap, onZoomEnd, onZoomStart]
+  );
+  const renderVerticalItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
+      const { uri, scrambleType, needUnscramble, isBase64Image = false } = item;
+      const verticalState = verticalStateRef.current[index] || undefined;
+      const cacheState = cache.getImageState(uri);
+      return (
+        <Box
+          overflow="hidden"
+          style={{
+            height:
+              orientation === Orientation.Portrait
+                ? verticalState?.portraitHeight ||
+                  cacheState?.portraitHeight ||
+                  defaultPortraitHeightRef.current
+                : verticalState?.landscapeHeight ||
+                  cacheState?.landscapeHeight ||
+                  defaultLandscapeHeightRef.current,
+          }}
+        >
+          <Controller
+            onTap={onTap}
+            onLongPress={(position) => onLongPress && onLongPress(position, verticalState?.dataUrl)}
+            onZoomStart={onZoomStart}
+            onZoomEnd={onZoomEnd}
+            safeAreaType={SafeArea.X}
+          >
+            <ComicImage
+              uri={uri}
+              index={index}
+              scrambleType={scrambleType}
+              needUnscramble={needUnscramble}
+              isBase64Image={isBase64Image}
+              headers={headers}
+              prevState={verticalState}
+              defaultPortraitHeight={defaultPortraitHeightRef.current}
+              defaultLandscapeHeight={defaultLandscapeHeightRef.current}
+              layoutMode={LayoutMode.Vertical}
+              onRelease={(idx = index) => {
+                verticalStateRef.current[idx] = null;
+              }}
+              onChange={(state, idx = index) => {
+                cache.setImageState(uri, state);
+                verticalStateRef.current[idx] = state;
+                onImageLoad && onImageLoad(uri, item.chapterHash, item.current);
+
+                const defaultHeight = getDefaultFillMedianHeight(
+                  verticalStateRef.current.filter(
+                    (imageState): imageState is ImageState => imageState !== null
+                  ),
+                  { portrait: portraitHeight, landscape: landscapeHeight }
+                );
+                defaultPortraitHeightRef.current = defaultHeight.portrait;
+                defaultLandscapeHeightRef.current = defaultHeight.landscape;
+              }}
+            />
+          </Controller>
+        </Box>
+      );
+    },
+    [
+      cache,
+      headers,
+      landscapeHeight,
+      onImageLoad,
+      onLongPress,
+      onTap,
+      onZoomEnd,
+      onZoomStart,
+      orientation,
+      portraitHeight,
+    ]
+  );
+  const renderMultipleItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<(typeof multipleData)[0]>) => {
+      return (
+        <Controller
+          horizontal
+          safeAreaType={SafeArea.All}
+          onTap={onTap}
+          onZoomStart={onZoomStart}
+          onZoomEnd={onZoomEnd}
+        >
+          <Flex w="full" h="full" flexDirection="row" alignItems="center" justifyContent="center">
+            {item.map(
+              ({
+                uri,
+                scrambleType,
+                needUnscramble,
+                chapterHash,
+                current,
+                isBase64Image = false,
+              }) => {
+                const multipleState = (multipleStateRef.current[index] || [])[uri] || undefined;
+                return (
+                  <Box key={uri}>
+                    <LongPressController
+                      onLongPress={() =>
+                        onLongPress && onLongPress(PositionX.Mid, multipleState?.dataUrl)
+                      }
+                    >
+                      <ComicImage
+                        uri={uri}
+                        index={index}
+                        scrambleType={scrambleType}
+                        needUnscramble={needUnscramble}
+                        isBase64Image={isBase64Image}
+                        headers={headers}
+                        prevState={multipleState}
+                        defaultPortraitHeight={defaultPortraitHeightRef.current}
+                        defaultLandscapeHeight={defaultLandscapeHeightRef.current}
+                        layoutMode={LayoutMode.Multiple}
+                        onRelease={(idx = index) => {
+                          if (multipleStateRef.current[idx]) {
+                            multipleStateRef.current[idx][uri] = null;
+                          }
+                        }}
+                        onChange={(state, idx = index) => {
+                          if (typeof multipleStateRef.current[idx] !== 'object') {
+                            multipleStateRef.current[idx] = {};
+                          }
+                          multipleStateRef.current[idx][uri] = state;
+                          onImageLoad && onImageLoad(uri, chapterHash, current);
+                        }}
+                      />
+                    </LongPressController>
+                  </Box>
+                );
+              }
+            )}
+          </Flex>
+        </Controller>
+      );
+    },
+    [headers, onImageLoad, onLongPress, onTap, onZoomEnd, onZoomStart]
+  );
+  const overrideItemLayout = useCallback(
+    (layout: { size?: number }, item: (typeof data)[0]) => {
+      const state = cache.getImageState(item.uri);
+      if (state) {
+        layout.size =
+          orientation === Orientation.Portrait ? state.portraitHeight : state.landscapeHeight;
+      }
+    },
+    [cache, orientation]
+  );
 
   if (layoutMode === LayoutMode.Multiple) {
     return (
@@ -404,19 +461,20 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={multipleData}
         inverted={inverted}
         horizontal
-        extraData={{ inverted, onTap, onLongPress, onImageLoad }}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        extraData={extraData}
+        viewabilityConfig={viewabilityConfig}
+        drawDistance={READER_DRAW_DISTANCE}
         initialScrollIndex={initialScrollIndex}
         estimatedItemSize={windowWidth}
-        estimatedListSize={{ width: windowWidth, height: windowHeight }}
+        estimatedListSize={estimatedListSize}
         onScroll={onScroll}
         onScrollBeginDrag={handleScrollBeginDrag}
         onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={3}
-        onViewableItemsChanged={HandleMultipleViewableItemsChanged}
+        onViewableItemsChanged={handleMultipleViewableItemsChanged}
         renderItem={renderMultipleItem}
-        keyExtractor={(item) => item.map((i) => i.uri).join('#')}
+        keyExtractor={multipleKeyExtractor}
       />
     );
   }
@@ -429,19 +487,20 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={data}
         inverted={inverted}
         horizontal
-        extraData={{ inverted, onTap, onLongPress, onImageLoad }}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
+        extraData={extraData}
+        viewabilityConfig={viewabilityConfig}
+        drawDistance={READER_DRAW_DISTANCE}
         initialScrollIndex={initialScrollIndex}
         estimatedItemSize={windowWidth}
-        estimatedListSize={{ width: windowWidth, height: windowHeight }}
+        estimatedListSize={estimatedListSize}
         onScroll={onScroll}
         onScrollBeginDrag={handleScrollBeginDrag}
         onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={5}
-        onViewableItemsChanged={HandleViewableItemsChanged}
+        onViewableItemsChanged={handleViewableItemsChanged}
         renderItem={renderHorizontalItem}
-        keyExtractor={(item) => item.uri}
+        keyExtractor={imageKeyExtractor}
       />
     );
   }
@@ -452,29 +511,43 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       ref={flashListRef}
       data={data}
       inverted={inverted}
-      extraData={{ inverted, onTap, onLongPress, onImageLoad }}
+      extraData={extraData}
+      drawDistance={READER_DRAW_DISTANCE}
       initialScrollIndex={initialScrollIndex}
       estimatedItemSize={(windowHeight * 3) / 5}
-      estimatedListSize={{ width: windowWidth, height: windowHeight }}
+      estimatedListSize={estimatedListSize}
       onScroll={onScroll}
       onScrollBeginDrag={onScrollBeginDrag}
       onScrollEndDrag={onScrollEndDrag}
       onEndReached={onLoadMore}
       onEndReachedThreshold={5}
-      onViewableItemsChanged={HandleViewableItemsChanged}
+      onViewableItemsChanged={handleViewableItemsChanged}
       renderItem={renderVerticalItem}
-      keyExtractor={(item) => item.uri}
-      ListHeaderComponent={<Box height={0} safeAreaTop />}
-      ListFooterComponent={<Box height={0} safeAreaBottom />}
-      overrideItemLayout={(layout, item) => {
-        const state = cache.getImageState(item.uri);
-        if (state) {
-          layout.size =
-            orientation === Orientation.Portrait ? state.portraitHeight : state.landscapeHeight;
-        }
-      }}
+      keyExtractor={imageKeyExtractor}
+      ListHeaderComponent={VerticalListHeader}
+      ListFooterComponent={VerticalListFooter}
+      overrideItemLayout={overrideItemLayout}
     />
   );
 };
 
-export default memo(forwardRef(Reader));
+const areReaderPropsEqual = (previous: ReaderProps, next: ReaderProps) =>
+  previous.inverted === next.inverted &&
+  previous.seat === next.seat &&
+  previous.layoutMode === next.layoutMode &&
+  previous.data === next.data &&
+  previous.headers === next.headers &&
+  previous.onTap === next.onTap &&
+  previous.onLongPress === next.onLongPress &&
+  previous.onImageLoad === next.onImageLoad &&
+  previous.onPageChange === next.onPageChange &&
+  previous.onLoadMore === next.onLoadMore &&
+  previous.onZoomStart === next.onZoomStart &&
+  previous.onZoomEnd === next.onZoomEnd &&
+  previous.onScroll === next.onScroll &&
+  previous.onScrollBeginDrag === next.onScrollBeginDrag &&
+  previous.onScrollEndDrag === next.onScrollEndDrag &&
+  previous.cache === next.cache;
+
+// initPage 只在挂载时生效；翻页后忽略它，避免父页面进度更新让可见图片重新渲染。
+export default memo(forwardRef(Reader), areReaderPropsEqual);

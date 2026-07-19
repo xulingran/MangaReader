@@ -10,6 +10,7 @@ import {
   PageKeys,
   Timer,
   PageKeyDirection,
+  getReaderPrefetchUris,
 } from '~/utils';
 import Cache from '~/utils/cache';
 import {
@@ -93,9 +94,15 @@ const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) 
 const Chapter = ({ route, navigation }: StackChapterProps) => {
   const { mangaHash, chapterHash: initChapterHash, page: initPage } = route.params || {};
   const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const dispatch = useAppDispatch();
   const { isOpen, onOpen, onClose } = useDisclose();
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
+  const onOpenRef = useRef(onOpen);
+  const onMenuCloseRef = useRef(onMenuClose);
+  onOpenRef.current = onOpen;
+  onMenuCloseRef.current = onMenuClose;
   const { isOpen: isJumpOpen, onOpen: onJumpOpen, onClose: onJumpClose } = useDisclose();
   const {
     isOpen: isTimerGapOpen,
@@ -201,22 +208,26 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     timer === Timer.Enable && timerSwitch,
     timerGap
   );
-  // 仅预取下一页（电子墨水版内存控制）
-  useEffect(() => {
-    const nextImage = data[page + 1];
-    if (nextImage && !nextImage.needUnscramble && !nextImage.isBase64Image) {
-      CacheManager.prefetch(nextImage.uri, { headers });
-    }
-  }, [page, data, headers]);
+  const prefetchKey = useMemo(
+    () => getReaderPrefetchUris(data, page).join('\u0000'),
+    [data, page]
+  );
 
-  const handlePrevPage = () => {
+  // 前后相邻页由 Reader 保持挂载；磁盘层再多准备后一页，窗口固定且不解码离屏加密图。
+  useEffect(() => {
+    if (prefetchKey) {
+      CacheManager.prefetch(prefetchKey.split('\u0000'), { headers });
+    }
+  }, [prefetchKey, headers]);
+
+  const handlePrevPage = useCallback(() => {
     if (mode !== LayoutMode.Multiple) {
       readerRef.current?.scrollToIndex(Math.max(page - 1, 0));
     } else {
       readerRef.current?.scrollToIndex(Math.max(multiplePre + Math.ceil(current / 2) - 2, 0));
     }
-  };
-  const handleNextPage = () => {
+  }, [current, mode, multiplePre, page]);
+  const handleNextPage = useCallback(() => {
     if (mode !== LayoutMode.Multiple) {
       readerRef.current?.scrollToIndex(Math.min(page + 1, Math.max(data.length - 1, 0)));
     } else {
@@ -225,8 +236,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         Math.min(multiplePre + Math.ceil(current / 2), Math.max(multipleMax - 1, 0))
       );
     }
-  };
-  const handlePrevChapter = () => {
+  }, [current, data, mode, multiplePre, page]);
+  const handlePrevChapter = useCallback(() => {
     if (prev) {
       setChapterHash(prev.hash);
       setHashList([prev.hash]);
@@ -234,10 +245,10 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       readerRef.current?.clearStateRef();
       readerRef.current?.scrollToIndex(0);
     } else {
-      toast.show({ title: '第一话' });
+      toastRef.current.show({ title: '第一话' });
     }
-  };
-  const handleNextChapter = () => {
+  }, [prev]);
+  const handleNextChapter = useCallback(() => {
     if (next) {
       setChapterHash(next.hash);
       setHashList([next.hash]);
@@ -245,69 +256,88 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       readerRef.current?.clearStateRef();
       readerRef.current?.scrollToIndex(0);
     } else {
-      toast.show({ title: '最后一话' });
+      toastRef.current.show({ title: '最后一话' });
     }
-  };
-  const handleTap = (position: PositionX) => {
-    if (position === PositionX.Mid) {
-      setShowExtra(!showExtra);
-      showExtra && onMenuClose();
-    }
-    if (inverted) {
-      if (position === PositionX.Right) {
-        handlePrevPage();
+  }, [next]);
+  const handleTap = useCallback(
+    (position: PositionX) => {
+      if (position === PositionX.Mid) {
+        setShowExtra((isVisible) => {
+          isVisible && onMenuCloseRef.current();
+          return !isVisible;
+        });
       }
-      if (position === PositionX.Left) {
-        handleNextPage();
+      if (inverted) {
+        if (position === PositionX.Right) {
+          callbackRef.current?.('previous');
+        }
+        if (position === PositionX.Left) {
+          callbackRef.current?.('next');
+        }
+      } else {
+        if (position === PositionX.Left) {
+          callbackRef.current?.('previous');
+        }
+        if (position === PositionX.Right) {
+          callbackRef.current?.('next');
+        }
       }
-    } else {
-      if (position === PositionX.Left) {
-        handlePrevPage();
+    },
+    [inverted]
+  );
+  const handleLongPress = useCallback(
+    (position: PositionX, source?: string) => {
+      if (position === PositionX.Mid) {
+        sourceRef.current = source || '';
+        onOpenRef.current();
       }
-      if (position === PositionX.Right) {
-        handleNextPage();
+      if (inverted) {
+        if (position === PositionX.Right) {
+          handlePrevChapter();
+        }
+        if (position === PositionX.Left) {
+          handleNextChapter();
+        }
+      } else {
+        if (position === PositionX.Left) {
+          handlePrevChapter();
+        }
+        if (position === PositionX.Right) {
+          handleNextChapter();
+        }
       }
-    }
-  };
-  const handleLongPress = (position: PositionX, source?: string) => {
-    if (position === PositionX.Mid) {
-      sourceRef.current = source || '';
-      onOpen();
-    }
-    if (inverted) {
-      if (position === PositionX.Right) {
-        handlePrevChapter();
+    },
+    [handleNextChapter, handlePrevChapter, inverted]
+  );
+  const handleImageLoad = useCallback(
+    (_uri: string, hash: string, index: number) => {
+      dispatch(viewImage({ chapterHash: hash, index }));
+    },
+    [dispatch]
+  );
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      const image = data[newPage];
+      if (newPage >= data.length - 1 && !next && !toastRef.current.isActive(lastPageToastId)) {
+        toastRef.current.show({ id: lastPageToastId, title: '最后一页' });
       }
-      if (position === PositionX.Left) {
-        handleNextChapter();
-      }
-    } else {
-      if (position === PositionX.Left) {
-        handlePrevChapter();
-      }
-      if (position === PositionX.Right) {
-        handleNextChapter();
-      }
-    }
-  };
-  const handleImageLoad = (_uri: string, hash: string, index: number) => {
-    dispatch(viewImage({ chapterHash: hash, index }));
-  };
-  const handlePageChange = (newPage: number) => {
-    const image = data[newPage];
-    if (newPage >= data.length - 1 && !next && !toast.isActive(lastPageToastId)) {
-      toast.show({ id: lastPageToastId, title: '最后一页' });
-    }
 
-    setChapterHash(image.chapterHash);
-    setPage(newPage);
-  };
-  const handleLoadMore = () => {
+      setChapterHash(image.chapterHash);
+      setPage(newPage);
+    },
+    [data, next]
+  );
+  const handleLoadMore = useCallback(() => {
     if (more && !hashList.includes(more.hash)) {
       setHashList([...hashList, more.hash]);
       !chapterDict[more.hash] && dispatch(loadChapter({ chapterHash: more.hash }));
     }
-  };
+  }, [chapterDict, dispatch, hashList, more]);
+
+  const handleScrollBeginDrag = useCallback(() => setTimerSwitch(false), []);
+  const handleScrollEndDrag = useCallback(() => setTimerSwitch(true), []);
+  const handleZoomStart = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
+  const handleZoomEnd = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
 
   const handleImageSave = () => {
     if (sourceRef.current !== '') {
@@ -465,10 +495,10 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
           onImageLoad={handleImageLoad}
           onPageChange={handlePageChange}
           onLoadMore={handleLoadMore}
-          onScrollBeginDrag={() => setTimerSwitch(false)}
-          onScrollEndDrag={() => setTimerSwitch(true)}
-          onZoomStart={(scale) => setTimerSwitch(scale <= 1)}
-          onZoomEnd={(scale) => setTimerSwitch(scale <= 1)}
+          onScrollBeginDrag={handleScrollBeginDrag}
+          onScrollEndDrag={handleScrollEndDrag}
+          onZoomStart={handleZoomStart}
+          onZoomEnd={handleZoomEnd}
           cache={cache}
         />
       )}

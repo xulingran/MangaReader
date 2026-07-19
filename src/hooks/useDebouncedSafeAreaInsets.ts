@@ -9,7 +9,9 @@ export const useDebouncedSafeAreaInsets = () => {
     const timeout = setTimeout(() => {
       setInsets({ ..._insets });
     }, 200);
-    return () => timeout && clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+    };
   }, [_insets]);
 
   return insets;

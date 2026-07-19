@@ -80,7 +80,8 @@ export const initialState: RootState = {
   task: {
     list: [],
     job: {
-      max: 5,
+      // 1GB 电子墨水设备：限制并发下载，避免多张大图同时占用网络与解码内存。
+      max: 2,
       list: [],
       thread: [],
     },

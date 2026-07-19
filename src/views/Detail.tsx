@@ -25,7 +25,7 @@ import { StyleSheet, RefreshControl, Linking } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
-import { CachedImage } from '@georstat/react-native-image-cache';
+import StaticCachedImage from '~/components/StaticCachedImage';
 import ActionsheetSelect, { ActionsheetSelectProps } from '~/components/ActionsheetSelect';
 import Drawer, { DRAWER_TRIGGER_WIDTH, DrawerRef } from '~/components/Drawer';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -253,8 +253,8 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   return (
     <Box w="full" h="full" bg={bg}>
       <Flex safeAreaX w="full" bg="gray.100" flexDirection="row" pl={4} pr={4} pb={4}>
-        <CachedImage
-          options={{ headers: data.headers }}
+        <StaticCachedImage
+          headers={data.headers}
           source={data.infoCover || data.bookCover || data.cover || ''}
           style={{
             ...styles.img,
@@ -483,10 +483,14 @@ export const HeartAndBrowser = () => {
 };
 
 export const PrehandleDrawer = () => {
+  const showDrawer = useAppSelector((state) => state.chapter.showDrawer);
+  return showDrawer ? <VisiblePrehandleDrawer /> : null;
+};
+
+const VisiblePrehandleDrawer = () => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.task.list);
   const openDrawer = useAppSelector((state) => state.chapter.openDrawer);
-  const showDrawer = useAppSelector((state) => state.chapter.showDrawer);
   const drawerRef = useRef<DrawerRef>(null);
   const insets = useDebouncedSafeAreaInsets();
 
@@ -549,10 +553,6 @@ export const PrehandleDrawer = () => {
       </HStack>
     );
   };
-
-  if (!showDrawer) {
-    return null;
-  }
 
   return (
     <Drawer ref={drawerRef} triggerLabel="下载列表">

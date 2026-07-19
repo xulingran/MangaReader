@@ -1,0 +1,92 @@
+diff --git a/node_modules/@georstat/react-native-image-cache/src/CacheManager.ts b/node_modules/@georstat/react-native-image-cache/src/CacheManager.ts
+index 6e85123..6497c56 100644
+--- a/node_modules/@georstat/react-native-image-cache/src/CacheManager.ts
++++ b/node_modules/@georstat/react-native-image-cache/src/CacheManager.ts
+@@ -149,6 +149,14 @@ export default class CacheManager {
+
+   static entries: { [uri: string]: CacheEntry } = {};
+
++  private static prunePromise: Promise<void> | undefined;
++
++  private static lastPruneAt = 0;
++
++  private static readonly pruneInterval = 60 * 1000;
++
++  private static readonly maxEntries = 256;
++
+   static get(
+     source: string,
+     options: DownloadOptions | undefined,
+@@ -166,11 +174,30 @@ export default class CacheManager {
+         noCache,
+         maxAge
+       );
++      CacheManager.trimEntries(source);
+       return CacheManager.entries[source];
+     }
+     return CacheManager.entries[source];
+   }
+
++  private static trimEntries(currentSource: string) {
++    const keys = Object.keys(CacheManager.entries);
++    while (keys.length > CacheManager.maxEntries) {
++      const index = keys.findIndex(source => {
++        const entry = CacheManager.entries[source];
++        return (
++          source !== currentSource &&
++          (!entry.downloadPromise || entry.pathResolved)
++        );
++      });
++      if (index < 0) {
++        return;
++      }
++      delete CacheManager.entries[keys[index]];
++      keys.splice(index, 1);
++    }
++  }
++
+   static async clearCache(): Promise<void> {
+     if (await FileSystem.exists(CacheManager.config.baseDir)) {
+       const files = await FileSystem.ls(CacheManager.config.baseDir);
+@@ -184,6 +211,8 @@ export default class CacheManager {
+         }
+       }
+     }
++    CacheManager.entries = {};
++    CacheManager.lastPruneAt = 0;
+   }
+
+   static async removeCacheEntry(entry: string): Promise<void> {
+@@ -191,6 +220,7 @@ export default class CacheManager {
+       const file = await getCacheEntry(entry);
+       const { path } = file;
+       await FileSystem.unlink(path);
++      delete CacheManager.entries[entry];
+     } catch (e) {
+       throw new Error('error while clearing image from cache');
+     }
+@@ -237,6 +267,24 @@ export default class CacheManager {
+   }
+
+   static async pruneCache() {
++    const now = Date.now();
++    if (CacheManager.prunePromise) {
++      return CacheManager.prunePromise;
++    }
++    if (now - CacheManager.lastPruneAt < CacheManager.pruneInterval) {
++      return;
++    }
++
++    CacheManager.lastPruneAt = now;
++    CacheManager.prunePromise = CacheManager.pruneCacheNow();
++    try {
++      await CacheManager.prunePromise;
++    } finally {
++      CacheManager.prunePromise = undefined;
++    }
++  }
++
++  private static async pruneCacheNow() {
+     /* If cache directory does not exist yet there's no need for pruning. */
+     if (!(await CacheManager.getCacheSize())) {
+       return;

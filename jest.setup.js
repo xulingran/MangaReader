@@ -15,9 +15,8 @@ try {
 
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 
-jest.mock(
-  '@react-native-async-storage/async-storage',
-  () => require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
 jest.mock('@react-native-cookies/cookies', () => ({
@@ -67,7 +66,7 @@ jest.mock('@georstat/react-native-image-cache', () => ({
     prefetchBlob: jest.fn(() => Promise.resolve(undefined)),
     removeCacheEntry: jest.fn(() => Promise.resolve()),
     clearCache: jest.fn(() => Promise.resolve()),
-    get: jest.fn(),
+    get: jest.fn(() => ({ getPath: jest.fn(() => Promise.resolve('/cache/images_cache/test')) })),
   },
 }));
 

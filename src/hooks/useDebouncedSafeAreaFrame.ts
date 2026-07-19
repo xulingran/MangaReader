@@ -10,7 +10,9 @@ export const useDebouncedSafeAreaFrame = () => {
     const timeout = setTimeout(() => {
       setFrame({ ..._frame });
     }, 1000);
-    return () => timeout && clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+    };
   }, [_frame]);
 
   return useMemo(() => {

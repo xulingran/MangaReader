@@ -10,7 +10,7 @@ import {
   NativeSyntheticEvent,
 } from 'react-native';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
-import { CachedImage, CacheManager } from '@georstat/react-native-image-cache';
+import { CacheManager } from '@georstat/react-native-image-cache';
 import { useFocusEffect } from '@react-navigation/native';
 import { Box, Center, Text, Icon } from 'native-base';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -18,6 +18,7 @@ import ErrorWithRetry from '~/components/ErrorWithRetry';
 import Canvas, { Image as CanvasImage } from 'react-native-canvas';
 import { Dirs, FileSystem } from 'react-native-file-access';
 import { nanoid } from '@reduxjs/toolkit';
+import StaticCachedImage from '~/components/StaticCachedImage';
 
 /** Canvas 解码像素上限：8MP */
 const maxPixelSize = 8000000;
@@ -55,6 +56,7 @@ export interface ImageProps {
   defaultPortraitHeight: number;
   defaultLandscapeHeight: number;
   onChange?: (state: ImageState, idx?: number) => void;
+  onRelease?: (idx: number) => void;
 }
 export interface ComicImageProps extends ImageProps {
   needUnscramble?: boolean;
@@ -102,7 +104,7 @@ const useFillStyle = (
   }, [layoutMode, imageState, orientation, defaultPortraitHeight, defaultLandscapeHeight]);
 };
 
-/** 普通漫画图：直接交给 CachedImage 渲染，通过 onLoad 获取尺寸，不再生成整张 base64 */
+/** 普通漫画图：使用无动画磁盘缓存组件，通过 onLoad 获取尺寸，不生成整张 base64 */
 const DefaultImage = ({
   uri,
   index,
@@ -124,6 +126,7 @@ const DefaultImage = ({
     defaultLandscapeHeight
   );
   const uriRef = useRef(uri);
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   const updateData = useCallback(
     (data: ImageState) => {
@@ -182,7 +185,10 @@ const DefaultImage = ({
     CacheManager.removeCacheEntry(uri)
       .then(() => {})
       .catch(() => {})
-      .finally(() => updateData({ ...imageState, loadStatus: AsyncStatus.Default }));
+      .finally(() => {
+        setReloadVersion((version) => version + 1);
+        updateData({ ...imageState, loadStatus: AsyncStatus.Default });
+      });
   };
 
   if (imageState.loadStatus === AsyncStatus.Rejected) {
@@ -195,9 +201,10 @@ const DefaultImage = ({
 
   return (
     <Box style={style}>
-      <CachedImage
+      <StaticCachedImage
         source={uri}
-        options={{ headers }}
+        headers={headers}
+        reloadKey={reloadVersion}
         style={styles.fill}
         resizeMode={resizeModeDict[layoutMode]}
         onLoad={handleLoad}
@@ -218,6 +225,7 @@ const ScrambleImage = ({
   defaultPortraitHeight,
   defaultLandscapeHeight,
   onChange,
+  onRelease,
   scrambleType,
 }: ImageProps & { scrambleType?: ScrambleType }) => {
   const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
@@ -238,8 +246,9 @@ const ScrambleImage = ({
     if (tempFileRef.current) {
       FileSystem.unlink(tempFileRef.current).catch(() => {});
       tempFileRef.current = null;
+      onRelease?.(index);
     }
-  }, []);
+  }, [index, onRelease]);
 
   const updateData = useCallback(
     (data: ImageState) => {
@@ -367,9 +376,9 @@ const ScrambleImage = ({
     useCallback(() => {
       return () => {
         releaseTempFile();
-        setImageState(prevState);
+        setImageState(defaultState);
       };
-    }, [prevState, releaseTempFile])
+    }, [releaseTempFile])
   );
   // 组件卸载时释放临时文件
   useEffect(() => {

@@ -9,6 +9,29 @@
 /** 触发翻页的拖动距离占屏宽比例 */
 export const DRAG_PAGE_THRESHOLD_RATIO = 0.2;
 
+/**
+ * 相邻页磁盘预取窗口：优先当前页两侧，再额外准备后两页。
+ * 只返回普通图片；解密/base64 图片仍由可见组件按需处理，避免离屏 Canvas 占用。
+ */
+export const getReaderPrefetchUris = <
+  T extends { uri: string; needUnscramble?: boolean; isBase64Image?: boolean },
+>(data: readonly T[], currentIndex: number): string[] => {
+  const indexes = [currentIndex + 1, currentIndex - 1, currentIndex + 2];
+
+  return indexes.reduce<string[]>((uris, index) => {
+    const image = data[index];
+    if (
+      image &&
+      !image.needUnscramble &&
+      !image.isBase64Image &&
+      !uris.includes(image.uri)
+    ) {
+      uris.push(image.uri);
+    }
+    return uris;
+  }, []);
+};
+
 export interface DragTargetParams {
   /** 松手时 contentOffset.x 与拖动起始时的差值 */
   deltaX: number;
