@@ -165,7 +165,7 @@ export const PluginSelect = () => {
         w={12}
         h={12}
         variant="ghost"
-        _text={{ color: 'white', textAlign: 'center', fontSize: 'sm', fontWeight: 'bold' }}
+        _text={{ color: 'black', textAlign: 'center', fontSize: 'sm', fontWeight: 'bold' }}
         onPress={() => {
           handleOpen();
           Keyboard.dismiss();

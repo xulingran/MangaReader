@@ -145,8 +145,7 @@ const Bookshelf = ({
               bg={isSelected ? 'gray.200' : 'white'}
             >
               <Box
-                width={COVER_WIDTH}
-                height={COVER_HEIGHT}
+                style={styles.cover}
                 borderWidth={1}
                 borderColor="black"
                 overflow="hidden"
@@ -155,7 +154,7 @@ const Bookshelf = ({
                   options={{ headers: item.headers }}
                   source={item.bookCover || item.infoCover || item.cover || ''}
                   style={styles.img}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
               </Box>
               <VStack flex={1} space={1}>
@@ -193,6 +192,10 @@ const Bookshelf = ({
 };
 
 const styles = StyleSheet.create({
+  cover: {
+    width: COVER_WIDTH,
+    height: COVER_HEIGHT,
+  },
   img: {
     width: '100%',
     height: '100%',
