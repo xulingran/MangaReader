@@ -140,7 +140,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const [prev, next] = usePrevNext(chapterList, chapterHash);
   const [, more] = usePrevNext(chapterList, hashList[hashList.length - 1]);
   const readerRef = useRef<ReaderRef>(null);
-  const callbackRef = useRef<(direction: PageKeyDirection) => void>();
+  const callbackRef = useRef<((direction: PageKeyDirection) => void) | undefined>(undefined);
   const sourceRef = useRef('');
   const [render, setRender] = useState(false);
   const cache = useMemo(() => new Cache(mangaHash), [mangaHash]);

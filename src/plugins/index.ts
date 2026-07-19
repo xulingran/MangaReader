@@ -22,7 +22,7 @@ export const PluginMap = new Map<Plugin, Base>([
 ]);
 export const combineHash = Base.combineHash;
 export const splitHash = Base.splitHash;
-export const defaultPlugin: Plugin = PluginMap.entries().next().value[0];
+export const defaultPlugin: Plugin = MBZ.id;
 export const defaultPluginList = Array.from(PluginMap.values()).map((item) => {
   return {
     label: item.shortName,

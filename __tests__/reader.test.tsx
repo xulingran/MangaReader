@@ -57,7 +57,7 @@ const makeData = (count: number) =>
     chapterHash: 'chapter#1',
   }));
 
-const renderReader = (ref: React.RefObject<ReaderRef>, data = makeData(5)) => {
+const renderReader = (ref: React.RefObject<ReaderRef | null>, data = makeData(5)) => {
   let tree: renderer.ReactTestRenderer;
   act(() => {
     tree = renderer.create(

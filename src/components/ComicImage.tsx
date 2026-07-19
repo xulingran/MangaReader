@@ -230,7 +230,7 @@ const ScrambleImage = ({
     defaultPortraitHeight,
     defaultLandscapeHeight
   );
-  const canvasRef = useRef<Canvas>(null);
+  const canvasRef = useRef<Canvas | null>(null);
   const uriRef = useRef(uri);
   const tempFileRef = useRef<string | null>(null);
 
@@ -399,7 +399,12 @@ const ScrambleImage = ({
     return (
       <Center style={style}>
         <StaticPlaceholder />
-        <Canvas ref={canvasRef} style={styles.canvas} />
+        <Canvas
+          ref={(canvas: Canvas | null) => {
+            canvasRef.current = canvas;
+          }}
+          style={styles.canvas}
+        />
       </Center>
     );
   }

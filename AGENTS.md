@@ -17,9 +17,10 @@
 
 ## 技术栈
 
-- **React Native 0.72.10** + React 18.2 + TypeScript 4.8.4（Node >= 18，`.nvmrc` 指定 18.16.1）
+- **React Native 0.81.6** + React 19.1.4 + TypeScript 5.9.3（Node >= 20.19.4，`.nvmrc` 指定 24.18.0）
+- **Android 构建基线**：minSdk 24（覆盖 Android 9 / API 28）、compileSdk / targetSdk 36、Gradle 8.14.3、Android Gradle Plugin 8.11.0、Kotlin 2.1.20、NDK 27.1；当前保留旧架构（`newArchEnabled=false`）作为迁移阶段
 - **状态管理**：Redux Toolkit + redux-saga（`src/redux/`），dev 环境启用 redux-logger；jest 环境下不启动 saga（`store.ts`）
-- **UI**：NativeBase 3.4（通过 patch-package 打了补丁，见 `patches/native-base+3.4.28.patch`，移除了 SSRProvider）、react-navigation（native-stack）、react-native-reanimated（仅保留缩放/平移的直接操控）、@shopify/flash-list
+- **UI**：NativeBase 3.4（通过 patch-package 打了补丁，见 `patches/native-base+3.4.28.patch`，移除了 SSRProvider）、react-navigation（native-stack）、react-native-reanimated 3.19（仅保留缩放/平移的直接操控）、@shopify/flash-list 1.8
 - **抓取**：cheerio 解析 HTML，自定义 fetch 封装（`src/utils/fetch.ts`），@react-native-cookies/cookies 管理 Cookie，webview（`src/views/Webview.tsx`）用于过 Cloudflare 校验和登录
 - **存储**：react-native-mmkv（`src/utils/storage.ts` 封装，可切换回 AsyncStorage）、react-native-file-access 读写下载文件、@georstat/react-native-image-cache 图片缓存
 - **包管理**：只能用 yarn（`preinstall` 钩子里 `only-allow yarn` 强制）
@@ -33,6 +34,7 @@ yarn android               # 运行 Android debug 包
 yarn build-android         # 打包 Android release（cd android && ./gradlew assembleRelease）
 yarn build-android-sideload # 打包个人侧载 APK（assembleSideload：继承 release 优化 + debug 签名）
 yarn lint                  # eslint 校验 **/*.{ts,tsx}
+yarn typecheck             # TypeScript 静态类型检查
 yarn test                  # jest
 yarn jsonschema            # 重新生成 src/schema/*.json（见下文「状态与 Schema」）
 yarn clean                 # react-native-clean-project 深度清理

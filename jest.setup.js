@@ -84,8 +84,8 @@ jest.mock('@react-native-camera-roll/camera-roll', () => ({
   CameraRoll: { save: jest.fn(() => Promise.resolve('')) },
 }));
 
-jest.mock('react-native-document-picker', () => ({
-  default: { pickSingle: jest.fn() },
+jest.mock('@react-native-documents/picker', () => ({
+  pick: jest.fn(),
 }));
 
 jest.mock('react-native-canvas', () => ({

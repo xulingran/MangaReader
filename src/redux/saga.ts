@@ -35,7 +35,7 @@ import { action, initialState } from './slice';
 import { Dirs, FileSystem } from 'react-native-file-access';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
-import DocumentPicker, { DocumentPickerResponse } from 'react-native-document-picker';
+import { pick, type DocumentPickerResponse } from '@react-native-documents/picker';
 import { Storage, KeyValuePair } from '~/utils/storage';
 import base64 from 'base-64';
 import dayjs from 'dayjs';
@@ -424,7 +424,7 @@ function* backupSaga() {
 function* restoreSaga() {
   yield takeLatestSuspense(restore.type, function* () {
     try {
-      const res: DocumentPickerResponse = yield call(DocumentPicker.pickSingle);
+      const [res]: [DocumentPickerResponse, ...DocumentPickerResponse[]] = yield call(pick);
       const source: string = yield call(FileSystem.readFile, res.uri, 'base64');
       const data = JSON.parse(
         decodeURIComponent(base64.decode(source.replace('datatext/plainbase64', '')))
@@ -1029,7 +1029,8 @@ function* fileDownload({ source, headers }: { source: string; headers?: Record<s
 }
 function* checkAndroidPermission() {
   // https://stackoverflow.com/questions/76116840/write-external-storage-permission-is-always-blocked-in-react-native-android-plat
-  if (Platform.OS === 'android' && Platform.Version <= 29) {
+  // Android 9（API 28）仍需传统写入权限；API 29 起该权限不再授予给 target 36 应用。
+  if (Platform.OS === 'android' && Platform.Version <= 28) {
     const writePermission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
     const hasPermission: boolean = yield call(PermissionsAndroid.check, writePermission);
     if (!hasPermission) {
