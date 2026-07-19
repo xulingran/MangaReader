@@ -50,7 +50,7 @@ android/app/src/main/java/com/mangareader/
 src/
 ├── App.tsx            # 导航与 Provider 组装（animation: 'none'）；底部导出 *StateType 供 schema 生成用
 ├── plugins/           # 插件系统（核心）：base.ts 定义抽象基类 Base 与 Plugin 枚举，
-│                      # 其余每个文件对应一个漫画源（mbz、mhgm、bzm、rm5），
+│                      # 其余每个文件对应一个漫画源（mbz、mhgm、bzm、rm5、hcomic、bika、nh、moeimg），
 │                      # index.ts 汇总为 PluginMap
 ├── redux/             # slice.ts（单一 rootSlice + initialState）、saga.ts（全部副作用，
 │                      # 约 1200 行：抓取、持久化、批量更新、下载/导出任务、备份恢复）、store.ts

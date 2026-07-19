@@ -175,14 +175,21 @@ function migratePluginState(pluginState: RootState['plugin']): RootState['plugin
     ];
   });
 
+  const legacyBikaToken = pluginState.extra.bikaToken || pluginState.extra.picaToken;
+
   return {
     source: PluginMap.has(pluginState.source)
       ? pluginState.source
       : list[0]?.value || initialState.plugin.source,
     list,
-    // 剩余插件均不使用额外登录数据，移除已删除源遗留的 Cookie/Token。
-    extra: {},
+    // Bika 继续使用本地 Token；兼容旧 PICA 插件的 picaToken 字段。
+    extra:
+      typeof legacyBikaToken === 'string' && legacyBikaToken ? { bikaToken: legacyBikaToken } : {},
   };
+}
+
+export function syncPluginExtraData(extra: RootState['plugin']['extra']): void {
+  PluginMap.forEach((plugin) => plugin.syncExtraData(extra));
 }
 
 function migratePluginDict(dict: RootState['dict']): RootState['dict'] {
@@ -351,6 +358,7 @@ function* syncDataSaga() {
       if (pluginData) {
         const plugin = migratePluginState(JSON.parse(pluginData));
         if (validate(plugin, pluginSchema)) {
+          syncPluginExtraData(plugin.extra);
           yield put(syncPlugin(plugin));
         } else {
           yield put(toastMessage('同步插件数据失败：格式错误'));
@@ -429,6 +437,7 @@ function* restoreSaga() {
       }
 
       yield put(syncFavorites(data.favorites));
+      syncPluginExtraData(data.plugin.extra);
       yield put(syncPlugin(data.plugin));
       yield put(syncSetting(data.setting));
       yield put(syncTask(data.task));
@@ -570,6 +579,7 @@ function* saveDataSaga() {
 function* clearCacheSaga() {
   yield takeLatestSuspense(clearCache.type, function* () {
     yield call(Storage.clear);
+    syncPluginExtraData({});
     yield put(syncData());
     yield take(syncDataCompletion.type);
     yield put(clearCacheCompletion({}));

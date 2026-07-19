@@ -55,9 +55,13 @@ test('删除漫画源后清理旧数据并回退当前源', () => {
     Plugin.MHGM,
     Plugin.RM5,
     Plugin.BZM,
+    Plugin.HCOMIC,
+    Plugin.BIKA,
+    Plugin.NH,
+    Plugin.MOEIMG,
   ]);
   expect(migrated.plugin.list[0].disabled).toBe(true);
-  expect(migrated.plugin.extra).toEqual({});
+  expect(migrated.plugin.extra).toEqual({ bikaToken: 'legacy-token' });
   expect(migrated.favorites.map((item) => item.mangaHash)).toEqual([mbzMangaHash]);
   expect(Object.keys(migrated.dict.manga)).toEqual([mbzMangaHash]);
   expect(Object.keys(migrated.dict.chapter)).toEqual([mbzChapterHash]);

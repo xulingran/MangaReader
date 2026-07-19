@@ -29,6 +29,10 @@ export enum Plugin {
   MBZ = 'MBZ',
   BZM = 'BZM',
   RM5 = 'RM5',
+  HCOMIC = 'HCOMIC',
+  BIKA = 'BIKA',
+  NH = 'NH',
+  MOEIMG = 'MOEIMG',
 }
 
 export enum Options {

@@ -139,7 +139,11 @@
                 "MHGM",
                 "MBZ",
                 "BZM",
-                "RM5"
+                "RM5",
+                "HCOMIC",
+                "BIKA",
+                "NH",
+                "MOEIMG"
             ],
             "type": "string"
         },

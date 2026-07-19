@@ -51,7 +51,7 @@ export enum ErrorMessage {
   WrongDataType = '错误的数据格式',
   DDoSRetry = 'KL漫画网站DDoS保护，请重试',
   NotFoundDMZJ = '未找到漫画，请在Webview里登录获取UID后再试',
-  AuthFailPICA = '哔咔漫画Token失效，请在Webview里重新获取',
+  AuthFailBIKA = '哔咔漫画 Token 失效，请在 WebView 里重新登录获取',
   WithoutPermission = '授权失败',
   PushTaskFail = '推送任务失败',
   CloudflareFail = 'cloudflare认证失败，请在Webview里重新校验',

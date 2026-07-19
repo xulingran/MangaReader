@@ -3,6 +3,10 @@ import MHGM from './mhgm';
 import MBZ from './mbz';
 import BZM from './bzm';
 import RM5 from './rm5';
+import HCOMIC from './hcomic';
+import BIKA from './bika';
+import NH from './nh';
+import MOEIMG from './moeimg';
 
 export * from './base';
 
@@ -11,6 +15,10 @@ export const PluginMap = new Map<Plugin, Base>([
   [MHGM.id, MHGM],
   [RM5.id, RM5],
   [BZM.id, BZM],
+  [HCOMIC.id, HCOMIC],
+  [BIKA.id, BIKA],
+  [NH.id, NH],
+  [MOEIMG.id, MOEIMG],
 ]);
 export const combineHash = Base.combineHash;
 export const splitHash = Base.splitHash;

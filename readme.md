@@ -7,7 +7,7 @@
 
 一个漫画 APP📱，基于 react-native 构建。**本仓库为安卓电子墨水版**：仅支持 Android，全局黑白高对比静态 UI，无任何翻页动画，适配电子纸设备（支持音量键/翻页键/方向键翻页）。
 
-- 插件式设计、四个漫画源[插件](#插件)
+- 插件式设计、八个漫画源[插件](#插件)
 - 收藏、搜索、批量更新、下载、导出
 - 翻页/条漫/平叛双页模式、无限翻页、保存图片
 - 数据全本地离线化、支持备份和恢复
@@ -22,6 +22,10 @@
 - [x] [漫画 bz](https://mangabz.com/)（需要代理）
 - [x] [包子漫画](https://cn.baozimh.com/)（不需要代理但海外 ip 会走 cloudflare，需要在 webview 里通过校验）
 - [x] [肉漫屋](https://rouman5.com/)（需要代理）
+- [x] [HComic](https://h-comic.com/)（部分页面需要代理或登录）
+- [x] [哔咔漫画](https://manhuabika.com/plogin/)（需要代理和登录）
+- [x] [nhentai](https://nhentai.net/)（需要代理）
+- [x] [MoeImg](https://moeimg.fan/)（浏览和阅读无需登录）
 
 ## 使用指南
 
