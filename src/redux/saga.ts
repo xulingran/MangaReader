@@ -1391,9 +1391,14 @@ function* taskManagerSaga() {
 }
 
 function* catchErrorSaga() {
-  yield takeEverySuspense('*', function* ({ type, payload }: PayloadAction<any>) {
+  // 高频 action（viewImage/viewPage）经此通配监听；直接用 takeEvery 而非 takeEverySuspense，
+  // 跳过 tryCatchWorker 包装，让 worker 自身在第一步判断 payload.error 是否存在并 early-return，
+  // 避免每条 action 都启动一次额外的 try/catch generator。
+  yield takeEvery('*', function* ({ type, payload }: PayloadAction<any>) {
+    if (!payload || !payload.error) {
+      return;
+    }
     if (
-      !haveError(payload) ||
       loadMangaInfoCompletion.type === type ||
       loadChapterListCompletion.type === type ||
       payload.error.message === ErrorMessage.NoMore

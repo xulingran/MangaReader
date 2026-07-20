@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { action, useAppSelector, useAppDispatch } from '~/redux';
+import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { Box, Button, HStack, useDisclose, View } from 'native-base';
 import { nonNullable, AsyncStatus } from '~/utils';
@@ -13,12 +13,11 @@ const { loadSearch, setSearchFilter } = action;
 const Search = ({ route, navigation }: StackSearchProps) => {
   const { keyword, source } = route.params;
   const dispatch = useAppDispatch();
-  const dict = useAppSelector((state) => state.dict.manga);
   const list = useAppSelector((state) => state.search.list);
   const loadStatus = useAppSelector((state) => state.search.loadStatus);
-  const searchList = useMemo(
-    () => list.map((item) => dict[item]).filter(nonNullable),
-    [dict, list]
+  // 只订阅搜索结果对应的 manga，并做浅比较；后台更新无关 manga 不触发重渲染
+  const searchList = useAppShallowSelector((state) =>
+    list.map((hash) => state.dict.manga[hash]).filter(nonNullable)
   );
   const bg = useBackgroundColor();
 

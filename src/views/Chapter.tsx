@@ -25,7 +25,7 @@ import {
   useDisclose,
 } from 'native-base';
 import { usePrevNext, usePageKeys, useDebouncedSafeAreaFrame, useInterval } from '~/hooks';
-import { action, useAppSelector, useAppDispatch } from '~/redux';
+import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useFocusEffect } from '@react-navigation/native';
 import Reader, { ReaderRef } from '~/components/Reader';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
@@ -123,14 +123,27 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const timerGap = useAppSelector((state) => state.setting.timerGap);
   const pageKeys = useAppSelector((state) => state.setting.pageKeys);
   const direction = useAppSelector((state) => state.setting.direction);
-  const mangaDict = useAppSelector((state) => state.dict.manga);
-  const chapterDict = useAppSelector((state) => state.dict.chapter);
+  // 只订阅当前漫画的章节列表，后台更新其他漫画不触发 Chapter 重渲染
+  const chapterList = useAppSelector((state) => state.dict.manga[mangaHash]?.chapters || []);
+  // 只订阅当前阅读链上的几个章节，并做浅比较；下载/批量更新其他章节不触发 Chapter 重渲染
+  const chapterSlice = useAppShallowSelector((state) =>
+    hashList.map((hash) => state.dict.chapter[hash])
+  );
+  const chapterDict = useMemo(() => {
+    const dict: Record<string, RootState['dict']['chapter'][string]> = {};
+    hashList.forEach((hash, idx) => {
+      const chapter = chapterSlice[idx];
+      if (chapter) {
+        dict[hash] = chapter;
+      }
+    });
+    return dict;
+  }, [chapterSlice, hashList]);
 
   const inverted = useMemo(
     () => mode !== LayoutMode.Vertical && direction === ReaderDirection.Left,
     [mode, direction]
   );
-  const chapterList = useMemo(() => mangaDict[mangaHash]?.chapters || [], [mangaDict, mangaHash]);
   const data = useChapterFlat(hashList, chapterDict);
   const { pre, current, multiplePre } = useMemo(
     () => data[page] || { pre: 0, current: 0, multiplePre: 0 },

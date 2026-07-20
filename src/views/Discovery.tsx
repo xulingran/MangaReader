@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, Input, Button, HStack, useDisclose } from 'native-base';
-import { action, useAppSelector, useAppDispatch } from '~/redux';
+import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { nonNullable, AsyncStatus } from '~/utils';
 import { Plugin, PluginMap } from '~/plugins';
@@ -15,13 +15,12 @@ const { loadDiscovery, setSource, setDiscoveryFilter, resetSearchFilter } = acti
 
 const Discovery = ({ navigation }: StackDiscoveryProps) => {
   const dispatch = useAppDispatch();
-  const dict = useAppSelector((state) => state.dict.manga);
   const list = useAppSelector((state) => state.discovery.list);
   const source = useAppSelector((state) => state.plugin.source);
   const loadStatus = useAppSelector((state) => state.discovery.loadStatus);
-  const updateList = useMemo(
-    () => list.map((item) => dict[item]).filter(nonNullable),
-    [dict, list]
+  // 只订阅本页可见的 hash 对应 manga，并做浅比较，避免后台 batchUpdate 更新其他漫画时触发重渲染
+  const updateList = useAppShallowSelector((state) =>
+    list.map((hash) => state.dict.manga[hash]).filter(nonNullable)
   );
   const bg = useBackgroundColor();
 

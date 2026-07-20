@@ -82,12 +82,12 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const dispatch = useAppDispatch();
   const loadStatus = useAppSelector((state) => state.manga.loadStatus);
   const loadingMangaHash = useAppSelector((state) => state.manga.loadingMangaHash);
-  const mangaDict = useAppSelector((state) => state.dict.manga);
+  // 只订阅当前漫画，后台更新其他漫画不触发 Detail 重渲染
+  const data = useAppSelector((state) => state.dict.manga[mangaHash]);
   const reocrdDict = useAppSelector((state) => state.dict.record);
   const lastWatchDict = useAppSelector((state) => state.dict.lastWatch);
   const favorites = useAppSelector((state) => state.favorites);
   const sequence = useAppSelector((state) => state.setting.sequence);
-  const data = useMemo(() => mangaDict[mangaHash], [mangaDict, mangaHash]);
   const lastWatch = useMemo(() => lastWatchDict[mangaHash] || {}, [lastWatchDict, mangaHash]);
   const extraData = useMemo(
     () => ({

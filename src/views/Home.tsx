@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback } from 'react';
-import { action, useAppSelector, useAppDispatch } from '~/redux';
+import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { nonNullable, AsyncStatus } from '~/utils';
 import { View, Text, HStack, Button, useDisclose } from 'native-base';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,7 +14,6 @@ const { batchUpdate, removeFavorites } = action;
 const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.favorites);
-  const dict = useAppSelector((state) => state.dict.manga);
   const failList = useAppSelector((state) => state.batch.fail);
   const activeList = useAppSelector((state) => state.batch.stack);
   const loadStatus = useAppSelector((state) => state.app.launchStatus);
@@ -23,9 +22,9 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   const { isOpen, onOpen, onClose } = useDisclose();
   const bg = useBackgroundColor();
 
-  const favoriteList = useMemo(
-    () => list.map((item) => dict[item.mangaHash]).filter(nonNullable),
-    [dict, list]
+  // 只订阅收藏列表中的 manga，并做浅比较；后台 batchUpdate 更新非收藏漫画不触发重渲染
+  const favoriteList = useAppShallowSelector((state) =>
+    list.map((item) => state.dict.manga[item.mangaHash]).filter(nonNullable)
   );
   const trendList = useMemo(
     () => list.filter((item) => item.isTrend).map((item) => item.mangaHash),
