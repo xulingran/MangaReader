@@ -339,16 +339,15 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const handleZoomStart = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
   const handleZoomEnd = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
 
-  const handleImageSave = () => {
+  const handleImageSave = useCallback(() => {
     if (sourceRef.current !== '') {
       dispatch(saveImage({ source: sourceRef.current, headers }));
     } else {
       toast.show({ title: '保存失败' });
     }
-  };
-
-  const handleGoBack = () => navigation.goBack();
-  const handleSeatToggle = () => {
+  }, [dispatch, headers, toast]);
+  const handleGoBack = useCallback(() => navigation.goBack(), [navigation]);
+  const handleSeatToggle = useCallback(() => {
     if (seat === MultipleSeat.AToB) {
       toast.show({ title: '双页漫画顺序: 从右向左' });
       dispatch(setSeat(MultipleSeat.BToA));
@@ -356,8 +355,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       toast.show({ title: '双页漫画顺序: 从左向右' });
       dispatch(setSeat(MultipleSeat.AToB));
     }
-  };
-  const handlePageKeysToggle = () => {
+  }, [dispatch, seat, toast]);
+  const handlePageKeysToggle = useCallback(() => {
     if (pageKeys === PageKeys.Enable) {
       toast.show({ title: '已关闭实体键翻页' });
       dispatch(setPageKeys(PageKeys.Disabled));
@@ -365,8 +364,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       toast.show({ title: '已开启实体键翻页' });
       dispatch(setPageKeys(PageKeys.Enable));
     }
-  };
-  const handleTimerToggle = () => {
+  }, [dispatch, pageKeys, toast]);
+  const handleTimerToggle = useCallback(() => {
     if (timer === Timer.Enable) {
       toast.show({ title: '已关闭定时翻页' });
       dispatch(setTimer(Timer.Disabled));
@@ -374,18 +373,21 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       toast.show({ title: `已开启定时翻页，间隔${(timerGap / 1000).toFixed(1)}s` });
       dispatch(setTimer(Timer.Enable));
     }
-  };
-  const handleOrientationToggle = () =>
-    navigation.setOptions({
-      orientation: orientation === Orientation.Portrait ? 'landscape_right' : 'portrait',
-    });
-  const handleReload = () => {
+  }, [dispatch, timer, timerGap, toast]);
+  const handleOrientationToggle = useCallback(
+    () =>
+      navigation.setOptions({
+        orientation: orientation === Orientation.Portrait ? 'landscape_right' : 'portrait',
+      }),
+    [navigation, orientation]
+  );
+  const handleReload = useCallback(() => {
     setChapterHash(chapterHash);
     setHashList([chapterHash]);
     readerRef.current?.clearStateRef();
     dispatch(loadChapter({ chapterHash }));
-  };
-  const handleDirectionToggle = () => {
+  }, [chapterHash, dispatch]);
+  const handleDirectionToggle = useCallback(() => {
     if (inverted) {
       toast.show({ title: '阅读方向: 从左向右' });
       dispatch(setDirection(ReaderDirection.Right));
@@ -393,8 +395,22 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       toast.show({ title: '阅读方向: 从右向左' });
       dispatch(setDirection(ReaderDirection.Left));
     }
-  };
-  const handleModeToggle = () => {
+  }, [dispatch, inverted, toast]);
+  const handleVertical = useCallback(() => {
+    toast.show({ title: '条漫模式' });
+    readerRef.current?.scrollToIndex(page);
+    dispatch(setMode(LayoutMode.Vertical));
+  }, [dispatch, page, toast]);
+  const handleHorizontal = useCallback(() => {
+    toast.show({ title: '翻页模式' });
+    dispatch(setMode(LayoutMode.Horizontal));
+  }, [dispatch, toast]);
+  const handleMultiple = useCallback(() => {
+    toast.show({ title: '双页模式' });
+    readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 1);
+    dispatch(setMode(LayoutMode.Multiple));
+  }, [current, dispatch, multiplePre, toast]);
+  const handleModeToggle = useCallback(() => {
     switch (mode) {
       case LayoutMode.Horizontal: {
         handleVertical();
@@ -410,52 +426,44 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         break;
       }
     }
-  };
-  const handleVertical = () => {
-    toast.show({ title: '条漫模式' });
-    readerRef.current?.scrollToIndex(page);
-    dispatch(setMode(LayoutMode.Vertical));
-  };
-  const handleHorizontal = () => {
-    toast.show({ title: '翻页模式' });
-    dispatch(setMode(LayoutMode.Horizontal));
-  };
-  const handleMultiple = () => {
-    toast.show({ title: '双页模式' });
-    readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 1);
-    dispatch(setMode(LayoutMode.Multiple));
-  };
-  const handleTimerGapOpen = () => {
+  }, [handleHorizontal, handleMultiple, handleVertical, mode]);
+  const handleTimerGapOpen = useCallback(() => {
     dispatch(setTimer(Timer.Disabled));
     onTimerGapOpen();
-  };
-  const handleTimerGapClose = (value: string) => {
-    const gap = Number(value);
+  }, [dispatch, onTimerGapOpen]);
+  const handleTimerGapClose = useCallback(
+    (value: string) => {
+      const gap = Number(value);
 
-    if (gap >= 500) {
-      dispatch(setTimerGap(gap));
-      onTimerGapClose();
-    } else {
-      toast.show({ title: '间隔不能低于500ms' });
-    }
-  };
+      if (gap >= 500) {
+        dispatch(setTimerGap(gap));
+        onTimerGapClose();
+      } else {
+        toast.show({ title: '间隔不能低于500ms' });
+      }
+    },
+    [dispatch, onTimerGapClose, toast]
+  );
   /** 数字跳页：瞬时定位，无动画 */
-  const handleJumpPage = (value: string) => {
-    const newStep = Number(value);
-    if (!Number.isInteger(newStep) || newStep < 1) {
+  const handleJumpPage = useCallback(
+    (value: string) => {
+      const newStep = Number(value);
+      if (!Number.isInteger(newStep) || newStep < 1) {
+        onJumpClose();
+        return;
+      }
+      const step = Math.min(newStep, Math.max(max, 1));
+      const newPage = pre + Math.floor(step - 1);
+      const multiplePage = multiplePre + Math.floor((step - 1) / 2);
+      if (step > max - 5) {
+        handleLoadMore();
+      }
+      setPage(newPage);
+      readerRef.current?.scrollToIndex(mode !== LayoutMode.Multiple ? newPage : multiplePage);
       onJumpClose();
-      return;
-    }
-    const step = Math.min(newStep, Math.max(max, 1));
-    const newPage = pre + Math.floor(step - 1);
-    const multiplePage = multiplePre + Math.floor((step - 1) / 2);
-    if (step > max - 5) {
-      handleLoadMore();
-    }
-    setPage(newPage);
-    readerRef.current?.scrollToIndex(mode !== LayoutMode.Multiple ? newPage : multiplePage);
-    onJumpClose();
-  };
+    },
+    [handleLoadMore, max, mode, multiplePre, onJumpClose, pre]
+  );
 
   if (data.length <= 0) {
     if (loadStatus === AsyncStatus.Pending) {

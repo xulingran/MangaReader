@@ -1,8 +1,8 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { useDelayRender, useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import { Box, Text, Icon, HStack, VStack, Pressable } from 'native-base';
 import { Keyboard, StyleSheet } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import Loading from '~/components/Loading';
@@ -87,19 +87,72 @@ const Bookshelf = ({
   );
   const bg = useBackgroundColor();
 
-  const handlePress = (hash: string) => {
-    return () => {
-      itemOnPress(hash);
-    };
-  };
-  const handleEndReached = () => {
+  const handleEndReached = useCallback(() => {
     !loading && loadMore && loadMore();
-  };
-  const handleLongPress = (hash: string) => {
-    return () => {
-      itemOnLongPress?.(hash);
-    };
-  };
+  }, [loading, loadMore]);
+
+  // renderItem 包进 useCallback：避免每次 Bookshelf 重渲染都重建 renderItem，进而触发所有可见 cell 失效。
+  // 项内 onPress/onLongPress 直接调用稳定引用的 itemOnPress/itemOnLongPress，不再生成 per-hash 闭包。
+  const renderItem = useCallback(
+    ({ item, extraData: extra }: ListRenderItemInfo<Manga>) => {
+      const status = statusOf(item.hash, extra);
+      const isSelected = extra.selected?.includes(item.hash);
+      return (
+        <Pressable
+          _pressed={{ bg: 'gray.100' }}
+          onPress={() => itemOnPress(item.hash)}
+          onLongPress={() => itemOnLongPress?.(item.hash)}
+        >
+          <HStack
+            height={BOOKSHELF_ROW_HEIGHT}
+            px={3}
+            py={2}
+            space={3}
+            alignItems="flex-start"
+            borderBottomWidth={1}
+            borderColor="gray.200"
+            bg={isSelected ? 'gray.200' : 'white'}
+          >
+            <Box style={styles.cover} borderWidth={1} borderColor="black" overflow="hidden">
+              <StaticCachedImage
+                headers={item.headers}
+                source={item.bookCover || item.infoCover || item.cover || ''}
+                style={styles.img}
+                resizeMode="contain"
+              />
+            </Box>
+            <VStack flex={1} space={1}>
+              <HStack alignItems="center" space={1}>
+                {extra.selectMode && (
+                  <Icon
+                    as={MaterialIcons}
+                    size="md"
+                    name={isSelected ? 'check-box' : 'check-box-outline-blank'}
+                    color="black"
+                  />
+                )}
+                <Text fontSize="md" fontWeight="bold" numberOfLines={1} flex={1}>
+                  {item.title || item.hash}
+                </Text>
+              </HStack>
+              <Text fontSize="sm" color="gray.600" numberOfLines={1}>
+                {item.sourceName}
+              </Text>
+              {status && !extra.selectMode && (
+                <HStack alignItems="center" space={1}>
+                  <Icon as={MaterialIcons} size="xs" name={status.icon} color="black" />
+                  <Text fontSize="xs" color="black">
+                    {status.text}
+                  </Text>
+                </HStack>
+              )}
+            </VStack>
+          </HStack>
+        </Pressable>
+      );
+    },
+    [itemOnPress, itemOnLongPress]
+  );
 
   if ((loading && list.length === 0) || !render) {
     return <Loading />;
@@ -121,70 +174,16 @@ const Bookshelf = ({
       onScroll={Keyboard.dismiss}
       onEndReached={handleEndReached}
       onEndReachedThreshold={1}
-      keyExtractor={(item) => item.hash}
+      keyExtractor={keyExtractor}
       ListFooterComponent={
         loading ? <SpinLoading height={48} safeAreaBottom /> : <Box safeAreaBottom />
       }
-      renderItem={({ item, extraData: extra }) => {
-        const status = statusOf(item.hash, extra);
-        const isSelected = extra.selected?.includes(item.hash);
-        return (
-          <Pressable
-            _pressed={{ bg: 'gray.100' }}
-            onPress={handlePress(item.hash)}
-            onLongPress={handleLongPress(item.hash)}
-          >
-            <HStack
-              height={BOOKSHELF_ROW_HEIGHT}
-              px={3}
-              py={2}
-              space={3}
-              alignItems="flex-start"
-              borderBottomWidth={1}
-              borderColor="gray.200"
-              bg={isSelected ? 'gray.200' : 'white'}
-            >
-              <Box style={styles.cover} borderWidth={1} borderColor="black" overflow="hidden">
-                <StaticCachedImage
-                  headers={item.headers}
-                  source={item.bookCover || item.infoCover || item.cover || ''}
-                  style={styles.img}
-                  resizeMode="contain"
-                />
-              </Box>
-              <VStack flex={1} space={1}>
-                <HStack alignItems="center" space={1}>
-                  {extra.selectMode && (
-                    <Icon
-                      as={MaterialIcons}
-                      size="md"
-                      name={isSelected ? 'check-box' : 'check-box-outline-blank'}
-                      color="black"
-                    />
-                  )}
-                  <Text fontSize="md" fontWeight="bold" numberOfLines={1} flex={1}>
-                    {item.title || item.hash}
-                  </Text>
-                </HStack>
-                <Text fontSize="sm" color="gray.600" numberOfLines={1}>
-                  {item.sourceName}
-                </Text>
-                {status && !extra.selectMode && (
-                  <HStack alignItems="center" space={1}>
-                    <Icon as={MaterialIcons} size="xs" name={status.icon} color="black" />
-                    <Text fontSize="xs" color="black">
-                      {status.text}
-                    </Text>
-                  </HStack>
-                )}
-              </VStack>
-            </HStack>
-          </Pressable>
-        );
-      }}
+      renderItem={renderItem}
     />
   );
 };
+
+const keyExtractor = (item: Manga) => item.hash;
 
 const styles = StyleSheet.create({
   cover: {

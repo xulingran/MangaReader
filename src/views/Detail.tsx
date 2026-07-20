@@ -151,6 +151,101 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const handleExport = () => {
     chapter && dispatch(exportChapter([chapter.hash]));
   };
+  const handleChapter = useCallback(
+    (chapterHash: string) => {
+      if (favorites.find((item) => item.mangaHash === mangaHash)) {
+        dispatch(viewFavorites(mangaHash));
+      }
+
+      navigation.navigate('Chapter', {
+        mangaHash,
+        chapterHash,
+        page: chapterHash === lastWatch.chapter ? lastWatch.page || 1 : 1,
+      });
+    },
+    [dispatch, favorites, lastWatch.chapter, lastWatch.page, mangaHash, navigation]
+  );
+
+  const renderItem = useCallback(
+    ({
+      item,
+      extraData: { width, dict, chapterHash, multiple, checkList },
+    }: ListRenderItemInfo<ChapterItem>) => {
+      const isActived = item.hash === chapterHash;
+      const isChecked = checkList.includes(item.hash);
+      const record = dict[item.hash];
+
+      const handlePress = () => {
+        if (multiple) {
+          navigation.setParams({
+            selected: isChecked
+              ? selected.filter((hash) => hash !== item.hash)
+              : [...selected, item.hash],
+          });
+        } else {
+          handleChapter(item.hash);
+        }
+      };
+      const handleLongPress = () => {
+        if (!multiple) {
+          onOpen();
+          setChapter({ hash: item.hash, title: item.title });
+        }
+      };
+
+      return (
+        <Pressable
+          _pressed={{ opacity: 0.8 }}
+          onPress={handlePress}
+          onLongPress={handleLongPress}
+          delayLongPress={200}
+        >
+          <Box w={width + gap} p={`${gap / 2}px`} position="relative">
+            <Text
+              px={1}
+              py={2}
+              position="relative"
+              bg={isActived ? 'black' : 'transparent'}
+              color={isActived ? 'white' : 'gray.600'}
+              borderColor={isActived ? 'black' : 'gray.600'}
+              overflow="hidden"
+              borderRadius="md"
+              borderWidth={0.5}
+              textAlign="center"
+              numberOfLines={1}
+              fontWeight="bold"
+            >
+              {item.title}
+            </Text>
+            {multiple && (
+              <Icon
+                as={MaterialCommunityIcons}
+                size="sm"
+                name="check-circle"
+                color={isChecked ? 'gray.500' : 'gray.400'}
+                position="absolute"
+                top={`${gap / 3}px`}
+                right={`${gap / 3}px`}
+              />
+            )}
+            {!multiple && record && record.progress >= 0 && (
+              <Icon
+                as={MaterialIcons}
+                size="xs"
+                style={{ transform: [{ rotateZ: '30deg' }] }}
+                name={record.isVisited ? 'brightness-1' : 'brightness-2'}
+                color={`gray.${Math.min(Math.floor(record.progress / 25) + 1, 5)}00`}
+                position="absolute"
+                top={`${gap / 3}px`}
+                right={`${gap / 3}px`}
+              />
+            )}
+          </Box>
+        </Pressable>
+      );
+    },
+    [gap, handleChapter, navigation, onOpen, selected]
+  );
 
   if (!nonNullable(data)) {
     return (
@@ -160,95 +255,6 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     );
   }
 
-  const handleChapter = (chapterHash: string) => {
-    if (favorites.find((item) => item.mangaHash === mangaHash)) {
-      dispatch(viewFavorites(mangaHash));
-    }
-
-    navigation.navigate('Chapter', {
-      mangaHash,
-      chapterHash,
-      page: chapterHash === lastWatch.chapter ? lastWatch.page || 1 : 1,
-    });
-  };
-
-  const renderItem = ({
-    item,
-    extraData: { width, dict, chapterHash, multiple, checkList },
-  }: ListRenderItemInfo<ChapterItem>) => {
-    const isActived = item.hash === chapterHash;
-    const isChecked = checkList.includes(item.hash);
-    const record = dict[item.hash];
-
-    const handlePress = () => {
-      if (multiple) {
-        navigation.setParams({
-          selected: isChecked
-            ? selected.filter((hash) => hash !== item.hash)
-            : [...selected, item.hash],
-        });
-      } else {
-        handleChapter(item.hash);
-      }
-    };
-    const handleLongPress = () => {
-      if (!multiple) {
-        onOpen();
-        setChapter({ hash: item.hash, title: item.title });
-      }
-    };
-
-    return (
-      <Pressable
-        _pressed={{ opacity: 0.8 }}
-        onPress={handlePress}
-        onLongPress={handleLongPress}
-        delayLongPress={200}
-      >
-        <Box w={width + gap} p={`${gap / 2}px`} position="relative">
-          <Text
-            px={1}
-            py={2}
-            position="relative"
-            bg={isActived ? 'black' : 'transparent'}
-            color={isActived ? 'white' : 'gray.600'}
-            borderColor={isActived ? 'black' : 'gray.600'}
-            overflow="hidden"
-            borderRadius="md"
-            borderWidth={0.5}
-            textAlign="center"
-            numberOfLines={1}
-            fontWeight="bold"
-          >
-            {item.title}
-          </Text>
-          {multiple && (
-            <Icon
-              as={MaterialCommunityIcons}
-              size="sm"
-              name="check-circle"
-              color={isChecked ? 'gray.500' : 'gray.400'}
-              position="absolute"
-              top={`${gap / 3}px`}
-              right={`${gap / 3}px`}
-            />
-          )}
-          {!multiple && record && record.progress >= 0 && (
-            <Icon
-              as={MaterialIcons}
-              size="xs"
-              style={{ transform: [{ rotateZ: '30deg' }] }}
-              name={record.isVisited ? 'brightness-1' : 'brightness-2'}
-              color={`gray.${Math.min(Math.floor(record.progress / 25) + 1, 5)}00`}
-              position="absolute"
-              top={`${gap / 3}px`}
-              right={`${gap / 3}px`}
-            />
-          )}
-        </Box>
-      </Pressable>
-    );
-  };
 
   return (
     <Box w="full" h="full" bg={bg}>

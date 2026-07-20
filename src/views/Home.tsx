@@ -36,25 +36,29 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
     [list]
   );
 
-  const handleDetail = (mangaHash: string) => {
-    if (isSelectMode) {
-      if (selectedManga.includes(mangaHash)) {
-        setSelectedManga(selectedManga.filter((hash) => hash !== mangaHash));
-      } else {
-        setSelectedManga([...selectedManga, mangaHash]);
+  const handleDetail = useCallback(
+    (mangaHash: string) => {
+      if (isSelectMode) {
+        setSelectedManga((prev) =>
+          prev.includes(mangaHash) ? prev.filter((hash) => hash !== mangaHash) : [...prev, mangaHash]
+        );
+        return;
       }
-      return;
-    }
-    navigate('Detail', { mangaHash });
-  };
+      navigate('Detail', { mangaHash });
+    },
+    [isSelectMode, navigate]
+  );
 
-  const handleSelect = (mangaHash: string) => {
-    if (isSelectMode) {
-      return;
-    }
-    setSelectMode(true);
-    setSelectedManga([mangaHash]);
-  };
+  const handleSelect = useCallback(
+    (mangaHash: string) => {
+      if (isSelectMode) {
+        return;
+      }
+      setSelectMode(true);
+      setSelectedManga([mangaHash]);
+    },
+    [isSelectMode]
+  );
 
   const handleCancel = useCallback(() => {
     setSelectMode(false);
@@ -143,18 +147,22 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
 
 export const SearchAndAbout = () => {
   const dispatch = useAppDispatch();
-  const { loadStatus: batchStatus, stack, queue, fail } = useAppSelector((state) => state.batch);
+  // 细粒度订阅：saga 推进 batch 队列时只让真正变化的字段触发重渲染，而不是整个 batch slice
+  const batchStatus = useAppSelector((state) => state.batch.loadStatus);
+  const stackLength = useAppSelector((state) => state.batch.stack.length);
+  const queueLength = useAppSelector((state) => state.batch.queue.length);
+  const failLength = useAppSelector((state) => state.batch.fail.length);
   const isUpdating = batchStatus === AsyncStatus.Pending;
 
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     RootNavigation.navigate('Discovery');
-  };
-  const handlePlugin = () => {
+  }, []);
+  const handlePlugin = useCallback(() => {
     RootNavigation.navigate('Plugin');
-  };
-  const handleUpdate = () => {
+  }, []);
+  const handleUpdate = useCallback(() => {
     dispatch(batchUpdate());
-  };
+  }, [dispatch]);
 
   return (
     <HStack flexShrink={0}>
@@ -164,12 +172,12 @@ export const SearchAndAbout = () => {
         <VectorIcon isDisabled={isUpdating} name="autorenew" onPress={handleUpdate} />
         {isUpdating && (
           <Text position="absolute" top={0} right={0} color="black" fontWeight="extrabold">
-            {queue.length + stack.length}
+            {queueLength + stackLength}
           </Text>
         )}
-        {!isUpdating && fail.length > 0 && (
+        {!isUpdating && failLength > 0 && (
           <Text position="absolute" top={0} right={0} color="red.400" fontWeight="extrabold">
-            {fail.length}
+            {failLength}
           </Text>
         )}
       </View>

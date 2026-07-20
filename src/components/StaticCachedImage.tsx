@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   ImageProps as NativeImageProps,
@@ -33,8 +33,13 @@ const StaticCachedImage = ({
   onError,
   ...imageProps
 }: StaticCachedImageProps) => {
-  const headersKey = JSON.stringify(
-    Object.entries(headers || {}).sort(([left], [right]) => left.localeCompare(right))
+  // headers 引用变化时才重新计算 headersKey；避免每次渲染都跑 JSON.stringify
+  const headersKey = useMemo(
+    () =>
+      JSON.stringify(
+        Object.entries(headers || {}).sort(([left], [right]) => left.localeCompare(right))
+      ),
+    [headers]
   );
   const requestKey = `${source}\u0000${headersKey}\u0000${reloadKey ?? ''}`;
   const [resolved, setResolved] = useState<{ requestKey: string; uri: string }>();
