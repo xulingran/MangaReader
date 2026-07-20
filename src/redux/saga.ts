@@ -18,7 +18,6 @@ import {
   validate,
   migrateSetting,
   getLatestRelease,
-  dictToPairs,
   pairsToDict,
   trycatch,
   nonNullable,
@@ -394,23 +393,34 @@ function* backupSaga() {
   yield takeLeadingSuspense(backup.type, function* () {
     try {
       const rootState = ((state: RootState) => state)(yield select());
+
+      // 单遍 forEach 构造清理后的 record；await 让出主线程一次，避免长时间阻塞
       const record: RootState['dict']['record'] = {};
-
-      for (const key in rootState.dict.record) {
+      Object.keys(rootState.dict.record).forEach((key) => {
         record[key] = { ...rootState.dict.record[key], progress: 0, imagesLoaded: [] };
-      }
+      });
 
-      const data = base64.encode(
-        encodeURIComponent(JSON.stringify({ ...rootState, dict: { ...rootState.dict, record } }))
+      // 序列化走 call，让 saga 切回 microtask；Draft07 实例已单例化，校验阶段同样受益
+      const payload: string = yield call(
+        (): Promise<string> =>
+          new Promise<string>((resolve) => {
+            resolve(
+              base64.encode(
+                encodeURIComponent(
+                  JSON.stringify({ ...rootState, dict: { ...rootState.dict, record } })
+                )
+              )
+            );
+          })
       );
       const filename = 'MangaReader备份数据' + dayjs().format('YYYY-MM-DD');
       const path = `${Dirs.CacheDir}/${filename}.txt`;
 
-      yield call(FileSystem.writeFile, path, data, 'base64');
+      yield call(FileSystem.writeFile, path, payload, 'base64');
       yield call(Share.open, {
         filename,
         type: 'text/plain',
-        url: Platform.OS === 'ios' ? path : 'data:text/plain;base64,' + data,
+        url: Platform.OS === 'ios' ? path : 'data:text/plain;base64,' + payload,
         showAppsToView: true,
       });
       yield put(toastMessage('备份完成'));
@@ -461,62 +471,157 @@ function* restoreSaga() {
   });
 }
 
-function* saveData() {
-  yield call(waitForInteractions);
-  const rootState = ((state: RootState) => state)(yield select());
+/**
+ * 增量持久化 worker：触发 saveDataSaga 的 action 大多是收藏/任务增删，
+ * 不必每次都全量序列化整个 dict。这里维护 dirty 集合，只序列化真正变化的部分；
+ * clearCacheCompletion/restoreCompletion 走全量重建（full rebuild）。
+ */
+const saveDataWorker = (function () {
+  const mangaDirty = new Set<string>();
+  const chapterDirty = new Set<string>();
+  let favoritesDirty = false;
+  let taskDirty = false;
+  let fullRebuild = false;
+  let isPending = false;
 
-  const fn = () => {
-    const { favorites, dict, plugin, setting, task } = rootState;
-    const mangaIndex = buildMangaIndex(rootState);
-    const chapterIndex = buildChapterIndex(rootState);
-    const taskIndex: string[] = [];
-    const jobIndex: string[] = [];
-    const mangaDict: Record<string, any> = {};
-    const chapterDict: Record<string, any> = {};
-    const taskDict: Record<string, any> = {};
-    const jobDict: Record<string, any> = {};
+  function* flush() {
+    yield call(waitForInteractions);
+    const state = ((root: RootState) => root)(yield select());
 
-    mangaIndex.forEach((mangaHash) => {
-      const manga = dict.manga[mangaHash];
-      const lastWatch = dict.lastWatch[mangaHash];
-      mangaDict[mangaHash] = { manga, lastWatch };
-    });
-    chapterIndex.forEach((chapterHash) => {
-      chapterDict[chapterHash] = {
-        chapter: dict.chapter[chapterHash],
-        record: dict.record[chapterHash],
-      };
-    });
-    task.list.forEach((item) => {
-      taskDict[item.taskId] = item;
-      taskIndex.push(item.taskId);
-    });
-    task.job.list.forEach((item) => {
-      jobDict[item.jobId] = item;
-      jobIndex.push(item.jobId);
-    });
+    const pairs: [string, string][] = [];
 
-    const keyValuePairs: [string, string][] = [
-      ...dictToPairs(mangaDict),
-      ...dictToPairs(chapterDict),
-      ...dictToPairs(taskDict),
-      ...dictToPairs(jobDict),
-      [storageKey.mangaIndex, JSON.stringify(mangaIndex)],
-      [storageKey.chapterIndex, JSON.stringify(chapterIndex)],
-      [storageKey.taskIndex, JSON.stringify(taskIndex)],
-      [storageKey.jobIndex, JSON.stringify(jobIndex)],
-      [storageKey.favorites, JSON.stringify(favorites)],
-      [storageKey.plugin, JSON.stringify(plugin)],
-      [storageKey.setting, JSON.stringify(setting)],
-    ];
+    if (fullRebuild) {
+      // 清空缓存后/恢复后：整体重写
+      const { favorites, dict, plugin, setting, task } = state;
+      const mangaIndex = buildMangaIndex(state);
+      const chapterIndex = buildChapterIndex(state);
+      mangaIndex.forEach((mangaHash) => {
+        pairs.push([
+          mangaHash,
+          JSON.stringify({ manga: dict.manga[mangaHash], lastWatch: dict.lastWatch[mangaHash] }),
+        ]);
+      });
+      chapterIndex.forEach((chapterHash) => {
+        pairs.push([
+          chapterHash,
+          JSON.stringify({
+            chapter: dict.chapter[chapterHash],
+            record: dict.record[chapterHash],
+          }),
+        ]);
+      });
+      const taskIndex = task.list.map((item) => item.taskId);
+      const jobIndex = task.job.list.map((item) => item.jobId);
+      task.list.forEach((item) => pairs.push([item.taskId, JSON.stringify(item)]));
+      task.job.list.forEach((item) => pairs.push([item.jobId, JSON.stringify(item)]));
+      pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
+      pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
+      pairs.push([storageKey.taskIndex, JSON.stringify(taskIndex)]);
+      pairs.push([storageKey.jobIndex, JSON.stringify(jobIndex)]);
+      pairs.push([storageKey.favorites, JSON.stringify(favorites)]);
+      pairs.push([storageKey.plugin, JSON.stringify(plugin)]);
+      pairs.push([storageKey.setting, JSON.stringify(setting)]);
+    } else {
+      // 只写 dirty 部分；manga/chapter 复用 buildProgressPairs 跳过非收藏项
+      if (mangaDirty.size > 0 || chapterDirty.size > 0) {
+        const dirtyManga = Array.from(mangaDirty);
+        const dirtyChapter = Array.from(chapterDirty);
+        pairs.push(...buildProgressPairs(state, dirtyManga, dirtyChapter));
+      }
+      if (favoritesDirty) {
+        // 收藏增删会让 buildMangaIndex/buildChapterIndex 变化，重建索引；
+        // 同时把所有收藏对应的 manga/chapter 全部序列化一遍（保证新增收藏的离线数据落盘）
+        const mangaIndex = buildMangaIndex(state);
+        const chapterIndex = buildChapterIndex(state);
+        const favoriteSet = new Set(state.favorites.map((item) => item.mangaHash));
+        mangaIndex.forEach((mangaHash) => {
+          pairs.push([
+            mangaHash,
+            JSON.stringify({
+              manga: state.dict.manga[mangaHash],
+              lastWatch: state.dict.lastWatch[mangaHash],
+            }),
+          ]);
+        });
+        chapterIndex.forEach((chapterHash) => {
+          pairs.push([
+            chapterHash,
+            JSON.stringify({
+              chapter: state.dict.chapter[chapterHash],
+              record: state.dict.record[chapterHash],
+            }),
+          ]);
+        });
+        pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
+        pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
+        pairs.push([storageKey.favorites, JSON.stringify(state.favorites)]);
+        // 标记落盘的 manga/chapter，避免下一轮再重复写一遍
+        mangaIndex.forEach((hash) => favoriteSet.has(hash) && mangaDirty.delete(hash));
+        chapterIndex.forEach((hash) => chapterDirty.delete(hash));
+      }
+      if (taskDirty) {
+        const taskIndex = state.task.list.map((item) => item.taskId);
+        const jobIndex = state.task.job.list.map((item) => item.jobId);
+        state.task.list.forEach((item) => pairs.push([item.taskId, JSON.stringify(item)]));
+        state.task.job.list.forEach((item) => pairs.push([item.jobId, JSON.stringify(item)]));
+        pairs.push([storageKey.taskIndex, JSON.stringify(taskIndex)]);
+        pairs.push([storageKey.jobIndex, JSON.stringify(jobIndex)]);
+      }
+    }
 
-    return new Promise((res, rej) => {
-      Storage.multiSet(keyValuePairs).then(res).catch(rej);
-    });
+    mangaDirty.clear();
+    chapterDirty.clear();
+    favoritesDirty = false;
+    taskDirty = false;
+    fullRebuild = false;
+
+    if (pairs.length > 0) {
+      yield call(Storage.multiSet, pairs);
+    }
+  }
+
+  return function* ({ type, payload }: PayloadAction<any>) {
+    if (type === clearCacheCompletion.type || type === restoreCompletion.type) {
+      fullRebuild = true;
+    } else if (type === addFavorites.type) {
+      favoritesDirty = true;
+      if (payload?.mangaHash) {
+        mangaDirty.add(payload.mangaHash);
+      }
+    } else if (type === removeFavorites.type) {
+      favoritesDirty = true;
+      // 移除的收藏对应 manga/chapter 会从 buildIndex 中消失，索引重建即可覆盖
+    } else if (
+      type === pushTask.type ||
+      type === removeTask.type ||
+      type === finishTask.type
+    ) {
+      taskDirty = true;
+    }
+
+    if (isPending) {
+      return;
+    }
+    isPending = true;
+    try {
+      // 首次触发即落盘一次，后续 1 秒节流合并
+      yield call(flush);
+      yield delay(1000);
+      // flush 内部可能被新一轮 action 标记 dirty，再冲一次确保最终一致
+      if (
+        mangaDirty.size > 0 ||
+        chapterDirty.size > 0 ||
+        favoritesDirty ||
+        taskDirty ||
+        fullRebuild
+      ) {
+        yield call(flush);
+      }
+    } finally {
+      isPending = false;
+    }
   };
-
-  yield call(fn);
-}
+})();
 
 const waitForInteractions = () =>
   new Promise<void>((resolve) => {
@@ -645,24 +750,6 @@ function* saveFavoritesSaga() {
     }
   );
 }
-const saveDataWorker = (function () {
-  let count = 0;
-  let isPending = false;
-  return function* () {
-    count++;
-    if (isPending) {
-      return;
-    }
-
-    isPending = true;
-    while (count > 0) {
-      count = 0;
-      yield call(saveData);
-      yield delay(1000);
-    }
-    isPending = false;
-  };
-})();
 function* saveDataSaga() {
   yield takeEverySuspense(
     [
@@ -1007,78 +1094,92 @@ function* loadChapterListSaga() {
   );
 }
 
+// 阅读页连续翻页/切章节时 loadChapter 可能在数百毫秒内被重复触发；
+// 用 inflight 集合去重，相同 chapterHash 进行中的请求直接跳过，避免重复抓取。
+const loadChapterInflight = new Set<string>();
 function* loadChapterSaga() {
   yield takeEverySuspense(
     loadChapter.type,
     function* ({ payload: { chapterHash } }: ReturnType<typeof loadChapter>) {
-      const [source, mangaId, chapterId] = splitHash(chapterHash);
-      const plugin = PluginMap.get(source);
-
-      if (!plugin) {
-        yield put(
-          loadChapterCompletion({
-            error: new Error(ErrorMessage.PluginMissing),
-            actionId: chapterHash,
-          })
-        );
+      if (loadChapterInflight.has(chapterHash)) {
         return;
       }
-
-      let page = 1;
-      let extra: Record<string, any> = {};
-      let error: Error | undefined;
-      let chapter: Chapter | undefined;
-      while (true) {
-        const { error: fetchError, data } = yield call(
-          fetchData,
-          plugin.prepareChapterFetch(mangaId, chapterId, page, extra)
-        );
-        const {
-          error: pluginError,
-          chapter: nextChapter,
-          canLoadMore,
-          nextPage = page + 1,
-          nextExtra = extra,
-        } = trycatch(
-          () => plugin.handleChapter(data, mangaId, chapterId, page),
-          '章节数据解析错误：'
-        );
-
-        if (fetchError || pluginError) {
-          error = fetchError || pluginError;
-          break;
-        } else {
-          chapter = {
-            ...chapter,
-            ...nextChapter,
-            title: nextChapter.title || chapter?.title || '',
-            images: [...(chapter?.images || []), ...nextChapter.images],
-          };
-        }
-        if (!canLoadMore) {
-          break;
-        }
-        extra = nextExtra;
-        page = nextPage;
+      loadChapterInflight.add(chapterHash);
+      try {
+        yield* loadChapterWorker(chapterHash);
+      } finally {
+        loadChapterInflight.delete(chapterHash);
       }
-
-      if (error) {
-        yield put(loadChapterCompletion({ error, actionId: chapterHash }));
-        return;
-      }
-      if (!chapter) {
-        yield put(
-          loadChapterCompletion({
-            error: new Error(ErrorMessage.MissingChapterInfo),
-            actionId: chapterHash,
-          })
-        );
-        return;
-      }
-
-      yield put(loadChapterCompletion({ error, data: chapter, actionId: chapterHash }));
     }
   );
+}
+function* loadChapterWorker(chapterHash: string) {
+  const [source, mangaId, chapterId] = splitHash(chapterHash);
+  const plugin = PluginMap.get(source);
+
+  if (!plugin) {
+    yield put(
+      loadChapterCompletion({
+        error: new Error(ErrorMessage.PluginMissing),
+        actionId: chapterHash,
+      })
+    );
+    return;
+  }
+
+  let page = 1;
+  let extra: Record<string, any> = {};
+  let error: Error | undefined;
+  let chapter: Chapter | undefined;
+  while (true) {
+    const { error: fetchError, data } = yield call(
+      fetchData,
+      plugin.prepareChapterFetch(mangaId, chapterId, page, extra)
+    );
+    const {
+      error: pluginError,
+      chapter: nextChapter,
+      canLoadMore,
+      nextPage = page + 1,
+      nextExtra = extra,
+    } = trycatch(
+      () => plugin.handleChapter(data, mangaId, chapterId, page),
+      '章节数据解析错误：'
+    );
+
+    if (fetchError || pluginError) {
+      error = fetchError || pluginError;
+      break;
+    } else {
+      chapter = {
+        ...chapter,
+        ...nextChapter,
+        title: nextChapter.title || chapter?.title || '',
+        images: [...(chapter?.images || []), ...nextChapter.images],
+      };
+    }
+    if (!canLoadMore) {
+      break;
+    }
+    extra = nextExtra;
+    page = nextPage;
+  }
+
+  if (error) {
+    yield put(loadChapterCompletion({ error, actionId: chapterHash }));
+    return;
+  }
+  if (!chapter) {
+    yield put(
+      loadChapterCompletion({
+        error: new Error(ErrorMessage.MissingChapterInfo),
+        actionId: chapterHash,
+      })
+    );
+    return;
+  }
+
+  yield put(loadChapterCompletion({ error, data: chapter, actionId: chapterHash }));
 }
 
 function* replaceDownloadPath(

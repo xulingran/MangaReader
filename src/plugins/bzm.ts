@@ -191,16 +191,17 @@ class BaoziManga extends Base {
     const $ = cheerio.load(text || '');
     this.checkCloudFlare($);
 
+    // 复用 root cheerio 实例，避免在循环内对每个 DOM 节点重新 cheerio.load（解析一次约 5-20ms）
     const list: IncreaseManga[] = (
       $('.classify-items > div').toArray() as cheerio.TagElement[]
     ).map((div) => {
-      const $$ = cheerio.load(div);
+      const $div = $(div);
 
-      const href = $$('.comics-card__poster').first().attr('href') || '';
-      const cover = $$('.comics-card__poster > amp-img').attr('src') || '';
-      const author = $$('.comics-card__info .tags').text().trim();
-      const title = $$('.comics-card__info .comics-card__title').text().trim();
-      const tags = ($$('.comics-card__poster .tabs .tab').toArray() as cheerio.TagElement[]).map(
+      const href = $div.find('.comics-card__poster').first().attr('href') || '';
+      const cover = $div.find('.comics-card__poster > amp-img').attr('src') || '';
+      const author = $div.find('.comics-card__info .tags').text().trim();
+      const title = $div.find('.comics-card__info .comics-card__title').text().trim();
+      const tags = ($div.find('.comics-card__poster .tabs .tab').toArray() as cheerio.TagElement[]).map(
         (span) => (span.children[0].data || '').trim()
       );
       const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
@@ -284,11 +285,11 @@ class BaoziManga extends Base {
       ] as cheerio.TagElement[]
     )
       .map((div) => {
-        const $$ = cheerio.load(div);
+        const $div = $(div);
         const [, sectionSlot, chapterSlot] =
-          ($$('a').first().attr('href') || '').match(PATTERN_SLOT) || [];
+          ($div.find('a').first().attr('href') || '').match(PATTERN_SLOT) || [];
         const chapterId = sectionSlot + '_' + chapterSlot;
-        const chapterTitle = $$('span').first().text();
+        const chapterTitle = $div.find('span').first().text();
 
         return {
           hash: Base.combineHash(this.id, mangaId, chapterId),
@@ -338,9 +339,9 @@ class BaoziManga extends Base {
     const images = (
       $('.comic-contain > div:not(#div_top_ads):not(.mobadsq)').toArray() as cheerio.TagElement[]
     ).map((div) => {
-      const $$ = cheerio.load(div);
+      const $div = $(div);
       return {
-        uri: $$('amp-img').first().attr('src') || '',
+        uri: $div.find('amp-img').first().attr('src') || '',
       };
     });
 

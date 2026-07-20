@@ -101,12 +101,35 @@ export function migrateSetting(raw: any): RootState['setting'] {
   return setting;
 }
 
+// Draft07 实例缓存：schema 在模块加载时确定，引用稳定；避免每次 validate 都重新编译
+// 708 行的 rootSchema。WeakMap 以 schema 对象为 key，schema 释放时缓存自动清理。
+const draftCache = new WeakMap<JsonSchema, Draft>();
+function getDraft(schema?: JsonSchema): Draft | undefined {
+  if (!schema) {
+    return undefined;
+  }
+  let draft = draftCache.get(schema);
+  if (!draft) {
+    draft = new Draft07(schema);
+    draftCache.set(schema, draft);
+  }
+  return draft;
+}
+
 export function validate<T = any>(
   data: T,
   schema?: JsonSchema,
-  initData?: Record<string, any>
+  initData?: Record<string, any>,
+  depth = 0
 ): data is T {
-  const jsonSchema: Draft = new Draft07(schema);
+  // 防御性深度上限：理论上 schema 完整不会无限递归，但加保护避免极端情况栈溢出
+  if (depth > 10) {
+    return false;
+  }
+  const jsonSchema = getDraft(schema);
+  if (!jsonSchema) {
+    return true;
+  }
   const errors: JsonError[] = jsonSchema.validate(data);
 
   if (nonNullable(initData) && errors.length > 0) {
@@ -125,7 +148,7 @@ export function validate<T = any>(
       value[key] = nonNullable(initDataRef) ? initDataRef[key] : undefined;
     });
 
-    return validate(data, schema);
+    return validate(data, schema, initData, depth + 1);
   }
 
   if (errors.length > 0) {

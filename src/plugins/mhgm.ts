@@ -176,15 +176,17 @@ class ManHuaGuiMobile extends Base {
     const $ = cheerio.load(text || '');
     const list: IncreaseManga[] = [];
 
+    // 复用 root cheerio 实例，避免在循环内对每个节点重新 cheerio.load
     ($('li > a').toArray() as cheerio.TagElement[]).forEach((a) => {
-      const $$ = cheerio.load(a);
+      const $a = $(a);
       const href = 'https://m.manhuagui.com' + a.attribs.href;
-      const title = $$('h3').first().text();
-      const statusLabel = $$('div.thumb i').first().text(); // 连载 or 完结
-      const cover = 'https:' + $$('div.thumb img').first().attr('data-src');
-      const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $$('dl')
+      const title = $a.find('h3').first().text();
+      const statusLabel = $a.find('div.thumb i').first().text(); // 连载 or 完结
+      const cover = 'https:' + $a.find('div.thumb img').first().attr('data-src');
+      const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $a
+        .find('dl')
         .toArray()
-        .map((dl) => cheerio.load(dl)('dd').first().text().trim());
+        .map((dl) => $(dl).find('dd').first().text().trim());
       const author = authorLabel.split(',');
       const tag = tagLabel.split(',');
       const latest = latestLabel !== '' ? latestLabel : undefined;
@@ -227,14 +229,15 @@ class ManHuaGuiMobile extends Base {
     const list: IncreaseManga[] = [];
 
     ($('ul#detail > li > a').toArray() as cheerio.TagElement[]).forEach((a) => {
-      const $$ = cheerio.load(a);
+      const $a = $(a);
       const href = 'https://m.manhuagui.com' + a.attribs.href;
-      const title = $$('h3').first().text();
-      const statusLabel = $$('div.thumb i').first().text(); // 连载 or 完结
-      const cover = 'https:' + $$('div.thumb img').first().attr('data-src');
-      const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $$('dl')
+      const title = $a.find('h3').first().text();
+      const statusLabel = $a.find('div.thumb i').first().text(); // 连载 or 完结
+      const cover = 'https:' + $a.find('div.thumb img').first().attr('data-src');
+      const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $a
+        .find('dl')
         .toArray()
-        .map((dl) => cheerio.load(dl)('dd').first().text().trim());
+        .map((dl) => $(dl).find('dd').first().text().trim());
       const author = authorLabel.split(',');
       const tag = tagLabel.split(',');
       const latest = latestLabel !== '' ? latestLabel : undefined;
@@ -299,7 +302,7 @@ class ManHuaGuiMobile extends Base {
 
     const [latest, updateTimeLabel = '', authorLabel = '', tagLabel] = $('div.cont-list dl')
       .toArray()
-      .map((dl) => cheerio.load(dl).root().text());
+      .map((dl) => $(dl).text());
     const [, tag] = tagLabel.match(PATTERN_TAG) || [];
     const [, author] = authorLabel.match(PATTERN_AUTHOR) || [];
     const [updateTime = ''] = updateTimeLabel.match(PATTERN_FULL_TIME) || [];
@@ -311,11 +314,10 @@ class ManHuaGuiMobile extends Base {
       const decodeHtml = LZString.decompressFromBase64(encodeHtml);
 
       if (decodeHtml) {
-        const $$ = cheerio.load(decodeHtml);
+        const $audit = cheerio.load(decodeHtml);
 
-        ($$('ul > li > a').toArray() as cheerio.TagElement[]).forEach((a) => {
-          const $$$ = cheerio.load(a);
-          const title = $$$('b').first().text();
+        ($audit('ul > li > a').toArray() as cheerio.TagElement[]).forEach((a) => {
+          const title = $audit(a).find('b').first().text();
           const href = 'https://m.manhuagui.com' + a.attribs.href;
           const [, chapterId] = href.match(PATTERN_CHAPTER_ID) || [];
 
@@ -330,8 +332,7 @@ class ManHuaGuiMobile extends Base {
       }
     } else {
       ($('#chapterList > ul > li > a').toArray() as cheerio.TagElement[]).forEach((a) => {
-        const $$ = cheerio.load(a);
-        const title = $$('b').first().text();
+        const title = $(a).find('b').first().text();
         const href = 'https://m.manhuagui.com' + a.attribs.href;
         const [, chapterId] = href.match(PATTERN_CHAPTER_ID) || [];
 
