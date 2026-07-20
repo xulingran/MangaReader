@@ -394,24 +394,21 @@ function* backupSaga() {
     try {
       const rootState = ((state: RootState) => state)(yield select());
 
-      // 单遍 forEach 构造清理后的 record；await 让出主线程一次，避免长时间阻塞
+      // 序列化前先让出主线程，等当前交互（按钮反馈等）完成后再开始 CPU 密集计算。
+      // 不能用 `new Promise(resolve => resolve(syncWork()))`——executor 是同步执行的，
+      // 不会把 stringify 移到其他任务。runAfterInteractions 才是真正的延迟入口。
+      yield call(waitForInteractions);
+
       const record: RootState['dict']['record'] = {};
       Object.keys(rootState.dict.record).forEach((key) => {
         record[key] = { ...rootState.dict.record[key], progress: 0, imagesLoaded: [] };
       });
 
-      // 序列化走 call，让 saga 切回 microtask；Draft07 实例已单例化，校验阶段同样受益
-      const payload: string = yield call(
-        (): Promise<string> =>
-          new Promise<string>((resolve) => {
-            resolve(
-              base64.encode(
-                encodeURIComponent(
-                  JSON.stringify({ ...rootState, dict: { ...rootState.dict, record } })
-                )
-              )
-            );
-          })
+      // Draft07 实例已单例化，校验阶段同样受益；序列化本身仍是同步操作，
+      // 但已在交互完成后执行。如未来需要进一步降低卡顿，可考虑把 stringify
+      // 分片到多个 InteractionManager 任务中（按 dict.manga 的 hash 分批）。
+      const payload = base64.encode(
+        encodeURIComponent(JSON.stringify({ ...rootState, dict: { ...rootState.dict, record } }))
       );
       const filename = 'MangaReader备份数据' + dayjs().format('YYYY-MM-DD');
       const path = `${Dirs.CacheDir}/${filename}.txt`;
@@ -488,9 +485,19 @@ const saveDataWorker = (function () {
     yield call(waitForInteractions);
     const state = ((root: RootState) => root)(yield select());
 
+    // 先把本次要消费的 dirty 状态做成快照，写入成功后再清理；
+    // 写失败时把快照合并回 dirty 集合，让下一次 flush 重试，避免静默丢失待写数据。
+    const snapshot = {
+      manga: new Set(mangaDirty),
+      chapter: new Set(chapterDirty),
+      favorites: favoritesDirty,
+      task: taskDirty,
+      fullRebuild,
+    };
+
     const pairs: [string, string][] = [];
 
-    if (fullRebuild) {
+    if (snapshot.fullRebuild) {
       // 清空缓存后/恢复后：整体重写
       const { favorites, dict, plugin, setting, task } = state;
       const mangaIndex = buildMangaIndex(state);
@@ -523,17 +530,16 @@ const saveDataWorker = (function () {
       pairs.push([storageKey.setting, JSON.stringify(setting)]);
     } else {
       // 只写 dirty 部分；manga/chapter 复用 buildProgressPairs 跳过非收藏项
-      if (mangaDirty.size > 0 || chapterDirty.size > 0) {
-        const dirtyManga = Array.from(mangaDirty);
-        const dirtyChapter = Array.from(chapterDirty);
+      if (snapshot.manga.size > 0 || snapshot.chapter.size > 0) {
+        const dirtyManga = Array.from(snapshot.manga);
+        const dirtyChapter = Array.from(snapshot.chapter);
         pairs.push(...buildProgressPairs(state, dirtyManga, dirtyChapter));
       }
-      if (favoritesDirty) {
+      if (snapshot.favorites) {
         // 收藏增删会让 buildMangaIndex/buildChapterIndex 变化，重建索引；
         // 同时把所有收藏对应的 manga/chapter 全部序列化一遍（保证新增收藏的离线数据落盘）
         const mangaIndex = buildMangaIndex(state);
         const chapterIndex = buildChapterIndex(state);
-        const favoriteSet = new Set(state.favorites.map((item) => item.mangaHash));
         mangaIndex.forEach((mangaHash) => {
           pairs.push([
             mangaHash,
@@ -555,11 +561,11 @@ const saveDataWorker = (function () {
         pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
         pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
         pairs.push([storageKey.favorites, JSON.stringify(state.favorites)]);
-        // 标记落盘的 manga/chapter，避免下一轮再重复写一遍
-        mangaIndex.forEach((hash) => favoriteSet.has(hash) && mangaDirty.delete(hash));
-        chapterIndex.forEach((hash) => chapterDirty.delete(hash));
+        // 收藏增删场景下整个收藏 manga/chapter 都已序列化，标记这些 hash 不需要再单独写
+        mangaIndex.forEach((hash) => snapshot.manga.delete(hash));
+        chapterIndex.forEach((hash) => snapshot.chapter.delete(hash));
       }
-      if (taskDirty) {
+      if (snapshot.task) {
         const taskIndex = state.task.list.map((item) => item.taskId);
         const jobIndex = state.task.job.list.map((item) => item.jobId);
         state.task.list.forEach((item) => pairs.push([item.taskId, JSON.stringify(item)]));
@@ -569,14 +575,42 @@ const saveDataWorker = (function () {
       }
     }
 
-    mangaDirty.clear();
-    chapterDirty.clear();
-    favoritesDirty = false;
-    taskDirty = false;
-    fullRebuild = false;
+    // 写入前从全局 dirty 中移除本次快照包含的项；
+    // flush 期间新到达的 action 仍会向 dirty 集合添加项，这些项不会被本次消费。
+    snapshot.manga.forEach((hash) => mangaDirty.delete(hash));
+    snapshot.chapter.forEach((hash) => chapterDirty.delete(hash));
+    if (snapshot.favorites) {
+      favoritesDirty = false;
+    }
+    if (snapshot.task) {
+      taskDirty = false;
+    }
+    if (snapshot.fullRebuild) {
+      fullRebuild = false;
+    }
 
-    if (pairs.length > 0) {
+    if (pairs.length <= 0) {
+      return;
+    }
+
+    try {
       yield call(Storage.multiSet, pairs);
+    } catch (error) {
+      // 写入失败：把本次快照合并回 dirty 集合，等待下一次 flush 重试。
+      // 注意：如果 fullRebuild 失败，重新置位即可（它本身覆盖所有数据）；
+      // 如果新 action 在 flush 期间又把 fullRebuild 置 true，这里保留 true。
+      snapshot.manga.forEach((hash) => mangaDirty.add(hash));
+      snapshot.chapter.forEach((hash) => chapterDirty.add(hash));
+      if (snapshot.favorites) {
+        favoritesDirty = true;
+      }
+      if (snapshot.task) {
+        taskDirty = true;
+      }
+      if (snapshot.fullRebuild) {
+        fullRebuild = true;
+      }
+      throw error;
     }
   }
 

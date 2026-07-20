@@ -1,5 +1,9 @@
-import { TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
-import { useRef } from 'react';
+import {
+  TypedUseSelectorHook,
+  useDispatch,
+  useSelector,
+  shallowEqual,
+} from 'react-redux';
 import { action, reducer } from './slice';
 import saga from './saga';
 import store from './store';
@@ -8,44 +12,15 @@ const useAppDispatch = () => useDispatch<typeof store.dispatch>();
 const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 
 /**
- * 浅比较包装的 selector：当返回值是数组或对象时，仅在浅比较不等时返回新引用，
- * 避免内联 selector 每次返回新数组触发组件重渲染。react-redux 8.1.3 未内置 useShallow，
- * 这里用 useRef 缓存上一次结果实现等价语义。
+ * 浅比较订阅：把 shallowEqual 作为 useSelector 的 equalityFn，让内联 selector
+ * 返回新数组/对象时仅在浅比较不等才触发组件重渲染。
+ *
+ * 注意：必须把 shallowEqual 直接传给 useSelector（在 useSyncExternalStoreWithSelector
+ * 内部比较，渲染前拦截），而不能在外面用 useRef 比较——后者时已晚，React 已经调度了一次渲染。
+ * react-redux 8.1.3 未内置 useShallow，但 shallowEqual 是公开导出的，等价语义。
  */
 export function useAppShallowSelector<T>(selector: (state: RootState) => T): T {
-  const value = useSelector(selector);
-  const ref = useRef<T>(value);
-  if (!shallowEqual(ref.current, value)) {
-    ref.current = value;
-  }
-  return ref.current;
-}
-
-function shallowEqual<T>(a: T, b: T): boolean {
-  if (Object.is(a, b)) {
-    return true;
-  }
-  if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
-    return false;
-  }
-  const keysA = Object.keys(a as Record<string, unknown>);
-  const keysB = Object.keys(b as Record<string, unknown>);
-  if (keysA.length !== keysB.length) {
-    return false;
-  }
-  for (let i = 0; i < keysA.length; i++) {
-    const key = keysA[i];
-    if (
-      !Object.prototype.hasOwnProperty.call(b as Record<string, unknown>, key) ||
-      !Object.is(
-        (a as Record<string, unknown>)[key],
-        (b as Record<string, unknown>)[key]
-      )
-    ) {
-      return false;
-    }
-  }
-  return true;
+  return useSelector(selector, shallowEqual);
 }
 
 export { action, reducer, store, saga, useAppSelector, useAppDispatch };

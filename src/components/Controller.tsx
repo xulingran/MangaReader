@@ -1,4 +1,4 @@
-import React, { ReactNode, memo, useCallback, useMemo, useRef } from 'react';
+import React, { ReactNode, memo, useCallback, useMemo, useRef, useState } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
 import { useDebouncedSafeAreaInsets, useDebouncedSafeAreaFrame } from '~/hooks';
 import { emptyFn, PositionX, SafeArea } from '~/utils';
@@ -25,9 +25,11 @@ export interface LongPressControllerProps {
 /**
  * 电子墨水版 Controller：所有动画语义已移除（双击瞬时切换、无补间）。
  * 性能要点：
- * - pan 缩放态用 shared value 而非 useState，避免缩放切换触发整个组件 re-render
  * - 5 个 Gesture 对象用 useMemo 缓存，回调读取 ref，避免每次 render 重建
  * - 14 个 Reanimated shared value 是 worklet 必需的载体，保留不变
+ * - Pan 的启用状态用 boolean state 控制：scale=1 时必须真正 .enabled(false)，
+ *   否则手势识别器在 ~8dp 移动后会进入 ACTIVE 并 cancel 外层 FlashList 横向滚动。
+ *   缩放切换是低频用户事件（双击/捏合），re-render 开销可接受。
  */
 const Controller = ({
   children,
@@ -58,6 +60,9 @@ const Controller = ({
   const savedTranslationX = useSharedValue(0);
   const savedTranslationY = useSharedValue(0);
   const savedScale = useSharedValue(1);
+
+  // Pan 启用状态：放大后才允许平移，避免抢占外层 FlashList 横向翻页
+  const [panEnabled, setPanEnabled] = useState(false);
 
   // 回调 ref：让 Gesture 对象的依赖保持稳定，回调读取最新引用
   const onTapRef = useRef(onTap);
@@ -149,6 +154,7 @@ const Controller = ({
           savedScale.value = 1;
           savedTranslationX.value = 0;
           savedTranslationY.value = 0;
+          runOnJS(setPanEnabled)(false);
         } else {
           // 电子墨水版：双击放大瞬时完成，无补间动画
           scale.value = doubleTapScaleValue;
@@ -166,6 +172,7 @@ const Controller = ({
           savedScale.value = doubleTapScaleValue;
           savedTranslationX.value = currentX;
           savedTranslationY.value = currentY;
+          runOnJS(setPanEnabled)(doubleTapScaleValue > 1);
         }
       })
       .onEnd(() => {
@@ -226,21 +233,20 @@ const Controller = ({
         savedScale.value = scale.value;
         savedTranslationX.value = translationX.value;
         savedTranslationY.value = translationY.value;
+        runOnJS(setPanEnabled)(scale.value > 1);
         runOnJS(onZoomEndRef.current)(scale.value);
       });
     const panGesture = Gesture.Pan()
       .minPointers(1)
       .maxPointers(1)
-      // 不用 .enabled(sharedValue)（类型不接受），改为在 onChange 内部通过 savedScale===1 短路；
-      // 这样手势对象只构造一次，缩放切换不触发 Controller re-render
+      // .enabled 必须用 boolean，使识别器在 BEGAN 之前就完全不参与识别，
+      // 否则 ~8dp 移动会进入 ACTIVE 并 cancel 外层 FlashList 的横向滚动。
+      // panEnabled 由 pinch/doubleTap 在 worklet 中 runOnJS 切换。
+      .enabled(panEnabled)
       .onChange((e) => {
         'worklet';
         const currentX = translationX.value + e.changeX;
         const currentY = translationY.value + e.changeY;
-
-        if (savedScale.value === 1) {
-          return;
-        }
 
         if (
           (currentX >= -left.value && currentX <= right.value) ||
@@ -266,7 +272,7 @@ const Controller = ({
     return { singleTap, doubleTap, longPress, pinchGesture, panGesture };
     // shared value 与 ref 引用在生命周期内稳定，不进依赖；eslint 无法识别该稳定性，故禁用 exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [horizontal, oneThirdWidth, windowWidth, windowHeight]);
+  }, [horizontal, oneThirdWidth, windowWidth, windowHeight, panEnabled]);
 
   const exclusiveGesture = useMemo(() => {
     return hasLongPressRef.current
