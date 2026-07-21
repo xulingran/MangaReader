@@ -91,7 +91,7 @@ const Bookshelf = ({
     !loading && loadMore && loadMore();
   }, [loading, loadMore]);
 
-  // renderItem 包进 useCallback：避免每次 Bookshelf 重渲染都重建 renderItem，进而触发所有可见 cell 失效。
+  // 避免 Bookshelf 自身重渲染时重复分配 renderItem；cell 是否重渲染仍由 data/extraData 决定。
   // 项内 onPress/onLongPress 直接调用稳定引用的 itemOnPress/itemOnLongPress，不再生成 per-hash 闭包。
   const renderItem = useCallback(
     ({ item, extraData: extra }: ListRenderItemInfo<Manga>) => {

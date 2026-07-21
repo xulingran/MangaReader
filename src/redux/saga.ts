@@ -473,7 +473,7 @@ function* restoreSaga() {
  * 不必每次都全量序列化整个 dict。这里维护 dirty 集合，只序列化真正变化的部分；
  * clearCacheCompletion/restoreCompletion 走全量重建（full rebuild）。
  */
-const saveDataWorker = (function () {
+export const createSaveDataWorker = (retryDelay = 1000) => {
   const mangaDirty = new Set<string>();
   const chapterDirty = new Set<string>();
   let favoritesDirty = false;
@@ -530,7 +530,9 @@ const saveDataWorker = (function () {
       pairs.push([storageKey.setting, JSON.stringify(setting)]);
     } else {
       // 只写 dirty 部分；manga/chapter 复用 buildProgressPairs 跳过非收藏项
-      if (snapshot.manga.size > 0 || snapshot.chapter.size > 0) {
+      // 收藏变更会在下方完整写入当前收藏的 manga/chapter；此时不再先写 dirty 条目，
+      // 避免同一个 key 在一次 multiSet 中被重复写入。
+      if (!snapshot.favorites && (snapshot.manga.size > 0 || snapshot.chapter.size > 0)) {
         const dirtyManga = Array.from(snapshot.manga);
         const dirtyChapter = Array.from(snapshot.chapter);
         pairs.push(...buildProgressPairs(state, dirtyManga, dirtyChapter));
@@ -561,9 +563,6 @@ const saveDataWorker = (function () {
         pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
         pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
         pairs.push([storageKey.favorites, JSON.stringify(state.favorites)]);
-        // 收藏增删场景下整个收藏 manga/chapter 都已序列化，标记这些 hash 不需要再单独写
-        mangaIndex.forEach((hash) => snapshot.manga.delete(hash));
-        chapterIndex.forEach((hash) => snapshot.chapter.delete(hash));
       }
       if (snapshot.task) {
         const taskIndex = state.task.list.map((item) => item.taskId);
@@ -590,7 +589,7 @@ const saveDataWorker = (function () {
     }
 
     if (pairs.length <= 0) {
-      return;
+      return true;
     }
 
     try {
@@ -610,8 +609,11 @@ const saveDataWorker = (function () {
       if (snapshot.fullRebuild) {
         fullRebuild = true;
       }
-      throw error;
+      console.warn('本地数据持久化失败，等待重试', error);
+      return false;
     }
+
+    return true;
   }
 
   return function* ({ type, payload }: PayloadAction<any>) {
@@ -638,24 +640,34 @@ const saveDataWorker = (function () {
     }
     isPending = true;
     try {
-      // 首次触发即落盘一次，后续 1 秒节流合并
-      yield call(flush);
-      yield delay(1000);
-      // flush 内部可能被新一轮 action 标记 dirty，再冲一次确保最终一致
-      if (
-        mangaDirty.size > 0 ||
-        chapterDirty.size > 0 ||
-        favoritesDirty ||
-        taskDirty ||
-        fullRebuild
-      ) {
-        yield call(flush);
+      let consecutiveFailures = 0;
+      while (true) {
+        const succeeded: boolean = yield call(flush);
+        consecutiveFailures = succeeded ? 0 : consecutiveFailures + 1;
+        if (consecutiveFailures >= 2) {
+          yield put(toastMessage('本地数据保存失败，将在下次数据变更时重试'));
+          break;
+        }
+
+        // 至少保留一个节流窗口；期间到达的新 action 只标 dirty，由当前 worker 继续排空。
+        yield delay(retryDelay);
+        if (
+          mangaDirty.size === 0 &&
+          chapterDirty.size === 0 &&
+          !favoritesDirty &&
+          !taskDirty &&
+          !fullRebuild
+        ) {
+          break;
+        }
       }
     } finally {
       isPending = false;
     }
   };
-})();
+};
+
+const saveDataWorker = createSaveDataWorker();
 
 const waitForInteractions = () =>
   new Promise<void>((resolve) => {
@@ -785,6 +797,7 @@ function* saveFavoritesSaga() {
   );
 }
 function* saveDataSaga() {
+  // worker 内部处理预期内的存储失败；通用包装仍兜底其它未预期异常，避免 watcher 退出。
   yield takeEverySuspense(
     [
       clearCacheCompletion.type,
@@ -1379,13 +1392,17 @@ function* thread() {
     }
   }
 }
-function* preloadChapter(chapterHash: string) {
+export function* preloadChapter(chapterHash: string) {
   const prevDict = ((state: RootState) => state.dict.chapter)(yield select());
   const prevData = prevDict[chapterHash];
 
   if (!nonNullable(prevData)) {
     yield put(loadChapter({ chapterHash }));
-    yield take(loadChapterCompletion.type);
+    yield take(
+      (candidate: Action) =>
+        candidate.type === loadChapterCompletion.type &&
+        (candidate as ReturnType<typeof loadChapterCompletion>).payload.actionId === chapterHash
+    );
   }
   const currDict = ((state: RootState) => state.dict.chapter)(yield select());
   const currData = currDict[chapterHash];
@@ -1525,29 +1542,31 @@ function* taskManagerSaga() {
   });
 }
 
+export function* catchErrorWorker({ type, payload }: PayloadAction<any>) {
+  if (!payload || !payload.error) {
+    return;
+  }
+  if (
+    loadMangaInfoCompletion.type === type ||
+    loadChapterListCompletion.type === type ||
+    payload.error.message === ErrorMessage.NoMore
+  ) {
+    return;
+  }
+
+  const error = payload.error;
+  if (error.message === 'Aborted') {
+    yield put(toastMessage(ErrorMessage.RequestTimeout));
+  } else {
+    yield put(toastMessage(error.message));
+  }
+}
+
 function* catchErrorSaga() {
   // 高频 action（viewImage/viewPage）经此通配监听；直接用 takeEvery 而非 takeEverySuspense，
   // 跳过 tryCatchWorker 包装，让 worker 自身在第一步判断 payload.error 是否存在并 early-return，
   // 避免每条 action 都启动一次额外的 try/catch generator。
-  yield takeEvery('*', function* ({ type, payload }: PayloadAction<any>) {
-    if (!payload || !payload.error) {
-      return;
-    }
-    if (
-      loadMangaInfoCompletion.type === type ||
-      loadChapterListCompletion.type === type ||
-      payload.error.message === ErrorMessage.NoMore
-    ) {
-      return;
-    }
-
-    const error = payload.error;
-    if (error.message === 'Aborted') {
-      yield put(toastMessage(ErrorMessage.RequestTimeout));
-    } else {
-      yield put(toastMessage(error.message));
-    }
-  });
+  yield takeEvery('*', catchErrorWorker);
 }
 
 function* takeEverySuspense(pattern: string | string[], worker: (...args: any[]) => any) {

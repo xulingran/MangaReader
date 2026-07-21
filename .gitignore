@@ -67,3 +67,6 @@ yarn-error.log
 
 # backup floder
 /backup
+
+# Local agent plans
+.zcode/

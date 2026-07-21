@@ -73,8 +73,7 @@ const Controller = ({
   onLongPressRef.current = onLongPress;
   onZoomStartRef.current = onZoomStart;
   onZoomEndRef.current = onZoomEnd;
-  const hasLongPressRef = useRef(onLongPress !== undefined);
-  hasLongPressRef.current = onLongPress !== undefined;
+  const hasLongPress = onLongPress !== undefined;
 
   const safeAreaStyle = useMemo(() => {
     return {
@@ -150,6 +149,10 @@ const Controller = ({
           scale.value = 1;
           translationX.value = 0;
           translationY.value = 0;
+          top.value = 0;
+          bottom.value = 0;
+          left.value = 0;
+          right.value = 0;
 
           savedScale.value = 1;
           savedTranslationX.value = 0;
@@ -245,6 +248,11 @@ const Controller = ({
       .enabled(panEnabled)
       .onChange((e) => {
         'worklet';
+        // setPanEnabled 需要跨 UI/JS 线程触发一次 React 更新；复位后的极短窗口内
+        // 仍可能收到旧 Pan 识别器事件，scale=1 时直接忽略，避免出现像素级偏移。
+        if (savedScale.value <= 1) {
+          return;
+        }
         const currentX = translationX.value + e.changeX;
         const currentY = translationY.value + e.changeY;
 
@@ -275,10 +283,10 @@ const Controller = ({
   }, [horizontal, oneThirdWidth, windowWidth, windowHeight, panEnabled]);
 
   const exclusiveGesture = useMemo(() => {
-    return hasLongPressRef.current
+    return hasLongPress
       ? Gesture.Exclusive(gestures.doubleTap, gestures.singleTap, gestures.longPress)
       : Gesture.Exclusive(gestures.doubleTap, gestures.singleTap);
-  }, [gestures]);
+  }, [gestures, hasLongPress]);
 
   return (
     <GestureDetector gesture={exclusiveGesture}>

@@ -49,6 +49,8 @@ const {
   setTimerGap,
   saveImage,
 } = action;
+
+const EMPTY_CHAPTERS: ChapterItem[] = [];
 const lastPageToastId = 'LAST_PAGE_TOAST_ID';
 const ImageSelectOptions = [{ label: '保存图片', value: 'save' }];
 const layoutIconDict = {
@@ -124,7 +126,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const pageKeys = useAppSelector((state) => state.setting.pageKeys);
   const direction = useAppSelector((state) => state.setting.direction);
   // 只订阅当前漫画的章节列表，后台更新其他漫画不触发 Chapter 重渲染
-  const chapterList = useAppSelector((state) => state.dict.manga[mangaHash]?.chapters || []);
+  const chapterList = useAppSelector(
+    (state) => state.dict.manga[mangaHash]?.chapters ?? EMPTY_CHAPTERS
+  );
   // 只订阅当前阅读链上的几个章节，并做浅比较；下载/批量更新其他章节不触发 Chapter 重渲染
   const chapterSlice = useAppShallowSelector((state) =>
     hashList.map((hash) => state.dict.chapter[hash])
