@@ -42,11 +42,14 @@ test('HComic 解析页面负载并生成单话图片地址', () => {
     tag: ['标签'],
   });
   expect(discovery.discovery[0].href).toBe(
-    'https://h-comic.com/comics/HComic%20%E6%B5%8B%E8%AF%95%E6%BC%AB%E7%94%BB?id=123'
+    'https://h-comic.com/comics/123?id=123'
   );
   expect(HComic.prepareMangaInfoFetch('123', discovery.discovery[0]).url).toBe(
-    'https://h-comic.com/comics/HComic%20%E6%B5%8B%E8%AF%95%E6%BC%AB%E7%94%BB/1?id=123'
+    'https://h-comic.com/comics/123/1?id=123'
   );
+
+  const detail = HComic.handleMangaInfo(hcomicHtml, '123') as { manga: IncreaseManga };
+  expect(detail.manga.chapters?.[0]).toMatchObject({ title: '全一话' });
 
   const chapter = HComic.handleChapter(hcomicHtml, '123', '1', 1) as {
     chapter: Chapter;

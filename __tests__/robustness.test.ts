@@ -269,7 +269,7 @@ describe('并发与任务状态', () => {
 });
 
 describe('来源与文件名健壮性', () => {
-  it('HComic 冷启动时可从持久化章节链接恢复 slug', () => {
+  it('HComic 冷启动时忽略可能重名的旧标题链接并按 ID 请求', () => {
     const request = HComic.prepareChapterFetch(
       '123',
       '1',
@@ -282,7 +282,7 @@ describe('来源与文件名健壮性', () => {
         },
       }
     );
-    expect(request.url).toBe('https://h-comic.com/comics/HComic%20%E6%B5%8B%E8%AF%95/1?id=123');
+    expect(request.url).toBe('https://h-comic.com/comics/123/1?id=123');
   });
 
   it('包子漫画筛选值和展示文案没有颠倒', () => {

@@ -120,8 +120,6 @@ function extractPayload(text: string | null): HComicPayload {
 }
 
 class HComic extends Base {
-  private readonly slugByMangaId = new Map<string, string>();
-
   constructor() {
     const userAgent =
       'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36';
@@ -155,45 +153,14 @@ class HComic extends Base {
     );
   }
 
-  private getSlugTitle(item: HComicItem): string {
-    return (
-      item.title?.japanese ||
-      item.title?.english ||
-      item.title?.display ||
-      item.title?.pretty ||
-      ''
-    ).trim();
-  }
-
-  private rememberSlug(item: HComicItem): string {
-    const mangaId = this.getMangaId(item);
-    const slug = this.getSlugTitle(item);
-    if (mangaId && slug) {
-      this.slugByMangaId.set(mangaId, slug);
+  private getComicUrl(mangaId: string, reader = false): string {
+    const id = mangaId.trim();
+    if (!id) {
+      throw new Error('HComic 漫画 ID 缺失');
     }
-    return slug;
-  }
-
-  private getSlugFromManga(manga?: Pick<IncreaseManga, 'href' | 'title'>): string {
-    if (!manga?.href) {
-      return manga?.title?.trim() || '';
-    }
-    const match = manga.href.match(/\/comics\/([^/?]+)(?:\/1)?(?:\?|$)/);
-    const slug = match?.[1] ? decodeURIComponent(match[1]) : '';
-    return slug && slug !== '1' ? slug : manga.title?.trim() || '';
-  }
-
-  private getComicUrl(
-    mangaId: string,
-    manga?: Pick<IncreaseManga, 'href' | 'title'>,
-    reader = false
-  ): string {
-    const slug = this.slugByMangaId.get(mangaId) || this.getSlugFromManga(manga);
-    if (!slug) {
-      throw new Error('HComic 漫画标题缺失，请从发现页或搜索页重新进入');
-    }
-    const path = `https://h-comic.com/comics/${encodeURIComponent(slug)}`;
-    return `${path}${reader ? '/1' : ''}?id=${encodeURIComponent(mangaId)}`;
+    // 标题 slug 并不唯一，同名漫画会被站点路由到旧记录；数字 ID 可稳定定位唯一条目。
+    const path = `https://h-comic.com/comics/${encodeURIComponent(id)}`;
+    return `${path}${reader ? '/1' : ''}?id=${encodeURIComponent(id)}`;
   }
 
   private assertMangaId(item: HComicItem, mangaId: string): void {
@@ -241,11 +208,8 @@ class HComic extends Base {
 
   private toManga(item: HComicItem): IncreaseManga {
     const mangaId = this.getMangaId(item);
-    const slug = this.rememberSlug(item);
     return {
-      href: `https://h-comic.com/comics/${encodeURIComponent(slug)}?id=${encodeURIComponent(
-        mangaId
-      )}`,
+      href: this.getComicUrl(mangaId),
       hash: Base.combineHash(this.id, mangaId),
       source: this.id,
       sourceName: this.name,
@@ -276,8 +240,8 @@ class HComic extends Base {
     timeout: 20000,
   });
 
-  prepareMangaInfoFetch: Base['prepareMangaInfoFetch'] = (mangaId, manga) => ({
-    url: this.getComicUrl(mangaId, manga, true),
+  prepareMangaInfoFetch: Base['prepareMangaInfoFetch'] = (mangaId) => ({
+    url: this.getComicUrl(mangaId, true),
     headers: new Headers(this.defaultHeaders),
     timeout: 20000,
   });
@@ -287,9 +251,9 @@ class HComic extends Base {
     _chapterId,
     _page,
     _extra,
-    context
+    _context
   ) => ({
-    url: this.getComicUrl(mangaId, context?.chapter || context?.manga, true),
+    url: this.getComicUrl(mangaId, true),
     headers: new Headers(this.defaultHeaders),
     timeout: 20000,
   });
@@ -308,9 +272,7 @@ class HComic extends Base {
       throw new Error('HComic 详情数据缺失');
     }
     this.assertMangaId(item, mangaId);
-    this.rememberSlug(item);
     const chapterId = '1';
-    const title = this.getTitle(item);
     return {
       manga: {
         ...this.toManga(item),
@@ -321,8 +283,8 @@ class HComic extends Base {
             hash: Base.combineHash(this.id, mangaId, chapterId),
             mangaId,
             chapterId,
-            href: this.getComicUrl(mangaId, undefined, true),
-            title: title || '全一话',
+            href: this.getComicUrl(mangaId, true),
+            title: '全一话',
           },
         ],
       },

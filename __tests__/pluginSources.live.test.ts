@@ -30,6 +30,11 @@ liveTest('HComic 实时列表可请求并解析', async () => {
     chapter: Chapter;
   };
   expect(chapter.chapter.images.length).toBeGreaterThan(0);
+  const imageResponse = await fetch(chapter.chapter.images[0].uri, {
+    headers: chapter.chapter.headers,
+  });
+  expect(imageResponse.ok).toBe(true);
+  expect(imageResponse.headers.get('content-type')).toMatch(/^image\//);
 });
 
 liveTest('MoeImg 实时列表可请求并解析', async () => {
