@@ -26,7 +26,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
 import StaticCachedImage from '~/components/StaticCachedImage';
 import ActionsheetSelect, { ActionsheetSelectProps } from '~/components/ActionsheetSelect';
-import Drawer, { DRAWER_TRIGGER_WIDTH, DrawerRef } from '~/components/Drawer';
+import Drawer, { DrawerRef } from '~/components/Drawer';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
@@ -75,7 +75,6 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const { mangaHash, enabledMultiple = false, selected = [] } = route.params;
   const { gap, insets, itemWidth, numColumns, windowWidth, windowHeight } = useSplitWidth({
     gap: 12,
-    reservedWidth: DRAWER_TRIGGER_WIDTH,
     minNumColumns: 3,
     maxSplitWidth: 100,
   });
@@ -347,7 +346,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
         </Flex>
       </Flex>
 
-      <Box flex={1} mr={`${DRAWER_TRIGGER_WIDTH + insets.right}px`}>
+      <Box flex={1}>
         {chapters.length > 0 ? (
           <FlashList
             data={chapters}
@@ -355,11 +354,12 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             contentContainerStyle={{
               padding: gap / 2,
               paddingLeft: gap / 2 + insets.left,
+              paddingRight: gap / 2 + insets.right,
             }}
             numColumns={numColumns}
             estimatedItemSize={50}
             estimatedListSize={{
-              width: windowWidth - DRAWER_TRIGGER_WIDTH - insets.right,
+              width: windowWidth,
               height: windowHeight,
             }}
             renderItem={renderItem}
@@ -438,6 +438,9 @@ export const HeartAndBrowser = () => {
 
   const handleSwapSequence = () => {
     dispatch(setSequence(sequence === Sequence.Asc ? Sequence.Desc : Sequence.Asc));
+  };
+  const handleOpenDownloadManager = () => {
+    dispatch(setPrehandleLogStatus(true));
   };
   const toggleFavorite = () => {
     const status = dict[mangaHash]?.status || '';
@@ -534,6 +537,12 @@ export const HeartAndBrowser = () => {
         onPress={handleSwapSequence}
       />
       <VectorIcon
+        source="materialCommunityIcons"
+        name="download-box-outline"
+        accessibilityLabel="打开下载管理"
+        onPress={handleOpenDownloadManager}
+      />
+      <VectorIcon
         name="open-in-browser"
         accessibilityLabel="在浏览器中打开漫画"
         onPress={handleToBrowser}
@@ -616,7 +625,7 @@ const VisiblePrehandleDrawer = () => {
   };
 
   return (
-    <Drawer ref={drawerRef} triggerLabel="下载列表">
+    <Drawer ref={drawerRef}>
       <Box bg="gray.100" h="full">
         {list.length > 0 && (
           <FlashList

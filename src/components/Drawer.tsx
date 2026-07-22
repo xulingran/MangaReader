@@ -7,19 +7,15 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { Box, Pressable, Text } from 'native-base';
+import { Box, Pressable } from 'native-base';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
-
-export const DRAWER_TRIGGER_WIDTH = 12;
 
 export interface DrawerRef {
   open: () => void;
   close: () => void;
 }
 interface DrawerProps {
-  leak?: number;
   content?: number;
-  triggerLabel?: string;
   children?: ReactNode;
 }
 
@@ -28,14 +24,13 @@ interface DrawerProps {
  * 右侧固定宽度白底黑边面板，条件渲染瞬时开合
  */
 const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
-  { leak = DRAWER_TRIGGER_WIDTH, content = 300, triggerLabel = '打开', children },
+  { content = 300, children },
   ref
 ) => {
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
   const { right } = useDebouncedSafeAreaInsets();
   const [visible, setVisible] = useState(false);
 
-  const leakWidth = useMemo(() => leak + right, [leak, right]);
   const contentWidth = useMemo(() => content + right, [content, right]);
   const panelWidth = Math.min(windowWidth * 0.55, contentWidth);
 
@@ -45,27 +40,7 @@ const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
   }));
 
   if (!visible) {
-    // 收起时仅保留右缘小把手，点击展开
-    return (
-      <Pressable
-        position="absolute"
-        right={0}
-        top={0}
-        width={leakWidth}
-        height={windowHeight}
-        bg="white"
-        borderLeftWidth={1}
-        borderColor="black"
-        alignItems="center"
-        justifyContent="center"
-        onPress={() => setVisible(true)}
-        accessibilityLabel={`打开${triggerLabel}`}
-      >
-        <Text color="black" fontSize="md" fontWeight="bold" textAlign="center">
-          ‹
-        </Text>
-      </Pressable>
-    );
+    return null;
   }
 
   return (
