@@ -1,4 +1,4 @@
-import { clearAllCookie, ErrorMessage } from '~/utils';
+import { ErrorMessage } from '~/utils';
 
 interface InitialData {
   id: Plugin;
@@ -200,7 +200,6 @@ abstract class Base {
     const title = $('title').first().text().trim();
 
     if (title === 'Just a moment...' || (typeof cfTitle === 'string' && title === cfTitle)) {
-      clearAllCookie(this.href);
       throw new Error(`${ErrorMessage.CloudflareFail} - ${this.name}`);
     }
   };
@@ -250,7 +249,9 @@ abstract class Base {
    * @return {*}  {(FetchData | void)}
    * @memberof Base
    */
-  abstract prepareChapterListFetch(mangaId: string, page: number): FetchData | void;
+  prepareChapterListFetch(_mangaId: string, _page: number): FetchData | void {
+    return undefined;
+  }
 
   /**
    * @description accept mangaId and chapterId param, return body for chapter fetch
@@ -264,7 +265,11 @@ abstract class Base {
     mangaId: string,
     chapterId: string,
     page: number,
-    extra: Record<string, any>
+    extra: Record<string, any>,
+    context?: {
+      manga?: Pick<IncreaseManga, 'href' | 'title'>;
+      chapter?: Pick<ChapterItem, 'href' | 'title'>;
+    }
   ): FetchData;
 
   /**
@@ -309,9 +314,9 @@ abstract class Base {
    *     | { error?: undefined; chapterList: Manga['chapters'] })}
    * @memberof Base
    */
-  abstract handleChapterList(
-    response: any,
-    mangaId: string
+  handleChapterList(
+    _response: any,
+    _mangaId: string
   ):
     | { error: Error; chapterList?: undefined; canLoadMore?: boolean; nextPage?: number }
     | {
@@ -319,7 +324,9 @@ abstract class Base {
         chapterList: Manga['chapters'];
         canLoadMore: boolean;
         nextPage?: number;
-      };
+      } {
+    return { chapterList: [], canLoadMore: false };
+  }
 
   /**
    * @description crawl data from website or interface

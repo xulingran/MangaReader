@@ -1,5 +1,5 @@
 import Base, { Plugin } from './base';
-import { ErrorMessage, MangaStatus } from '~/utils';
+import { MangaStatus } from '~/utils';
 import { Buffer } from 'buffer';
 import dayjs from 'dayjs';
 
@@ -130,7 +130,7 @@ class HComic extends Base {
       id: Plugin.HCOMIC,
       name: 'HComic',
       shortName: 'HComic',
-      description: '部分页面需要代理或登录',
+      description: '部分页面需要代理',
       href: 'https://h-comic.com/',
       userAgent,
       defaultHeaders: {
@@ -282,10 +282,14 @@ class HComic extends Base {
     timeout: 20000,
   });
 
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => undefined;
-
-  prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId) => ({
-    url: this.getComicUrl(mangaId, undefined, true),
+  prepareChapterFetch: Base['prepareChapterFetch'] = (
+    mangaId,
+    _chapterId,
+    _page,
+    _extra,
+    context
+  ) => ({
+    url: this.getComicUrl(mangaId, context?.chapter || context?.manga, true),
     headers: new Headers(this.defaultHeaders),
     timeout: 20000,
   });
@@ -324,10 +328,6 @@ class HComic extends Base {
       },
     };
   };
-
-  handleChapterList: Base['handleChapterList'] = () => ({
-    error: new Error(ErrorMessage.NoSupport + 'handleChapterList'),
-  });
 
   handleChapter: Base['handleChapter'] = (text: string | null, mangaId, chapterId) => {
     const item = extractPayload(text).comic;

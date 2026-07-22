@@ -10,7 +10,8 @@ export const usePageKeys = (callback: (direction: PageKeyDirection) => void, act
   useFocusEffect(
     useCallback(() => {
       if (!active) {
-        return;
+        setReaderActive(false);
+        return () => setReaderActive(false);
       }
       setReaderActive(true);
       const removeListener = addPageKeyListener(callback);

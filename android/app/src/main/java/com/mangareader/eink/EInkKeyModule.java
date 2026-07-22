@@ -13,6 +13,7 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
 import java.lang.ref.WeakReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 电子墨水设备实体翻页键桥接模块。
@@ -29,8 +30,9 @@ public class EInkKeyModule extends ReactContextBaseJavaModule {
   private static final int DIRECTION_PREVIOUS = 0;
   private static final int DIRECTION_NEXT = 1;
 
-  private static boolean readerActive = false;
-  private static WeakReference<ReactApplicationContext> reactContextRef = new WeakReference<>(null);
+  private static final AtomicBoolean readerActive = new AtomicBoolean(false);
+  private static volatile WeakReference<ReactApplicationContext> reactContextRef =
+      new WeakReference<>(null);
 
   public EInkKeyModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -44,7 +46,7 @@ public class EInkKeyModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void setReaderActive(boolean active) {
-    readerActive = active;
+    readerActive.set(active);
   }
 
   @ReactMethod
@@ -81,7 +83,7 @@ public class EInkKeyModule extends ReactContextBaseJavaModule {
    * @return true 表示事件已被消费（拦截），false 表示交给系统处理
    */
   public static boolean handleKeyEvent(KeyEvent event) {
-    if (!readerActive) {
+    if (!readerActive.get()) {
       return false;
     }
     Integer direction = directionForKey(event.getKeyCode());
@@ -105,5 +107,15 @@ public class EInkKeyModule extends ReactContextBaseJavaModule {
     context
         .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
         .emit(EVENT_PAGE_KEY, payload);
+  }
+
+  @Override
+  public void invalidate() {
+    readerActive.set(false);
+    ReactApplicationContext current = reactContextRef.get();
+    if (current == getReactApplicationContext()) {
+      reactContextRef.clear();
+    }
+    super.invalidate();
   }
 }

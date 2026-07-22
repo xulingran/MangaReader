@@ -5,7 +5,7 @@ import Bika from '~/plugins/bika';
 import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
-import { MangaStatus, ScrambleType } from '~/utils';
+import { MangaStatus } from '~/utils';
 
 const hcomicItem = {
   _id: 'mongo-1',
@@ -305,12 +305,10 @@ test('肉漫屋还原拆分的 Flight 数据并识别图片扰乱标记', () => 
   expect(result.chapter.images).toEqual([
     {
       uri: 'https://r5.rmcdn10.xyz/m/split/sr:1/001.webp',
-      scrambleType: ScrambleType.RM5,
       needUnscramble: true,
     },
     {
       uri: 'https://r5.rmcdn11.xyz/m/full/sr:0/002.webp',
-      scrambleType: ScrambleType.RM5,
       needUnscramble: false,
     },
   ]);

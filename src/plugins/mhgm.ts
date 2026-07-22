@@ -1,5 +1,6 @@
 import Base, { Plugin, Options } from './base';
 import { MangaStatus, ErrorMessage } from '~/utils';
+import { unpackPacker } from '~/utils/unpack';
 import queryString from 'query-string';
 import LZString from 'lz-string';
 import * as cheerio from 'cheerio';
@@ -110,7 +111,7 @@ const PATTERN_MANGA_ID = /^https:\/\/m\.manhuagui\.com\/comic\/([0-9]+)/;
 const PATTERN_MANGA_INFO = /{ bid:([0-9]*), status:[0-9]*,block_cc:'' }/;
 const PATTERN_CHAPTER_ID = /^https:\/\/m\.manhuagui\.com\/comic\/[0-9]+\/([0-9]+)(?=\.html|$)/;
 const PATTERN_SCRIPT = /^window\["\\x65\\x76\\x61\\x6c"\](.+)(?=$)/;
-const PATTERN_READER_DATA = /^SMH\.reader\((.+)(?=\)\.preInit\(\);)/;
+const PATTERN_READER_DATA = /^\s*SMH\.reader\((\{[\s\S]*\})\)\.preInit\(\);?\s*$/;
 const PATTERN_FULL_TIME = /[0-9]{4}-[0-9]{2}-[0-9]{2}/;
 const PATTERN_AUTHOR = /作者：(.*)/;
 const PATTERN_TAG = /类别：(.*)/;
@@ -152,7 +153,9 @@ class ManHuaGuiMobile extends Base {
     body.append('order', '1');
 
     return {
-      url: `https://m.manhuagui.com/s/${keyword}_o${sort === Options.Default ? '0' : sort}.html/`,
+      url: `https://m.manhuagui.com/s/${encodeURIComponent(keyword)}_o${
+        sort === Options.Default ? '0' : sort
+      }.html/`,
       method: 'POST',
       body: page > 1 ? body : undefined,
       headers: new Headers({ ...this.defaultHeaders, host: 'm.manhuagui.com' }),
@@ -164,7 +167,6 @@ class ManHuaGuiMobile extends Base {
       headers: new Headers({ ...this.defaultHeaders, host: 'm.manhuagui.com' }),
     };
   };
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => {};
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId) => {
     return {
       url: `https://m.manhuagui.com/comic/${mangaId}/${chapterId}.html`,
@@ -367,10 +369,6 @@ class ManHuaGuiMobile extends Base {
     return { manga };
   };
 
-  handleChapterList: Base['handleChapterList'] = () => {
-    return { error: new Error(ErrorMessage.NoSupport + 'handleChapterList') };
-  };
-
   handleChapter: Base['handleChapter'] = (text: string | null) => {
     const $ = cheerio.load(text || '');
     const scriptAfterFilter = ($('script:not([src])').toArray() as cheerio.TagElement[]).filter(
@@ -382,13 +380,20 @@ class ManHuaGuiMobile extends Base {
     }
     const script = scriptAfterFilter[0].children[0].data || '';
     const [, scriptContent] = script.match(PATTERN_SCRIPT) || [];
-
-    // eslint-disable-next-line no-eval
-    const readerScript = eval(scriptContent) as string;
+    const readerScript = unpackPacker(scriptContent);
     const [, stringifyData] = readerScript.match(PATTERN_READER_DATA) || [];
-    const data = JSON.parse(stringifyData);
+    if (!stringifyData) {
+      throw new Error(ErrorMessage.MissingChapterInfo);
+    }
+    const data: unknown = JSON.parse(stringifyData);
 
-    const { bookId, chapterId, bookName, chapterTitle, images = [], sl } = data;
+    if (!isReaderData(data)) {
+      throw new Error(ErrorMessage.MissingChapterInfo);
+    }
+
+    const { bookName, chapterTitle, images = [], sl } = data;
+    const bookId = String(data.bookId);
+    const chapterId = String(data.chapterId);
 
     return {
       canLoadMore: false,
@@ -415,5 +420,30 @@ class ManHuaGuiMobile extends Base {
     };
   };
 }
+
+interface ReaderData {
+  bookId: string | number;
+  chapterId: string | number;
+  bookName?: string;
+  chapterTitle?: string;
+  images: string[];
+  sl: Record<string, string | number>;
+}
+
+const isReaderData = (value: unknown): value is ReaderData => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const data = value as Partial<ReaderData>;
+  return (
+    ['string', 'number'].includes(typeof data.bookId) &&
+    ['string', 'number'].includes(typeof data.chapterId) &&
+    Array.isArray(data.images) &&
+    data.images.every((image) => typeof image === 'string') &&
+    !!data.sl &&
+    typeof data.sl === 'object' &&
+    !Array.isArray(data.sl)
+  );
+};
 
 export default new ManHuaGuiMobile();

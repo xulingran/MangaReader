@@ -15,17 +15,19 @@ try {
 
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 
-jest.mock('@react-native-async-storage/async-storage', () =>
-  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
-);
-
-jest.mock('@react-native-cookies/cookies', () => ({
-  get: jest.fn(() => Promise.resolve({})),
-  set: jest.fn(() => Promise.resolve(true)),
-  clearAll: jest.fn(() => Promise.resolve(true)),
-  flush: jest.fn(() => Promise.resolve(true)),
-  removeSessionCookies: jest.fn(() => Promise.resolve(true)),
-}));
+const { NativeModules } = require('react-native');
+NativeModules.SecureTokenModule = {
+  createSessionNonce: jest.fn(() => 'secure-test-nonce'),
+  setBikaToken: jest.fn(() => Promise.resolve()),
+  getBikaToken: jest.fn(() => Promise.resolve(null)),
+  clearBikaToken: jest.fn(() => Promise.resolve()),
+};
+NativeModules.ImageProcessorModule = {
+  unscramble: jest.fn(() =>
+    Promise.resolve({ path: '/cache/unscramble/test.png', width: 800, height: 1200 })
+  ),
+  cancel: jest.fn(),
+};
 
 jest.mock('react-native-mmkv', () => ({
   MMKV: jest.fn().mockImplementation(() => ({
@@ -52,6 +54,7 @@ jest.mock('react-native-file-access', () => ({
     unlink: jest.fn(() => Promise.resolve()),
     mkdir: jest.fn(() => Promise.resolve()),
     cp: jest.fn(() => Promise.resolve()),
+    cpExternal: jest.fn(() => Promise.resolve()),
     ls: jest.fn(() => Promise.resolve([])),
     stat: jest.fn(() => Promise.resolve({ size: 0 })),
   },
@@ -85,9 +88,4 @@ jest.mock('@react-native-camera-roll/camera-roll', () => ({
 
 jest.mock('@react-native-documents/picker', () => ({
   pick: jest.fn(),
-}));
-
-jest.mock('react-native-canvas', () => ({
-  default: 'Canvas',
-  Image: jest.fn(),
 }));

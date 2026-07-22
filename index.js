@@ -1,4 +1,3 @@
-import '~/utils/define';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { AppRegistry } from 'react-native';
 import { Dirs } from 'react-native-file-access';

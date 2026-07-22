@@ -21,7 +21,7 @@
 - **Android 构建基线**：minSdk 24（覆盖 Android 9 / API 28）、compileSdk / targetSdk 36、Gradle 8.14.3、Android Gradle Plugin 8.11.0、Kotlin 2.1.20、NDK 27.1；当前保留旧架构（`newArchEnabled=false`）作为迁移阶段
 - **状态管理**：Redux Toolkit + redux-saga（`src/redux/`），dev 环境启用 redux-logger；jest 环境下不启动 saga（`store.ts`）
 - **UI**：NativeBase 3.4（通过 patch-package 打了补丁，见 `patches/native-base+3.4.28.patch`，移除了 SSRProvider）、react-navigation（native-stack）、react-native-reanimated 3.19（仅保留缩放/平移的直接操控）、@shopify/flash-list 1.8
-- **抓取**：cheerio 解析 HTML，自定义 fetch 封装（`src/utils/fetch.ts`），@react-native-cookies/cookies 管理 Cookie，webview（`src/views/Webview.tsx`）用于过 Cloudflare 校验和登录
+- **抓取**：cheerio 解析 HTML，自定义 fetch 封装（`src/utils/fetch.ts`）；webview（`src/views/Webview.tsx`）使用系统 WebView Cookie 会话过 Cloudflare 校验和登录
 - **存储**：react-native-mmkv（`src/utils/storage.ts` 封装，可切换回 AsyncStorage）、react-native-file-access 读写下载文件、@georstat/react-native-image-cache 图片缓存
 - **包管理**：只能用 yarn（`preinstall` 钩子里 `only-allow yarn` 强制）
 
@@ -67,7 +67,7 @@ src/
 ├── types/             # 全局 ambient 类型（global.d.ts、store.d.ts、plugins.d.ts、router.d.ts），
 │                      # RootState 等类型全局可用，无需 import
 __tests__/             # jest 测试（App 冒烟、reader 翻页决策、migrateSetting 迁移）
-jest.setup.js          # jest 原生模块 mock（mmkv、file-access、cookies、image-cache 等）
+jest.setup.js          # jest 原生模块 mock（mmkv、file-access、Keystore、image-cache 等）
 patches/               # patch-package 补丁
 ```
 
@@ -78,7 +78,7 @@ patches/               # patch-package 补丁
 - 子类需实现 5 个 `prepare*Fetch` 方法（返回 `FetchData` 描述请求）和 5 个 `handle*` 方法（把响应解析成统一数据结构）：discovery（发现页）、search、mangaInfo、chapterList、chapter
 - 漫画/章节的唯一标识是 hash：`combineHash(plugin, mangaId, chapterId?)`，格式为 `插件ID&mangaId&chapterId`，用 `splitHash` 解码
 - 新增加插件：新建文件继承 `Base` → 在 `Plugin` 枚举中登记 → 在 `src/plugins/index.ts` 的 `PluginMap` 中注册
-- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态（通过 webview 拿到 Cookie/Token 后存到 plugin extra）
+- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态；Bika Token 由 WebView 获取后仅存入 Android Keystore（`SecureTokenModule`），不进入 Redux/备份
 - `batchDelay` 控制批量更新时的请求间隔，避免触发源站风控
 
 ## 状态与 Schema
@@ -110,5 +110,5 @@ patches/               # patch-package 补丁
 ## 安全注意事项
 
 - 不要把签名证书、keystore 提交进仓库
-- 用户凭据（Cookie、Token）只保存在设备本地（MMKV / Cookie 管理器），不经过任何自有服务器
+- 用户凭据只保存在设备本地（WebView 系统 Cookie 存储 / Android Keystore），不进入 Redux、备份或任何自有服务器
 - 插件抓取第三方网站，注意遵守 `batchDelay` 限速，避免高频请求

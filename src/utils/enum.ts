@@ -45,12 +45,9 @@ export enum ErrorMessage {
   PluginMissing = '缺少插件~',
   Timeout = '超时~',
   RequestTimeout = '请求超时~',
-  NoSupport = '插件不支持',
   MissingChapterInfo = '缺少章节信息~',
   WrongResponse = '响应失败: ',
   WrongDataType = '错误的数据格式',
-  DDoSRetry = 'KL漫画网站DDoS保护，请重试',
-  NotFoundDMZJ = '未找到漫画，请在Webview里登录获取UID后再试',
   AuthFailBIKA = '哔咔漫画 Token 失效，请在 WebView 里重新登录获取',
   WithoutPermission = '授权失败',
   PushTaskFail = '推送任务失败',
@@ -62,12 +59,6 @@ export enum ErrorMessage {
 export enum Orientation {
   Portrait = 'portrait',
   Landscape = 'landscape',
-}
-
-export enum BackupRestore {
-  Clipboard = 'clipboard',
-  Qrcode = 'Qrcode',
-  Picture = 'Picture',
 }
 
 export enum ChapterOptions {
@@ -111,11 +102,6 @@ export enum PositionXY {
   BottomLeft,
   BottomMid,
   BottomRight,
-}
-
-/** 图片加密类型 */
-export enum ScrambleType {
-  RM5 = 1,
 }
 
 export enum MultipleSeat {

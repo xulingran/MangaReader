@@ -13,15 +13,9 @@
                 "MOEIMG"
             ],
             "type": "string"
-        },
-        "Record<string,any>": {
-            "type": "object"
         }
     },
     "properties": {
-        "extra": {
-            "$ref": "#/definitions/Record<string,any>"
-        },
         "list": {
             "items": {
                 "properties": {
@@ -71,7 +65,6 @@
         }
     },
     "required": [
-        "extra",
         "list",
         "source"
     ],

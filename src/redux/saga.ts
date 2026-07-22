@@ -27,8 +27,8 @@ import {
   TaskType,
   TemplateKey,
 } from '~/utils';
-import { InteractionManager, PermissionsAndroid, Platform } from 'react-native';
-import { splitHash, combineHash, PluginMap } from '~/plugins';
+import { PermissionsAndroid, Platform } from 'react-native';
+import { splitHash, combineHash, Plugin, PluginMap } from '~/plugins';
 import { nanoid, Action, PayloadAction } from '@reduxjs/toolkit';
 import { action, initialState } from './slice';
 import { Dirs, FileSystem } from 'react-native-file-access';
@@ -36,17 +36,231 @@ import { CacheManager } from '@georstat/react-native-image-cache';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { pick, type DocumentPickerResponse } from '@react-native-documents/picker';
 import { Storage, KeyValuePair } from '~/utils/storage';
-import base64 from 'base-64';
 import dayjs from 'dayjs';
 import Share from 'react-native-share';
-import { buildChapterIndex, buildMangaIndex, buildProgressPairs } from './persistence';
+import {
+  buildChapterIndex,
+  buildMangaIndex,
+  garbageCollectSnapshots,
+  readPersistedSnapshot,
+  stripPluginCredentials,
+  writeFullSnapshot,
+  writeSnapshotMetadata,
+  writeSnapshotProgress,
+  writeSnapshotTasks,
+  type PersistedSnapshot,
+} from './persistence';
+import { SecureToken } from '~/utils/secureToken';
+import { Buffer } from 'buffer';
+import { normalizeTaskForRestart } from './task';
 
-import rootSchema from '~/schema/root.json';
 import dictSchema from '~/schema/dict.json';
 import taskSchema from '~/schema/task.json';
 import pluginSchema from '~/schema/plugin.json';
 import settingSchema from '~/schema/setting.json';
 import favoritesSchema from '~/schema/favorites.json';
+
+const MAX_BACKUP_BYTES = 64 * 1024 * 1024;
+const MAX_BACKUP_ENTITIES = 50_000;
+
+const jsonStringByteLength = (value: string): number => {
+  let bytes = 2; // opening/closing quotes
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (
+      code === 0x22 ||
+      code === 0x5c ||
+      code === 0x08 ||
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0c ||
+      code === 0x0d
+    ) {
+      bytes += 2;
+    } else if (code <= 0x1f) {
+      bytes += 6;
+    } else if (code <= 0x7f) {
+      bytes += 1;
+    } else if (code <= 0x7ff) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 6;
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      bytes += 6;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+};
+
+/** 在创建整份 JSON 字符串前完成精确上限检查，避免超大备份先耗尽 JS 堆。 */
+export const assertJsonSizeWithinLimit = (value: unknown, limit: number): number => {
+  const visiting = new Set<object>();
+  const add = (current: number, amount: number) => {
+    const next = current + amount;
+    if (next > limit) {
+      throw new Error('备份数据超过 64MB 限制，请先清理非收藏缓存');
+    }
+    return next;
+  };
+
+  const measure = (item: unknown): number => {
+    if (item === null) return 4;
+    if (typeof item === 'string') return jsonStringByteLength(item);
+    if (typeof item === 'boolean') return item ? 4 : 5;
+    if (typeof item === 'number') return JSON.stringify(item)?.length ?? 4;
+    if (typeof item !== 'object') return 0;
+    if (visiting.has(item)) throw new Error('备份数据包含循环引用');
+    visiting.add(item);
+    let bytes = 2;
+    if (Array.isArray(item)) {
+      for (let index = 0; index < item.length; index++) {
+        const entry = item[index];
+        if (index > 0) bytes = add(bytes, 1);
+        bytes = add(bytes, entry === undefined ? 4 : measure(entry));
+      }
+    } else {
+      let count = 0;
+      Object.entries(item).forEach(([key, entry]) => {
+        if (entry === undefined || typeof entry === 'function' || typeof entry === 'symbol') return;
+        if (count > 0) bytes = add(bytes, 1);
+        bytes = add(bytes, jsonStringByteLength(key));
+        bytes = add(bytes, 1);
+        bytes = add(bytes, measure(entry));
+        count += 1;
+      });
+    }
+    visiting.delete(item);
+    return bytes;
+  };
+
+  return measure(value);
+};
+
+const tryPrepare = <T>(factory: () => T): { error?: Error; request?: T } => {
+  try {
+    return { request: factory() };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error : new Error(ErrorMessage.Unknown),
+    };
+  }
+};
+
+export function* persistFullState(state: RootState) {
+  yield call(writeFullSnapshot, state);
+}
+
+function* garbageCollectStorage() {
+  yield call(garbageCollectSnapshots);
+}
+
+interface BackupPayload {
+  schemaVersion: 1;
+  favorites: RootState['favorites'];
+  dict: RootState['dict'];
+  plugin: RootState['plugin'];
+  setting: RootState['setting'];
+  task: RootState['task'];
+}
+
+export const createBackupPayload = (state: RootState): BackupPayload => {
+  const mangaIndex = buildMangaIndex(state);
+  const chapterIndex = buildChapterIndex(state);
+  if (mangaIndex.length + chapterIndex.length > MAX_BACKUP_ENTITIES) {
+    throw new Error('备份条目过多，请先减少收藏内容');
+  }
+  const manga = Object.fromEntries(
+    mangaIndex.flatMap((key) => (state.dict.manga[key] ? [[key, state.dict.manga[key]]] : []))
+  );
+  const lastWatch = Object.fromEntries(
+    mangaIndex.flatMap((key) =>
+      state.dict.lastWatch[key] ? [[key, state.dict.lastWatch[key]]] : []
+    )
+  );
+  const chapter = Object.fromEntries(
+    chapterIndex.flatMap((key) => (state.dict.chapter[key] ? [[key, state.dict.chapter[key]]] : []))
+  );
+  const record = Object.fromEntries(
+    chapterIndex.flatMap((key) => {
+      const value = state.dict.record[key];
+      return value ? [[key, { ...value, progress: 0, imagesLoaded: [] }]] : [];
+    })
+  );
+  return {
+    schemaVersion: 1,
+    favorites: state.favorites,
+    dict: { manga, chapter, record, lastWatch },
+    plugin: stripPluginCredentials(state.plugin),
+    setting: state.setting,
+    task: state.task,
+  };
+};
+
+const decodeBackupText = (source: string): unknown => {
+  const tryParse = (candidate: string): unknown | undefined => {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return undefined;
+    }
+  };
+
+  const direct = tryParse(source);
+  if (direct !== undefined) {
+    return direct;
+  }
+
+  try {
+    if (source.includes('%')) {
+      const decodedUri = tryParse(decodeURIComponent(source));
+      if (decodedUri !== undefined) {
+        return decodedUri;
+      }
+    }
+  } catch {}
+
+  const base64Value = source.replace(/^data:text\/plain;base64,/, '').trim();
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(base64Value)) {
+    try {
+      const decoded = Buffer.from(base64Value, 'base64').toString('utf8');
+      const decodedBase64 = tryParse(decoded);
+      if (decodedBase64 !== undefined) {
+        return decodedBase64;
+      }
+      if (decoded.includes('%')) {
+        const decodedLegacy = tryParse(decodeURIComponent(decoded));
+        if (decodedLegacy !== undefined) {
+          return decodedLegacy;
+        }
+      }
+    } catch {}
+  }
+  throw new Error('无法解析备份文件');
+};
+
+export const normalizeBackup = (source: string): BackupPayload => {
+  const raw = decodeBackupText(source) as Partial<BackupPayload> & Partial<RootState>;
+  if (!Array.isArray(raw.favorites) || !raw.dict || !raw.plugin || !raw.setting || !raw.task) {
+    throw new Error('数据格式错误');
+  }
+  const data: BackupPayload = {
+    schemaVersion: 1,
+    favorites: raw.favorites as RootState['favorites'],
+    dict: raw.dict as RootState['dict'],
+    plugin: raw.plugin as RootState['plugin'],
+    setting: migrateSetting(raw.setting),
+    task: raw.task as RootState['task'],
+  };
+  return data;
+};
 
 const {
   // app
@@ -77,7 +291,7 @@ const {
   syncSetting,
   // plugin
   setSource,
-  setExtra,
+  setCredential,
   sortPlugin,
   disablePlugin,
   syncPlugin,
@@ -87,7 +301,6 @@ const {
   endBatchUpdate,
   inStack,
   outStack,
-  cancelLoadManga,
   // search
   loadSearch,
   loadSearchCompletion,
@@ -129,6 +342,7 @@ const {
   viewPage,
   viewImage,
   syncDict,
+  saveManga,
 } = action;
 
 function isRegisteredHash(hash: unknown): hash is string {
@@ -143,7 +357,15 @@ function filterPluginRecord<T>(record: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(record).filter(([hash]) => isRegisteredHash(hash)));
 }
 
-function migratePluginState(pluginState: RootState['plugin']): RootState['plugin'] {
+export const isCurrentMangaRequest = (
+  state: RootState,
+  mangaHash: string,
+  actionId: string
+): boolean => state.manga.loadByHash[mangaHash]?.actionId === actionId;
+
+type LegacyPluginState = RootState['plugin'] & { extra?: Record<string, unknown> };
+
+function migratePluginState(pluginState: LegacyPluginState): RootState['plugin'] {
   const disabled = new Map(pluginState.list.map((item) => [item.value, item.disabled]));
   const order = pluginState.list
     .map((item) => item.value)
@@ -175,20 +397,20 @@ function migratePluginState(pluginState: RootState['plugin']): RootState['plugin
     ];
   });
 
-  const legacyBikaToken = pluginState.extra.bikaToken || pluginState.extra.picaToken;
-
   return {
     source: PluginMap.has(pluginState.source)
       ? pluginState.source
       : list[0]?.value || initialState.plugin.source,
     list,
-    // Bika 继续使用本地 Token；兼容旧 PICA 插件的 picaToken 字段。
-    extra:
-      typeof legacyBikaToken === 'string' && legacyBikaToken ? { bikaToken: legacyBikaToken } : {},
   };
 }
 
-export function syncPluginExtraData(extra: RootState['plugin']['extra']): void {
+const getLegacyBikaToken = (pluginState: LegacyPluginState): string | undefined => {
+  const token = pluginState.extra?.bikaToken || pluginState.extra?.picaToken;
+  return typeof token === 'string' && token.trim() ? token.trim() : undefined;
+};
+
+export function syncPluginExtraData(extra: Record<string, unknown>): void {
   PluginMap.forEach((plugin) => plugin.syncExtraData(extra));
 }
 
@@ -236,7 +458,12 @@ function* initSaga() {
 function* launchSaga() {
   yield takeLatestSuspense(launch.type, function* () {
     yield put(syncData());
-    yield take(syncDataCompletion.type);
+    const { payload }: ReturnType<typeof syncDataCompletion> = yield take(syncDataCompletion.type);
+    if (payload.error) {
+      yield put(toastMessage(payload.error.message));
+      yield put(launchCompletion({ error: payload.error }));
+      return;
+    }
     yield put(restartTask());
     yield put(loadLatestRelease());
 
@@ -245,18 +472,23 @@ function* launchSaga() {
 }
 
 function* pluginSyncDataSaga() {
-  yield takeLatestSuspense(
-    setExtra.type,
-    function* ({ payload: { source } }: ReturnType<typeof setExtra>) {
-      const extra = ((state: RootState) => state.plugin.extra)(yield select());
+  yield takeLeadingSuspense(
+    setCredential.type,
+    function* ({ payload: { source } }: ReturnType<typeof setCredential>) {
       const plugin = PluginMap.get(source);
 
-      if (!plugin) {
+      if (!plugin || source !== Plugin.BIKA) {
         yield put(toastMessage(ErrorMessage.PluginMissing));
         return;
       }
+      const token: string | null = yield call(SecureToken.getBikaToken);
+      const normalizedToken = token?.trim() || '';
+      if (!normalizedToken || normalizedToken.length > 8192) {
+        yield put(toastMessage('Bika Token 格式无效'));
+        return;
+      }
 
-      const message = plugin.syncExtraData(extra);
+      const message = plugin.syncExtraData({ bikaToken: normalizedToken });
       if (typeof message === 'string') {
         yield put(toastMessage(message));
       }
@@ -267,6 +499,39 @@ function* pluginSyncDataSaga() {
 function* syncDataSaga() {
   yield takeLatestSuspense(syncData.type, function* () {
     try {
+      const snapshot: PersistedSnapshot | undefined = yield call(readPersistedSnapshot);
+      if (snapshot) {
+        const original = JSON.stringify(snapshot);
+        migrateDeletedPluginData(snapshot);
+        snapshot.setting = migrateSetting(snapshot.setting);
+        snapshot.task = normalizeTaskForRestart(snapshot.task);
+        if (
+          !validate(snapshot.favorites, favoritesSchema) ||
+          !validate(snapshot.dict, dictSchema) ||
+          !validate(snapshot.plugin, pluginSchema) ||
+          !validate(snapshot.setting, settingSchema, initialState.setting) ||
+          !validate(snapshot.task, taskSchema)
+        ) {
+          throw new Error('本地快照数据格式错误');
+        }
+
+        yield put(syncFavorites(snapshot.favorites));
+        yield put(syncDict(snapshot.dict));
+        yield put(syncPlugin(snapshot.plugin));
+        yield put(syncSetting(snapshot.setting));
+        yield put(syncTask(snapshot.task));
+        if (original !== JSON.stringify(snapshot)) {
+          const migratedState = ((state: RootState) => state)(yield select());
+          yield call(persistFullState, migratedState);
+        }
+        const bikaToken: string | null = yield call(SecureToken.getBikaToken);
+        syncPluginExtraData(bikaToken ? { bikaToken } : {});
+        yield call(garbageCollectStorage);
+        yield put(syncDataCompletion({ error: undefined }));
+        return;
+      }
+
+      let legacyToken: string | undefined;
       const [
         [, mangaIndexData],
         [, chapterIndexData],
@@ -316,7 +581,7 @@ function* syncDataSaga() {
         if (validate(migratedDict, dictSchema)) {
           yield put(syncDict(migratedDict));
         } else {
-          yield put(toastMessage('同步字典数据失败：格式错误'));
+          throw new Error('同步字典数据失败：格式错误');
         }
       } else {
         const dict: RootState['dict'] = JSON.parse(dictData);
@@ -324,9 +589,8 @@ function* syncDataSaga() {
         if (validate(migratedDict, dictSchema)) {
           yield put(syncDict(migratedDict));
         } else {
-          yield put(toastMessage('同步字典数据失败：格式错误'));
+          throw new Error('同步字典数据失败：格式错误');
         }
-        yield call(Storage.removeItem, storageKey.dict);
       }
 
       if (taskIndexData) {
@@ -341,41 +605,55 @@ function* syncDataSaga() {
         const jobDict = pairsToDict(jobPairs);
         task.job.list = jobIndex.map((item) => jobDict[item]);
       }
-      const migratedTask = migratePluginTask(task);
+      const migratedTask = normalizeTaskForRestart(migratePluginTask(task));
       if (validate(migratedTask, taskSchema)) {
         yield put(syncTask(migratedTask));
       } else {
-        yield put(toastMessage('同步任务数据失败：格式错误'));
+        throw new Error('同步任务数据失败：格式错误');
       }
 
       if (favoritesData) {
-        const favorites: RootState['favorites'] = JSON.parse(favoritesData).filter(
-          (item: RootState['favorites'][number]) => isRegisteredHash(item.mangaHash)
+        const rawFavorites: RootState['favorites'] = JSON.parse(favoritesData);
+        const favorites = rawFavorites.filter((item: RootState['favorites'][number]) =>
+          isRegisteredHash(item.mangaHash)
         );
         if (validate(favorites, favoritesSchema)) {
           yield put(syncFavorites(favorites));
         } else {
-          yield put(toastMessage('同步收藏数据失败：格式错误'));
+          throw new Error('同步收藏数据失败：格式错误');
         }
       }
 
       if (pluginData) {
-        const plugin = migratePluginState(JSON.parse(pluginData));
+        const rawPlugin: LegacyPluginState = JSON.parse(pluginData);
+        legacyToken = getLegacyBikaToken(rawPlugin);
+        if (legacyToken) {
+          yield call(SecureToken.setBikaToken, legacyToken);
+        }
+        const plugin = migratePluginState(rawPlugin);
         if (validate(plugin, pluginSchema)) {
-          syncPluginExtraData(plugin.extra);
           yield put(syncPlugin(plugin));
         } else {
-          yield put(toastMessage('同步插件数据失败：格式错误'));
+          throw new Error('同步插件数据失败：格式错误');
         }
       }
       if (settingData) {
-        const setting = migrateSetting(JSON.parse(settingData));
+        const rawSetting = JSON.parse(settingData);
+        const setting = migrateSetting(rawSetting);
         if (validate(setting, settingSchema, initialState.setting)) {
           yield put(syncSetting(setting));
         } else {
-          yield put(toastMessage('同步设置失败：格式错误'));
+          throw new Error('同步设置失败：格式错误');
         }
       }
+
+      const bikaToken: string | null = yield call(SecureToken.getBikaToken);
+      syncPluginExtraData(bikaToken ? { bikaToken } : {});
+
+      const migratedState = ((state: RootState) => state)(yield select());
+      // 旧版多 key 布局无论是否发生字段迁移，都一次性提交为 generation 快照。
+      yield call(persistFullState, migratedState);
+      yield call(garbageCollectStorage);
 
       yield put(syncDataCompletion({ error: undefined }));
     } catch (error) {
@@ -394,30 +672,20 @@ function* backupSaga() {
     try {
       const rootState = ((state: RootState) => state)(yield select());
 
-      // 序列化前先让出主线程，等当前交互（按钮反馈等）完成后再开始 CPU 密集计算。
-      // 不能用 `new Promise(resolve => resolve(syncWork()))`——executor 是同步执行的，
-      // 不会把 stringify 移到其他任务。runAfterInteractions 才是真正的延迟入口。
-      yield call(waitForInteractions);
+      // 序列化前等待一次空闲回调，并用短超时兜底，避免无限等待繁忙交互。
+      yield call(waitForIdle);
 
-      const record: RootState['dict']['record'] = {};
-      Object.keys(rootState.dict.record).forEach((key) => {
-        record[key] = { ...rootState.dict.record[key], progress: 0, imagesLoaded: [] };
-      });
-
-      // Draft07 实例已单例化，校验阶段同样受益；序列化本身仍是同步操作，
-      // 但已在交互完成后执行。如未来需要进一步降低卡顿，可考虑把 stringify
-      // 分片到多个 InteractionManager 任务中（按 dict.manga 的 hash 分批）。
-      const payload = base64.encode(
-        encodeURIComponent(JSON.stringify({ ...rootState, dict: { ...rootState.dict, record } }))
-      );
+      const backupPayload = createBackupPayload(rootState);
+      assertJsonSizeWithinLimit(backupPayload, MAX_BACKUP_BYTES);
+      const payload = JSON.stringify(backupPayload);
       const filename = 'MangaReader备份数据' + dayjs().format('YYYY-MM-DD');
       const path = `${Dirs.CacheDir}/${filename}.txt`;
 
-      yield call(FileSystem.writeFile, path, payload, 'base64');
+      yield call(FileSystem.writeFile, path, payload, 'utf8');
       yield call(Share.open, {
         filename,
         type: 'text/plain',
-        url: Platform.OS === 'ios' ? path : 'data:text/plain;base64,' + payload,
+        url: path.startsWith('file://') ? path : `file://${path}`,
         showAppsToView: true,
       });
       yield put(toastMessage('备份完成'));
@@ -437,23 +705,44 @@ function* restoreSaga() {
   yield takeLatestSuspense(restore.type, function* () {
     try {
       const [res]: [DocumentPickerResponse, ...DocumentPickerResponse[]] = yield call(pick);
-      const source: string = yield call(FileSystem.readFile, res.uri, 'base64');
-      const data = JSON.parse(
-        decodeURIComponent(base64.decode(source.replace('datatext/plainbase64', '')))
-      );
-      data.setting = migrateSetting(data.setting);
+      const stat: { size: number } = yield call(FileSystem.stat, res.uri);
+      if (Number(stat.size) > MAX_BACKUP_BYTES) {
+        throw new Error('备份文件超过 64MB 限制');
+      }
+      const source: string = yield call(FileSystem.readFile, res.uri, 'utf8');
+      const data = normalizeBackup(source);
       migrateDeletedPluginData(data);
-
-      if (!validate(data, rootSchema, initialState)) {
+      // 备份不恢复凭据；旧备份中的 token 也只丢弃，避免文件恢复覆盖设备 Keystore。
+      data.task = normalizeTaskForRestart(data.task);
+      if (
+        !validate(data.favorites, favoritesSchema) ||
+        !validate(data.dict, dictSchema) ||
+        !validate(data.plugin, pluginSchema) ||
+        !validate(data.setting, settingSchema, initialState.setting) ||
+        !validate(data.task, taskSchema)
+      ) {
         throw new Error('数据格式错误');
       }
 
+      // 先将完整恢复快照落盘，避免写入失败时 Redux 已切换到一份未持久化的数据。
+      const currentState = ((state: RootState) => state)(yield select());
+      const restoredState: RootState = {
+        ...currentState,
+        favorites: data.favorites,
+        plugin: data.plugin,
+        setting: data.setting,
+        task: data.task,
+        dict: data.dict,
+      };
+      yield call(persistFullState, restoredState);
+
       yield put(syncFavorites(data.favorites));
-      syncPluginExtraData(data.plugin.extra);
       yield put(syncPlugin(data.plugin));
       yield put(syncSetting(data.setting));
       yield put(syncTask(data.task));
       yield put(syncDict(data.dict));
+      // 既重建 reducer 队列，也触发 taskManagerSaga 继续未完成任务。
+      yield put(restartTask());
       yield put(restoreCompletion({ error: undefined }));
       yield put(toastMessage('恢复完成'));
     } catch (error) {
@@ -471,7 +760,7 @@ function* restoreSaga() {
 /**
  * 增量持久化 worker：触发 saveDataSaga 的 action 大多是收藏/任务增删，
  * 不必每次都全量序列化整个 dict。这里维护 dirty 集合，只序列化真正变化的部分；
- * clearCacheCompletion/restoreCompletion 走全量重建（full rebuild）。
+ * 清空缓存后走全量重建（full rebuild）。
  */
 export const createSaveDataWorker = (retryDelay = 1000) => {
   const mangaDirty = new Set<string>();
@@ -482,7 +771,7 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
   let isPending = false;
 
   function* flush() {
-    yield call(waitForInteractions);
+    yield call(waitForIdle);
     const state = ((root: RootState) => root)(yield select());
 
     // 先把本次要消费的 dirty 状态做成快照，写入成功后再清理；
@@ -495,85 +784,7 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
       fullRebuild,
     };
 
-    const pairs: [string, string][] = [];
-
-    if (snapshot.fullRebuild) {
-      // 清空缓存后/恢复后：整体重写
-      const { favorites, dict, plugin, setting, task } = state;
-      const mangaIndex = buildMangaIndex(state);
-      const chapterIndex = buildChapterIndex(state);
-      mangaIndex.forEach((mangaHash) => {
-        pairs.push([
-          mangaHash,
-          JSON.stringify({ manga: dict.manga[mangaHash], lastWatch: dict.lastWatch[mangaHash] }),
-        ]);
-      });
-      chapterIndex.forEach((chapterHash) => {
-        pairs.push([
-          chapterHash,
-          JSON.stringify({
-            chapter: dict.chapter[chapterHash],
-            record: dict.record[chapterHash],
-          }),
-        ]);
-      });
-      const taskIndex = task.list.map((item) => item.taskId);
-      const jobIndex = task.job.list.map((item) => item.jobId);
-      task.list.forEach((item) => pairs.push([item.taskId, JSON.stringify(item)]));
-      task.job.list.forEach((item) => pairs.push([item.jobId, JSON.stringify(item)]));
-      pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
-      pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
-      pairs.push([storageKey.taskIndex, JSON.stringify(taskIndex)]);
-      pairs.push([storageKey.jobIndex, JSON.stringify(jobIndex)]);
-      pairs.push([storageKey.favorites, JSON.stringify(favorites)]);
-      pairs.push([storageKey.plugin, JSON.stringify(plugin)]);
-      pairs.push([storageKey.setting, JSON.stringify(setting)]);
-    } else {
-      // 只写 dirty 部分；manga/chapter 复用 buildProgressPairs 跳过非收藏项
-      // 收藏变更会在下方完整写入当前收藏的 manga/chapter；此时不再先写 dirty 条目，
-      // 避免同一个 key 在一次 multiSet 中被重复写入。
-      if (!snapshot.favorites && (snapshot.manga.size > 0 || snapshot.chapter.size > 0)) {
-        const dirtyManga = Array.from(snapshot.manga);
-        const dirtyChapter = Array.from(snapshot.chapter);
-        pairs.push(...buildProgressPairs(state, dirtyManga, dirtyChapter));
-      }
-      if (snapshot.favorites) {
-        // 收藏增删会让 buildMangaIndex/buildChapterIndex 变化，重建索引；
-        // 同时把所有收藏对应的 manga/chapter 全部序列化一遍（保证新增收藏的离线数据落盘）
-        const mangaIndex = buildMangaIndex(state);
-        const chapterIndex = buildChapterIndex(state);
-        mangaIndex.forEach((mangaHash) => {
-          pairs.push([
-            mangaHash,
-            JSON.stringify({
-              manga: state.dict.manga[mangaHash],
-              lastWatch: state.dict.lastWatch[mangaHash],
-            }),
-          ]);
-        });
-        chapterIndex.forEach((chapterHash) => {
-          pairs.push([
-            chapterHash,
-            JSON.stringify({
-              chapter: state.dict.chapter[chapterHash],
-              record: state.dict.record[chapterHash],
-            }),
-          ]);
-        });
-        pairs.push([storageKey.mangaIndex, JSON.stringify(mangaIndex)]);
-        pairs.push([storageKey.chapterIndex, JSON.stringify(chapterIndex)]);
-        pairs.push([storageKey.favorites, JSON.stringify(state.favorites)]);
-      }
-      if (snapshot.task) {
-        const taskIndex = state.task.list.map((item) => item.taskId);
-        const jobIndex = state.task.job.list.map((item) => item.jobId);
-        state.task.list.forEach((item) => pairs.push([item.taskId, JSON.stringify(item)]));
-        state.task.job.list.forEach((item) => pairs.push([item.jobId, JSON.stringify(item)]));
-        pairs.push([storageKey.taskIndex, JSON.stringify(taskIndex)]);
-        pairs.push([storageKey.jobIndex, JSON.stringify(jobIndex)]);
-      }
-    }
-
+    const needsFullSnapshot = snapshot.fullRebuild || snapshot.favorites;
     // 写入前从全局 dirty 中移除本次快照包含的项；
     // flush 期间新到达的 action 仍会向 dirty 集合添加项，这些项不会被本次消费。
     snapshot.manga.forEach((hash) => mangaDirty.delete(hash));
@@ -588,12 +799,23 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
       fullRebuild = false;
     }
 
-    if (pairs.length <= 0) {
-      return true;
-    }
-
     try {
-      yield call(Storage.multiSet, pairs);
+      if (needsFullSnapshot) {
+        yield call(persistFullState, state);
+      } else {
+        if (snapshot.task) {
+          yield call(writeSnapshotTasks, state);
+        }
+        if (snapshot.manga.size > 0 || snapshot.chapter.size > 0) {
+          yield call(
+            writeSnapshotProgress,
+            state,
+            Array.from(snapshot.manga),
+            Array.from(snapshot.chapter),
+            false
+          );
+        }
+      }
     } catch (error) {
       // 写入失败：把本次快照合并回 dirty 集合，等待下一次 flush 重试。
       // 注意：如果 fullRebuild 失败，重新置位即可（它本身覆盖所有数据）；
@@ -617,7 +839,7 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
   }
 
   return function* ({ type, payload }: PayloadAction<any>) {
-    if (type === clearCacheCompletion.type || type === restoreCompletion.type) {
+    if (type === clearCacheCompletion.type) {
       fullRebuild = true;
     } else if (type === addFavorites.type) {
       favoritesDirty = true;
@@ -630,7 +852,8 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
     } else if (
       type === pushTask.type ||
       type === removeTask.type ||
-      type === finishTask.type
+      type === finishTask.type ||
+      type === endJob.type
     ) {
       taskDirty = true;
     }
@@ -669,12 +892,30 @@ export const createSaveDataWorker = (retryDelay = 1000) => {
 
 const saveDataWorker = createSaveDataWorker();
 
-const waitForInteractions = () =>
+const waitForIdle = () =>
   new Promise<void>((resolve) => {
-    InteractionManager.runAfterInteractions(() => resolve());
+    let completed = false;
+    const finish = () => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeout);
+        resolve();
+      }
+    };
+    const timeout = setTimeout(finish, 50);
+    const requestIdle = (
+      globalThis as typeof globalThis & {
+        requestIdleCallback?: (callback: () => void) => number;
+      }
+    ).requestIdleCallback;
+    if (requestIdle) {
+      requestIdle(finish);
+    } else {
+      setTimeout(finish, 0);
+    }
   });
 
-const saveProgressWorker = (function () {
+export const createSaveProgressWorker = (retryDelay = 250) => {
   const mangaHashes = new Set<string>();
   const chapterHashes = new Set<string>();
   let rebuildIndexes = false;
@@ -690,14 +931,21 @@ const saveProgressWorker = (function () {
         payload.data.forEach((manga: IncreaseManga) => mangaHashes.add(manga.hash));
       }
     } else if (type === loadMangaCompletion.type) {
+      const isCurrent: boolean = yield select(
+        isCurrentMangaRequest,
+        payload.mangaHash,
+        payload.actionId
+      );
+      if (!isCurrent) {
+        return;
+      }
       if (!haveError(payload)) {
         mangaHashes.add(payload.data.hash);
         rebuildIndexes = true;
       }
     } else if (type === loadChapterCompletion.type) {
-      const chapterHash = payload.data?.hash || payload.actionId;
-      if (chapterHash) {
-        chapterHashes.add(chapterHash);
+      if (!haveError(payload) && payload.data?.hash) {
+        chapterHashes.add(payload.data.hash);
         rebuildIndexes = true;
       }
     }
@@ -708,7 +956,8 @@ const saveProgressWorker = (function () {
 
     isPending = true;
     try {
-      yield delay(250);
+      let consecutiveFailures = 0;
+      yield delay(retryDelay);
       while (mangaHashes.size > 0 || chapterHashes.size > 0) {
         const dirtyManga = Array.from(mangaHashes);
         const dirtyChapter = Array.from(chapterHashes);
@@ -717,28 +966,34 @@ const saveProgressWorker = (function () {
         chapterHashes.clear();
         rebuildIndexes = false;
 
-        yield call(waitForInteractions);
+        yield call(waitForIdle);
         const state = ((root: RootState) => root)(yield select());
-        const pairs = buildProgressPairs(state, dirtyManga, dirtyChapter);
-        if (shouldRebuildIndexes) {
-          pairs.push(
-            [storageKey.mangaIndex, JSON.stringify(buildMangaIndex(state))],
-            [storageKey.chapterIndex, JSON.stringify(buildChapterIndex(state))]
-          );
-        }
-        if (pairs.length > 0) {
-          yield call(Storage.multiSet, pairs);
+        try {
+          yield call(writeSnapshotProgress, state, dirtyManga, dirtyChapter, shouldRebuildIndexes);
+          consecutiveFailures = 0;
+        } catch (error) {
+          dirtyManga.forEach((hash) => mangaHashes.add(hash));
+          dirtyChapter.forEach((hash) => chapterHashes.add(hash));
+          rebuildIndexes ||= shouldRebuildIndexes;
+          consecutiveFailures += 1;
+          console.warn('阅读进度持久化失败，等待重试', error);
+          if (consecutiveFailures >= 2) {
+            yield put(toastMessage('阅读进度保存失败，将在下次进度变化时重试'));
+            break;
+          }
         }
 
         if (mangaHashes.size > 0 || chapterHashes.size > 0) {
-          yield delay(250);
+          yield delay(retryDelay);
         }
       }
     } finally {
       isPending = false;
     }
   };
-})();
+};
+
+const saveProgressWorker = createSaveProgressWorker();
 
 function* saveProgressSaga() {
   yield takeEverySuspense(
@@ -768,32 +1023,31 @@ function* saveSettingSaga() {
       setAndroidDownloadPath.type,
     ],
     function* () {
-      yield call(waitForInteractions);
-      const setting = ((state: RootState) => state.setting)(yield select());
-      yield call(Storage.setItem, storageKey.setting, JSON.stringify(setting));
+      yield call(waitForIdle);
+      const state = ((root: RootState) => root)(yield select());
+      yield call(writeSnapshotMetadata, state, ['setting']);
     }
   );
 }
 
 function* savePluginSaga() {
-  yield takeLatestSuspense(
-    [setSource.type, setExtra.type, sortPlugin.type, disablePlugin.type],
-    function* () {
-      yield call(waitForInteractions);
-      const plugin = ((state: RootState) => state.plugin)(yield select());
-      yield call(Storage.setItem, storageKey.plugin, JSON.stringify(plugin));
-    }
-  );
+  yield takeLatestSuspense([setSource.type, sortPlugin.type, disablePlugin.type], function* () {
+    yield call(waitForIdle);
+    const state = ((root: RootState) => root)(yield select());
+    yield call(writeSnapshotMetadata, state, ['plugin']);
+  });
+}
+
+export function* saveFavoritesWorker() {
+  yield call(waitForIdle);
+  const state = ((root: RootState) => root)(yield select());
+  yield call(writeSnapshotMetadata, state, ['favorites']);
 }
 
 function* saveFavoritesSaga() {
   yield takeLatestSuspense(
-    [viewFavorites.type, enabledBatch.type, disabledBatch.type],
-    function* () {
-      yield call(waitForInteractions);
-      const favorites = ((state: RootState) => state.favorites)(yield select());
-      yield call(Storage.setItem, storageKey.favorites, JSON.stringify(favorites));
-    }
+    [viewFavorites.type, enabledBatch.type, disabledBatch.type, endBatchUpdate.type],
+    saveFavoritesWorker
   );
 }
 function* saveDataSaga() {
@@ -801,23 +1055,43 @@ function* saveDataSaga() {
   yield takeEverySuspense(
     [
       clearCacheCompletion.type,
-      restoreCompletion.type,
       addFavorites.type,
       removeFavorites.type,
       pushTask.type,
       removeTask.type,
       finishTask.type,
+      endJob.type,
     ],
     saveDataWorker
   );
 }
 function* clearCacheSaga() {
   yield takeLatestSuspense(clearCache.type, function* () {
-    yield call(Storage.clear);
+    try {
+      yield call(Storage.clear);
+    } catch (error) {
+      yield put(
+        clearCacheCompletion({
+          error: new Error(
+            '清空缓存失败：' + (error instanceof Error ? error.message : ErrorMessage.Unknown)
+          ),
+        })
+      );
+      return;
+    }
+
+    let credentialError: Error | undefined;
+    try {
+      yield call(SecureToken.clearBikaToken);
+    } catch (error) {
+      credentialError = new Error(
+        '清空安全凭据失败：' + (error instanceof Error ? error.message : ErrorMessage.Unknown)
+      );
+    }
     syncPluginExtraData({});
     yield put(syncData());
-    yield take(syncDataCompletion.type);
-    yield put(clearCacheCompletion({}));
+    const { payload }: ReturnType<typeof syncDataCompletion> = yield take(syncDataCompletion.type);
+    yield put(clearCacheCompletion({ error: payload.error || credentialError }));
   });
 }
 
@@ -832,77 +1106,76 @@ function* loadLatestReleaseSaga() {
   });
 }
 
-function* batchUpdateSaga() {
-  yield takeLeadingSuspense(
-    batchUpdate.type,
-    function* ({ payload: defaultList }: ReturnType<typeof batchUpdate>) {
-      const favorites = ((state: RootState) => state.favorites)(yield select());
-      const fail = ((state: RootState) => state.batch.fail)(yield select());
-      const batchList =
-        defaultList ||
-        (fail.length > 0
-          ? fail
-          : favorites.filter((item) => item.enableBatch).map((item) => item.mangaHash));
-      const queue = [...batchList].map((hash) => ({ hash, retry: 0 }));
+export function* batchUpdateWorker({ payload: defaultList }: ReturnType<typeof batchUpdate>) {
+  const favorites = ((state: RootState) => state.favorites)(yield select());
+  const fail = ((state: RootState) => state.batch.fail)(yield select());
+  const batchList =
+    defaultList ||
+    (fail.length > 0
+      ? fail
+      : favorites.filter((item) => item.enableBatch).map((item) => item.mangaHash));
+  const queue = [...batchList].map((hash) => ({ hash, retry: 0 }));
 
-      const loadMangaEffect = function* ({ hash = '', retry = 0 }) {
-        const [source] = splitHash(hash);
-        const actionId = nanoid();
-        const plugin = PluginMap.get(source);
-        const dict = ((state: RootState) => state.dict)(yield select());
+  const loadMangaEffect = function* ({ hash = '', retry = 0 }) {
+    const [source] = splitHash(hash);
+    const actionId = nanoid();
+    const plugin = PluginMap.get(source);
+    const dict = ((state: RootState) => state.dict)(yield select());
 
-        yield put(inStack(hash));
-        if (!plugin) {
-          outStack({ isSuccess: false, isTrend: false, hash, isRetry: false });
-          return;
-        }
-        yield put(loadManga({ mangaHash: hash, actionId }));
-
-        const {
-          payload: { error: fetchError, data },
-        }: ReturnType<typeof loadMangaCompletion> = yield take((takeAction: Action<string>) => {
-          const { type, payload } = takeAction as ReturnType<typeof loadMangaCompletion>;
-          return type === loadMangaCompletion.type && payload.actionId === actionId;
-        });
-
-        if (fetchError) {
-          const [, seconds] = fetchError.message.match(/([0-9]+) ?s/) || [];
-          const timeout = Math.min(Number(seconds), 60) * 1000;
-
-          if (retry < 3) {
-            queue.push({ hash, retry: retry + 1 });
-          }
-
-          yield put(outStack({ isSuccess: false, isTrend: false, hash, isRetry: retry < 3 }));
-          yield delay(timeout || plugin.batchDelay);
-        } else {
-          const prev = dict.manga[hash]?.chapters;
-          const curr = data?.chapters;
-
-          yield put(
-            outStack({
-              isSuccess: true,
-              isTrend: nonNullable(prev) && nonNullable(curr) && curr.length > prev.length,
-              hash,
-              isRetry: false,
-            })
-          );
-        }
-      };
-
-      yield put(startBatchUpdate(batchList));
-      while (true) {
-        const head = queue.shift();
-
-        if (!head) {
-          break;
-        }
-
-        yield loadMangaEffect(head);
-      }
-      yield put(endBatchUpdate());
+    yield put(inStack(hash));
+    if (!plugin) {
+      yield put(outStack({ isSuccess: false, isTrend: false, hash, isRetry: false }));
+      return;
     }
-  );
+    yield put(loadManga({ mangaHash: hash, actionId }));
+
+    const {
+      payload: { error: fetchError, data },
+    }: ReturnType<typeof loadMangaCompletion> = yield take((takeAction: Action<string>) => {
+      const { type, payload } = takeAction as ReturnType<typeof loadMangaCompletion>;
+      return type === loadMangaCompletion.type && payload.actionId === actionId;
+    });
+
+    if (fetchError) {
+      const [, seconds] = fetchError.message.match(/([0-9]+) ?s/) || [];
+      const timeout = Math.min(Number(seconds), 60) * 1000;
+
+      if (retry < 3) {
+        queue.push({ hash, retry: retry + 1 });
+      }
+
+      yield put(outStack({ isSuccess: false, isTrend: false, hash, isRetry: retry < 3 }));
+      yield delay(timeout || plugin.batchDelay);
+    } else {
+      const prev = dict.manga[hash]?.chapters;
+      const curr = data?.chapters;
+
+      yield put(
+        outStack({
+          isSuccess: true,
+          isTrend: nonNullable(prev) && nonNullable(curr) && curr.length > prev.length,
+          hash,
+          isRetry: false,
+        })
+      );
+    }
+  };
+
+  yield put(startBatchUpdate(batchList));
+  while (true) {
+    const head = queue.shift();
+
+    if (!head) {
+      break;
+    }
+
+    yield loadMangaEffect(head);
+  }
+  yield put(endBatchUpdate());
+}
+
+function* batchUpdateSaga() {
+  yield takeLeadingSuspense(batchUpdate.type, batchUpdateWorker);
 }
 
 function* loadDiscoverySaga() {
@@ -929,10 +1202,16 @@ function* loadDiscoverySaga() {
         { ...filter }
       );
 
-      const { error: fetchError, data } = yield call(
-        fetchData,
+      const { error: prepareError, request } = tryPrepare(() =>
         plugin.prepareDiscoveryFetch(page, filterWithDefault)
       );
+      if (prepareError || !request) {
+        yield put(
+          loadDiscoveryCompletion({ error: prepareError || new Error(ErrorMessage.Unknown) })
+        );
+        return;
+      }
+      const { error: fetchError, data } = yield call(fetchData, request);
       const { error: pluginError, discovery } = trycatch(
         () => plugin.handleDiscovery(data),
         '漫画数据解析错误：'
@@ -967,10 +1246,14 @@ function* loadSearchSaga() {
         { ...filter }
       );
 
-      const { error: fetchError, data } = yield call(
-        fetchData,
+      const { error: prepareError, request } = tryPrepare(() =>
         plugin.prepareSearchFetch(keyword, page, filterWithDefault)
       );
+      if (prepareError || !request) {
+        yield put(loadSearchCompletion({ error: prepareError || new Error(ErrorMessage.Unknown) }));
+        return;
+      }
+      const { error: fetchError, data } = yield call(fetchData, request);
       const { error: pluginError, search } = trycatch(
         () => plugin.handleSearch(data),
         '漫画数据解析错误：'
@@ -981,66 +1264,70 @@ function* loadSearchSaga() {
   );
 }
 
-function* loadMangaSaga() {
-  yield takeEverySuspense(
-    loadManga.type,
-    function* ({ payload: { mangaHash, actionId } }: ReturnType<typeof loadManga>) {
-      function* loadMangaEffect() {
-        yield put(loadMangaInfo({ mangaHash, actionId }));
-        const {
-          payload: { error: loadMangaInfoError, data: mangaInfo },
-        }: ReturnType<typeof loadMangaInfoCompletion> = yield take((takeAction: Action<string>) => {
-          const { type, payload } = takeAction as ReturnType<typeof loadMangaInfoCompletion>;
-          return type === loadMangaInfoCompletion.type && payload.actionId === actionId;
-        });
+export function* loadMangaWorker({
+  payload: { mangaHash, actionId },
+}: ReturnType<typeof loadManga>) {
+  yield put(loadMangaInfo({ mangaHash, actionId }));
+  const {
+    payload: { error: loadMangaInfoError, data: mangaInfo },
+  }: ReturnType<typeof loadMangaInfoCompletion> = yield take((takeAction: Action<string>) => {
+    const { type, payload } = takeAction as ReturnType<typeof loadMangaInfoCompletion>;
+    return type === loadMangaInfoCompletion.type && payload.actionId === actionId;
+  });
 
-        yield put(loadChapterList({ mangaHash, page: 1 }));
-        const {
-          payload: { error: loadChapterListError, data: chapterInfo },
-        }: ReturnType<typeof loadChapterListCompletion> = yield take(
-          (takeAction: Action<string>) => {
-            const { type, payload } = takeAction as ReturnType<typeof loadChapterListCompletion>;
-            return (
-              type === loadChapterListCompletion.type &&
-              payload.data !== undefined &&
-              payload.data.mangaHash === mangaHash &&
-              payload.data.page === 1
-            );
-          }
-        );
+  if (loadMangaInfoError) {
+    yield put(loadMangaCompletion({ error: loadMangaInfoError, actionId, mangaHash }));
+    return;
+  }
 
-        if (loadMangaInfoError) {
-          yield put(loadMangaCompletion({ error: loadMangaInfoError, actionId }));
-          return;
-        }
-        if (loadChapterListError) {
-          yield put(loadMangaCompletion({ error: loadChapterListError, actionId }));
-          return;
-        }
-        if (!nonNullable(mangaInfo) || !nonNullable(chapterInfo)) {
-          yield put(
-            loadMangaCompletion({ error: new Error(ErrorMessage.WrongDataType), actionId })
-          );
-          return;
-        }
+  yield put(loadChapterList({ mangaHash, page: 1, actionId }));
+  const {
+    payload: { error: loadChapterListError, data: chapterInfo },
+  }: ReturnType<typeof loadChapterListCompletion> = yield take((takeAction: Action<string>) => {
+    const { type, payload } = takeAction as ReturnType<typeof loadChapterListCompletion>;
+    return (
+      type === loadChapterListCompletion.type &&
+      payload.actionId === actionId &&
+      payload.data !== undefined &&
+      payload.data.mangaHash === mangaHash &&
+      payload.data.page === 1
+    );
+  });
 
-        yield put(
-          loadMangaCompletion({
-            data: {
-              ...mangaInfo,
-              chapters: (mangaInfo.chapters || []).concat(chapterInfo.list),
-            },
-            actionId,
-          })
-        );
-      }
+  if (loadChapterListError) {
+    yield put(loadMangaCompletion({ error: loadChapterListError, actionId, mangaHash }));
+    return;
+  }
+  if (!nonNullable(mangaInfo) || !nonNullable(chapterInfo)) {
+    yield put(
+      loadMangaCompletion({
+        error: new Error(ErrorMessage.WrongDataType),
+        actionId,
+        mangaHash,
+      })
+    );
+    return;
+  }
 
-      yield race({
-        task: call(loadMangaEffect),
-        cancel: take(cancelLoadManga.type),
-      });
-    }
+  const manga = {
+    ...mangaInfo,
+    chapters: (mangaInfo.chapters || []).concat(chapterInfo.list),
+  };
+  const isCurrent: boolean = yield select(isCurrentMangaRequest, mangaHash, actionId);
+  if (isCurrent) {
+    yield put(saveManga(manga));
+  }
+  yield put(
+    loadMangaCompletion({
+      data: manga,
+      actionId,
+      mangaHash,
+    })
   );
+}
+
+function* loadMangaSaga() {
+  yield takeEverySuspense(loadManga.type, loadMangaWorker);
 }
 
 function* loadMangaInfoSaga() {
@@ -1059,10 +1346,19 @@ function* loadMangaInfoSaga() {
 
       const cachedManga = ((state: RootState) => state.dict.manga[mangaHash])(yield select());
 
-      const { error: fetchError, data } = yield call(
-        fetchData,
+      const { error: prepareError, request } = tryPrepare(() =>
         plugin.prepareMangaInfoFetch(mangaId, cachedManga)
       );
+      if (prepareError || !request) {
+        yield put(
+          loadMangaInfoCompletion({
+            error: prepareError || new Error(ErrorMessage.Unknown),
+            actionId,
+          })
+        );
+        return;
+      }
+      const { error: fetchError, data } = yield call(fetchData, request);
       const { error: pluginError, manga } = trycatch(
         () => plugin.handleMangaInfo(data, mangaId),
         '漫画详情解析错误：'
@@ -1075,70 +1371,100 @@ function* loadMangaInfoSaga() {
   );
 }
 
-function* loadChapterListSaga() {
-  yield takeEverySuspense(
-    loadChapterList.type,
-    function* ({ payload: { mangaHash, page } }: ReturnType<typeof loadChapterList>) {
-      const [source, mangaId] = splitHash(mangaHash);
-      const plugin = PluginMap.get(source);
+export function* loadChapterListWorker({
+  payload: { mangaHash, page, actionId },
+}: ReturnType<typeof loadChapterList>) {
+  const [source, mangaId] = splitHash(mangaHash);
+  const plugin = PluginMap.get(source);
 
-      if (!plugin) {
-        yield put(loadChapterListCompletion({ error: new Error(ErrorMessage.PluginMissing) }));
-        return;
-      }
+  if (!plugin) {
+    yield put(
+      loadChapterListCompletion({
+        error: new Error(ErrorMessage.PluginMissing),
+        data: { mangaHash, page, list: [] },
+        actionId,
+      })
+    );
+    return;
+  }
 
-      const body = plugin.prepareChapterListFetch(mangaId, page);
-      if (!body) {
-        yield put(loadChapterListCompletion({ data: { mangaHash, page, list: [] } }));
-        return;
-      }
+  const { error: prepareError, request: body } = tryPrepare(() =>
+    plugin.prepareChapterListFetch(mangaId, page)
+  );
+  if (prepareError) {
+    yield put(
+      loadChapterListCompletion({
+        error: prepareError,
+        data: { mangaHash, page, list: [] },
+        actionId,
+      })
+    );
+    return;
+  }
+  if (!body) {
+    yield put(loadChapterListCompletion({ data: { mangaHash, page, list: [] }, actionId }));
+    return;
+  }
 
-      const { error: fetchError, data } = yield call(fetchData, body);
-      const {
-        error: pluginError,
-        chapterList = [],
-        canLoadMore,
-      } = trycatch(() => plugin.handleChapterList(data, mangaId), '章节列表解析错误：');
+  const { error: fetchError, data } = yield call(fetchData, body);
+  const {
+    error: pluginError,
+    chapterList = [],
+    canLoadMore,
+  } = trycatch(() => plugin.handleChapterList(data, mangaId), '章节列表解析错误：');
 
-      if (pluginError || fetchError) {
-        yield put(
-          loadChapterListCompletion({
-            error: pluginError || fetchError,
-            data: { mangaHash, page, list: [] },
-          })
-        );
-        return;
-      }
+  if (pluginError || fetchError) {
+    yield put(
+      loadChapterListCompletion({
+        error: pluginError || fetchError,
+        data: { mangaHash, page, list: [] },
+        actionId,
+      })
+    );
+    return;
+  }
 
-      if (canLoadMore) {
-        yield put(loadChapterList({ mangaHash, page: page + 1 }));
-        const {
-          payload: { error: loadMoreError, data: extraData },
-        }: ReturnType<typeof loadChapterListCompletion> = yield take(
-          (takeAction: Action<string>) => {
-            const { type, payload } = takeAction as ReturnType<typeof loadChapterListCompletion>;
-            return (
-              type === loadChapterListCompletion.type &&
-              payload.data !== undefined &&
-              payload.data.mangaHash === mangaHash &&
-              payload.data.page === page + 1
-            );
-          }
-        );
+  if (canLoadMore) {
+    yield put(loadChapterList({ mangaHash, page: page + 1, actionId }));
+    const {
+      payload: { error: loadMoreError, data: extraData },
+    }: ReturnType<typeof loadChapterListCompletion> = yield take((takeAction: Action<string>) => {
+      const { type, payload } = takeAction as ReturnType<typeof loadChapterListCompletion>;
+      return (
+        type === loadChapterListCompletion.type &&
+        payload.actionId === actionId &&
+        payload.data !== undefined &&
+        payload.data.mangaHash === mangaHash &&
+        payload.data.page === page + 1
+      );
+    });
 
-        if (!loadMoreError && extraData) {
-          chapterList.push(...extraData.list);
-        }
-      }
-
+    if (loadMoreError) {
       yield put(
         loadChapterListCompletion({
-          error: fetchError || pluginError,
-          data: { mangaHash, page, list: chapterList },
+          error: loadMoreError,
+          data: { mangaHash, page, list: [] },
+          actionId,
         })
       );
+      return;
     }
+    if (extraData) {
+      chapterList.push(...extraData.list);
+    }
+  }
+
+  yield put(
+    loadChapterListCompletion({
+      error: fetchError || pluginError,
+      data: { mangaHash, page, list: chapterList },
+      actionId,
+    })
   );
+}
+
+function* loadChapterListSaga() {
+  yield takeEverySuspense(loadChapterList.type, loadChapterListWorker);
 }
 
 // 阅读页连续翻页/切章节时 loadChapter 可能在数百毫秒内被重复触发；
@@ -1178,21 +1504,28 @@ function* loadChapterWorker(chapterHash: string) {
   let extra: Record<string, any> = {};
   let error: Error | undefined;
   let chapter: Chapter | undefined;
+  const cachedData = ((state: RootState) => ({
+    manga: state.dict.manga[combineHash(source, mangaId)],
+    chapter: state.dict.manga[combineHash(source, mangaId)]?.chapters.find(
+      (item) => item.hash === chapterHash
+    ),
+  }))(yield select());
   while (true) {
-    const { error: fetchError, data } = yield call(
-      fetchData,
-      plugin.prepareChapterFetch(mangaId, chapterId, page, extra)
+    const { error: prepareError, request } = tryPrepare(() =>
+      plugin.prepareChapterFetch(mangaId, chapterId, page, extra, cachedData)
     );
+    if (prepareError || !request) {
+      error = prepareError || new Error(ErrorMessage.MissingChapterInfo);
+      break;
+    }
+    const { error: fetchError, data } = yield call(fetchData, request);
     const {
       error: pluginError,
       chapter: nextChapter,
       canLoadMore,
       nextPage = page + 1,
       nextExtra = extra,
-    } = trycatch(
-      () => plugin.handleChapter(data, mangaId, chapterId, page),
-      '章节数据解析错误：'
-    );
+    } = trycatch(() => plugin.handleChapter(data, mangaId, chapterId, page), '章节数据解析错误：');
 
     if (fetchError || pluginError) {
       error = fetchError || pluginError;
@@ -1228,6 +1561,21 @@ function* loadChapterWorker(chapterHash: string) {
 
   yield put(loadChapterCompletion({ error, data: chapter, actionId: chapterHash }));
 }
+
+export const sanitizeFileName = (value: unknown): string => {
+  const withoutControlCharacters = Array.from(String(value), (character) =>
+    character.charCodeAt(0) < 32 ? '_' : character
+  ).join('');
+  const normalized = withoutControlCharacters
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim()
+    .slice(0, 100);
+  if (!normalized || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(normalized)) {
+    return 'unknown';
+  }
+  return normalized;
+};
 
 function* replaceDownloadPath(
   path: string,
@@ -1268,14 +1616,14 @@ function* replaceDownloadPath(
 
       switch (template) {
         case TemplateKey.TIME: {
-          return dayjs(data).format(parameter || 'X');
+          return sanitizeFileName(dayjs(data).format(parameter || 'X'));
         }
         case TemplateKey.AUTHOR:
         case TemplateKey.TAG: {
-          return data.join(parameter || '、');
+          return sanitizeFileName(data.join(parameter || '、'));
         }
         default: {
-          return data;
+          return sanitizeFileName(data);
         }
       }
     });
@@ -1314,7 +1662,7 @@ function* checkAndroidPermission() {
   }
 }
 function* checkAndroidPath(path: string) {
-  if (Platform.OS === 'android') {
+  if (Platform.OS === 'android' && Platform.Version <= 28) {
     const isExisted: boolean = yield call(FileSystem.exists, path);
     if (!isExisted) {
       yield call(FileSystem.mkdir, path);
@@ -1344,7 +1692,14 @@ function* fileExport({
     });
   } else {
     const [, name, suffix] = path.match(/.*\/(.*)\.(.*)$/) || [];
-    yield call(FileSystem.cp, `file://${path}`, `${downloadPath}/${filename || name}.${suffix}`);
+    if (Number(Platform.Version) >= 29) {
+      const album = sanitizeFileName(downloadPath.split(/[\\/]/).at(-1));
+      const targetName = sanitizeFileName(`${album}-${filename || name}.${suffix || 'jpg'}`);
+      yield call(FileSystem.cpExternal, path, targetName, 'images');
+    } else {
+      const targetName = sanitizeFileName(`${filename || name}.${suffix || 'jpg'}`);
+      yield call(FileSystem.cp, `file://${path}`, `${downloadPath}/${targetName}`);
+    }
   }
 }
 function* thread() {
@@ -1428,7 +1783,11 @@ function* pushChapterTask({
   }
 
   const { title, headers, images } = chapter;
-  const taskId = nanoid(5);
+  if (images.length === 0) {
+    yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
+    return;
+  }
+  const taskId = nanoid();
   const downloadPath: string = yield call(replaceDownloadPath, androidDownloadPath, chapterHash, {
     hash: taskId,
     timestamp: dayjs().valueOf(),
@@ -1449,7 +1808,7 @@ function* pushChapterTask({
         status: AsyncStatus.Default,
         downloadPath,
         headers,
-        queue: images.map((item, index) => ({ index, jobId: nanoid(5), source: item.uri })),
+        queue: images.map((item, index) => ({ index, jobId: nanoid(), source: item.uri })),
         pending: [],
         success: [],
         fail: [],
@@ -1498,14 +1857,6 @@ function* saveImageSaga() {
         yield call(CameraRoll.save, source);
         yield put(toastMessage('保存成功'));
         return;
-      } else if (/^data:image\/png;base64,.+/.test(source)) {
-        path = CacheManager.config.baseDir + nanoid() + '.png';
-        yield call(
-          FileSystem.writeFile,
-          path,
-          source.replace('data:image/png;base64,', ''),
-          'base64'
-        );
       } else {
         path = yield call(fileDownload, { source, headers });
       }
@@ -1545,6 +1896,16 @@ function* taskManagerSaga() {
 export function* catchErrorWorker({ type, payload }: PayloadAction<any>) {
   if (!payload || !payload.error) {
     return;
+  }
+  if (loadMangaCompletion.type === type) {
+    const isCurrent: boolean = yield select(
+      isCurrentMangaRequest,
+      payload.mangaHash,
+      payload.actionId
+    );
+    if (!isCurrent) {
+      return;
+    }
   }
   if (
     loadMangaInfoCompletion.type === type ||

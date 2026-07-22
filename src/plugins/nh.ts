@@ -1,5 +1,5 @@
 import Base, { Options, Plugin } from './base';
-import { ErrorMessage, MangaStatus } from '~/utils';
+import { MangaStatus } from '~/utils';
 import dayjs from 'dayjs';
 
 interface NhTag {
@@ -169,7 +169,6 @@ class NHentai extends Base {
     timeout: 20000,
   });
 
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => undefined;
 
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId) => ({
     url: `https://nhentai.net/api/v2/galleries/${mangaId}`,
@@ -229,10 +228,6 @@ class NHentai extends Base {
       },
     };
   };
-
-  handleChapterList: Base['handleChapterList'] = () => ({
-    error: new Error(ErrorMessage.NoSupport + 'handleChapterList'),
-  });
 
   handleChapter: Base['handleChapter'] = (response: NhDetailResponse, mangaId, chapterId) => {
     if (!response.id || String(response.id) !== mangaId) {

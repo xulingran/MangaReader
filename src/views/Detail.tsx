@@ -7,7 +7,6 @@ import {
   HStack,
   Pressable,
   Toast,
-  useTheme,
   useDisclose,
 } from 'native-base';
 import {
@@ -19,9 +18,9 @@ import {
   MangaStatus,
   AsyncStatus,
 } from '~/utils';
-import { useOnce, useDelayRender, useSplitWidth, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useOnce, useSplitWidth, useDebouncedSafeAreaInsets } from '~/hooks';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
-import { StyleSheet, RefreshControl, Linking } from 'react-native';
+import { StyleSheet, Linking } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -32,6 +31,8 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import VectorIcon from '~/components/VectorIcon';
+import Empty from '~/components/Empty';
+import ErrorWithRetry from '~/components/ErrorWithRetry';
 import { useBackgroundColor } from '~/utils/theme/hooks';
 
 const {
@@ -76,12 +77,11 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     maxSplitWidth: 100,
   });
   const { isOpen, onOpen, onClose } = useDisclose();
-  const { colors } = useTheme();
   const [chapter, setChapter] = useState<{ hash: string; title: string }>();
-  const render = useDelayRender(false, 300);
   const dispatch = useAppDispatch();
-  const loadStatus = useAppSelector((state) => state.manga.loadStatus);
-  const loadingMangaHash = useAppSelector((state) => state.manga.loadingMangaHash);
+  const currentLoadStatus = useAppSelector(
+    (state) => state.manga.loadByHash[mangaHash]?.status ?? AsyncStatus.Default
+  );
   // 只订阅当前漫画，后台更新其他漫画不触发 Detail 重渲染
   const data = useAppSelector((state) => state.dict.manga[mangaHash]);
   const reocrdDict = useAppSelector((state) => state.dict.record);
@@ -248,6 +248,12 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   );
 
   if (!nonNullable(data)) {
+    if (currentLoadStatus === AsyncStatus.Rejected) {
+      return <ErrorWithRetry color="black" height="full" onRetry={handleReload} />;
+    }
+    if (currentLoadStatus === AsyncStatus.Fulfilled) {
+      return <Empty text="未找到漫画详情" onPress={handleReload} />;
+    }
     return (
       <Flex w="full" h="full" alignItems="center" justifyContent="center">
         <SpinLoading />
@@ -270,15 +276,24 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
           resizeMode="cover"
         />
         <Flex flexGrow={1} flexShrink={1} pl={4}>
-          <Text
-            color="black"
-            fontSize={18}
-            fontWeight="bold"
-            numberOfLines={2}
-            onPress={() => data.title && handleSearch(data.title)}
-          >
-            {data.title}
-          </Text>
+          <HStack alignItems="center">
+            <Text
+              flex={1}
+              color="black"
+              fontSize={18}
+              fontWeight="bold"
+              numberOfLines={2}
+              onPress={() => data.title && handleSearch(data.title)}
+            >
+              {data.title}
+            </Text>
+            <VectorIcon
+              name="replay"
+              size="md"
+              accessibilityLabel="刷新漫画详情"
+              onPress={handleReload}
+            />
+          </HStack>
           <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             作者：
             {data.author.map((text, index) => (
@@ -316,7 +331,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
       </Flex>
 
       <Box flex={1} mr={`${DRAWER_TRIGGER_WIDTH + insets.right}px`}>
-        {chapters.length > 0 && render ? (
+        {chapters.length > 0 ? (
           <FlashList
             data={chapters}
             extraData={extraData}
@@ -330,17 +345,14 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               width: windowWidth - DRAWER_TRIGGER_WIDTH - insets.right,
               height: windowHeight,
             }}
-            refreshControl={
-              <RefreshControl
-                refreshing={loadStatus === AsyncStatus.Pending && mangaHash === loadingMangaHash}
-                onRefresh={handleReload}
-                tintColor={colors.gray[500]}
-              />
-            }
             renderItem={renderItem}
             ListFooterComponent={<Box safeAreaBottom />}
             keyExtractor={(item) => item.hash}
           />
+        ) : currentLoadStatus === AsyncStatus.Rejected ? (
+          <ErrorWithRetry color="black" height="full" onRetry={handleReload} />
+        ) : currentLoadStatus === AsyncStatus.Fulfilled ? (
+          <Empty text="暂无章节" onPress={handleReload} />
         ) : (
           <Flex w="full" flexGrow={1} alignItems="center" justifyContent="center" safeAreaBottom>
             <SpinLoading />
@@ -435,7 +447,12 @@ export const HeartAndBrowser = () => {
   if (enabledMultiple) {
     return (
       <HStack pr={1}>
-        <VectorIcon source="materialCommunityIcons" name="window-close" onPress={handleClose} />
+        <VectorIcon
+          source="materialCommunityIcons"
+          name="window-close"
+          accessibilityLabel="退出章节多选"
+          onPress={handleClose}
+        />
         {manga && (
           <VectorIcon
             source="materialCommunityIcons"
@@ -446,17 +463,28 @@ export const HeartAndBrowser = () => {
                 ? 'checkbox-marked-outline'
                 : 'checkbox-intermediate'
             }
+            accessibilityLabel="全选或取消全选章节"
+            accessibilityState={{
+              checked:
+                selected.length <= 0
+                  ? false
+                  : selected.length >= manga.chapters.length
+                    ? true
+                    : 'mixed',
+            }}
             onPress={handleCheckAll}
           />
         )}
         <VectorIcon
           source="materialCommunityIcons"
           name="download-box-outline"
+          accessibilityLabel="下载所选章节"
           onPress={handleDownload}
         />
         <VectorIcon
           source="materialCommunityIcons"
           name="file-export-outline"
+          accessibilityLabel="导出所选章节"
           onPress={handleExport}
         />
       </HStack>
@@ -469,6 +497,8 @@ export const HeartAndBrowser = () => {
         <VectorIcon
           name={enableBatch ? 'lock-open' : 'lock-outline'}
           color={enableBatch ? 'black' : 'gray.400'}
+          accessibilityLabel={enableBatch ? '停止自动更新此漫画' : '自动更新此漫画'}
+          accessibilityState={{ checked: enableBatch }}
           onPress={toggleQueue}
         />
       )}
@@ -476,14 +506,21 @@ export const HeartAndBrowser = () => {
         source="materialCommunityIcons"
         name={isActived ? 'heart' : 'heart-outline'}
         color="black"
+        accessibilityLabel={isActived ? '取消收藏' : '收藏漫画'}
+        accessibilityState={{ checked: isActived }}
         onPress={toggleFavorite}
       />
       <VectorIcon
         source="octicons"
         name={sequence === Sequence.Asc ? 'sort-asc' : 'sort-desc'}
+        accessibilityLabel="切换章节排序"
         onPress={handleSwapSequence}
       />
-      <VectorIcon name="open-in-browser" onPress={handleToBrowser} />
+      <VectorIcon
+        name="open-in-browser"
+        accessibilityLabel="在浏览器中打开漫画"
+        onPress={handleToBrowser}
+      />
     </HStack>
   );
 };
@@ -517,7 +554,8 @@ const VisiblePrehandleDrawer = () => {
   };
 
   const renderItem = ({ item, index }: ListRenderItemInfo<Task>) => {
-    const progress = (item.success.length + item.fail.length) / item.queue.length;
+    const progress =
+      item.queue.length > 0 ? (item.success.length + item.fail.length) / item.queue.length : 1;
     return (
       <HStack
         h="12"

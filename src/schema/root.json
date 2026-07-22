@@ -154,19 +154,22 @@
             ],
             "type": "string"
         },
+        "Record<string,AsyncStatus>": {
+            "type": "object"
+        },
         "Record<string,Chapter|undefined>": {
             "type": "object"
         },
         "Record<string,Manga|undefined>": {
             "type": "object"
         },
-        "Record<string,any>": {
-            "type": "object"
-        },
         "Record<string,string>": {
             "type": "object"
         },
         "Record<string,{page?:number|undefined;chapter?:string|undefined;title?:string|undefined;}>": {
+            "type": "object"
+        },
+        "Record<string,{status:AsyncStatus;actionId:string;}>": {
             "type": "object"
         },
         "Record<string,{total:number;progress:number;imagesLoaded:number[];isVisited:boolean;}>": {
@@ -359,11 +362,8 @@
         },
         "chapter": {
             "properties": {
-                "loadStatus": {
-                    "$ref": "#/definitions/AsyncStatus"
-                },
-                "loadingChapterHash": {
-                    "type": "string"
+                "loadByHash": {
+                    "$ref": "#/definitions/Record<string,AsyncStatus>"
                 },
                 "openDrawer": {
                     "type": "boolean"
@@ -373,8 +373,7 @@
                 }
             },
             "required": [
-                "loadStatus",
-                "loadingChapterHash",
+                "loadByHash",
                 "openDrawer",
                 "showDrawer"
             ],
@@ -480,24 +479,17 @@
         },
         "manga": {
             "properties": {
-                "loadStatus": {
-                    "$ref": "#/definitions/AsyncStatus"
-                },
-                "loadingMangaHash": {
-                    "type": "string"
+                "loadByHash": {
+                    "$ref": "#/definitions/Record<string,{status:AsyncStatus;actionId:string;}>"
                 }
             },
             "required": [
-                "loadStatus",
-                "loadingMangaHash"
+                "loadByHash"
             ],
             "type": "object"
         },
         "plugin": {
             "properties": {
-                "extra": {
-                    "$ref": "#/definitions/Record<string,any>"
-                },
                 "list": {
                     "items": {
                         "properties": {
@@ -547,7 +539,6 @@
                 }
             },
             "required": [
-                "extra",
                 "list",
                 "source"
             ],

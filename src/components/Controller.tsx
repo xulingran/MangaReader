@@ -4,6 +4,7 @@ import { useDebouncedSafeAreaInsets, useDebouncedSafeAreaFrame } from '~/hooks';
 import { emptyFn, PositionX, SafeArea } from '~/utils';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { useFocusEffect } from '@react-navigation/native';
+import type { AccessibilityActionEvent } from 'react-native';
 
 const doubleTapScaleValue = 2;
 
@@ -12,6 +13,8 @@ export interface ControllerProps {
   onLongPress?: (position: PositionX) => void;
   onZoomStart?: (scale: number) => void;
   onZoomEnd?: (scale: number) => void;
+  onAccessibilityNext?: () => void;
+  onAccessibilityPrevious?: () => void;
   children: ReactNode;
   horizontal?: boolean;
   safeAreaType?: SafeArea;
@@ -39,6 +42,8 @@ const Controller = ({
   onLongPress,
   onZoomStart = emptyFn,
   onZoomEnd = emptyFn,
+  onAccessibilityNext,
+  onAccessibilityPrevious,
 }: ControllerProps) => {
   const insets = useDebouncedSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
@@ -178,9 +183,9 @@ const Controller = ({
           runOnJS(setPanEnabled)(doubleTapScaleValue > 1);
         }
       })
-      .onEnd(() => {
+      .onFinalize(() => {
         'worklet';
-        runOnJS(onZoomEndRef.current)(scale.value > 1 ? 1 : doubleTapScaleValue);
+        runOnJS(onZoomEndRef.current)(scale.value);
       });
     const longPress = Gesture.LongPress()
       .runOnJS(true)
@@ -224,7 +229,7 @@ const Controller = ({
         translationX.value = currentX;
         translationY.value = currentY;
       })
-      .onEnd(() => {
+      .onFinalize(() => {
         'worklet';
         const dX = width.value * scale.value - windowWidth;
         const dY = height.value * scale.value - windowHeight;
@@ -288,11 +293,38 @@ const Controller = ({
       : Gesture.Exclusive(gestures.doubleTap, gestures.singleTap);
   }, [gestures, hasLongPress]);
 
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'increment') {
+        onAccessibilityNext?.();
+      } else if (event.nativeEvent.actionName === 'decrement') {
+        onAccessibilityPrevious?.();
+      } else if (event.nativeEvent.actionName === 'activate') {
+        onTapRef.current?.(PositionX.Mid);
+      }
+    },
+    [onAccessibilityNext, onAccessibilityPrevious]
+  );
+
   return (
     <GestureDetector gesture={exclusiveGesture}>
       <GestureDetector gesture={gestures.pinchGesture}>
         <GestureDetector gesture={gestures.panGesture}>
-          <Animated.View style={animatedStyle}>{children}</Animated.View>
+          <Animated.View
+            style={animatedStyle}
+            accessible
+            accessibilityRole="adjustable"
+            accessibilityLabel="漫画阅读区域"
+            accessibilityHint="上调下一页，下调上一页，激活显示菜单"
+            accessibilityActions={[
+              { name: 'increment', label: '下一页' },
+              { name: 'decrement', label: '上一页' },
+              { name: 'activate', label: '显示菜单' },
+            ]}
+            onAccessibilityAction={handleAccessibilityAction}
+          >
+            {children}
+          </Animated.View>
         </GestureDetector>
       </GestureDetector>
     </GestureDetector>

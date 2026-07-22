@@ -1,5 +1,5 @@
 import Base, { Plugin } from './base';
-import { ErrorMessage, MangaStatus } from '~/utils';
+import { MangaStatus } from '~/utils';
 import dayjs from 'dayjs';
 
 interface MoeImgListItem {
@@ -174,7 +174,6 @@ class MoeImg extends Base {
     timeout: 20000,
   });
 
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => undefined;
 
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId) => ({
     url: `https://moeimg.fan/spa/manga/${mangaId}/read`,
@@ -238,10 +237,6 @@ class MoeImg extends Base {
       },
     };
   };
-
-  handleChapterList: Base['handleChapterList'] = () => ({
-    error: new Error(ErrorMessage.NoSupport + 'handleChapterList'),
-  });
 
   handleChapter: Base['handleChapter'] = (response: MoeImgReadResponse, mangaId, chapterId) => {
     const detail = response.chapter_detail;

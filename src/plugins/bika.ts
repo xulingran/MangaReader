@@ -1,5 +1,5 @@
 import Base, { Options, Plugin } from './base';
-import { ellipsis, ErrorMessage, MangaStatus } from '~/utils';
+import { ErrorMessage, MangaStatus } from '~/utils';
 import { Buffer } from 'buffer';
 import CryptoJS from 'crypto-js';
 import dayjs from 'dayjs';
@@ -121,7 +121,10 @@ class Bika extends Base {
           var parsed = stored ? JSON.parse(stored) : null;
           var token = typeof parsed === 'string' ? parsed : parsed && parsed.value;
           if (token) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ bikaToken: token }));
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              bikaToken: token,
+              nonce: window.__MANGA_READER_NONCE__
+            }));
           }
         } catch (_) {}
       })(); true;`,
@@ -137,7 +140,7 @@ class Bika extends Base {
     const token = data.bikaToken || data.picaToken;
     if (typeof token === 'string' && token.trim()) {
       this.defaultHeaders.authorization = token.trim();
-      return '获取 Bika Token 成功：' + ellipsis(token.trim());
+      return '获取 Bika Token 成功';
     }
     this.defaultHeaders.authorization = '';
   };
@@ -164,6 +167,7 @@ class Bika extends Base {
       body,
       headers: this.getHeaders(signedPath, 'GET'),
       timeout: 20000,
+      authErrorMessage: ErrorMessage.AuthFailBIKA,
     };
   }
 
@@ -233,6 +237,7 @@ class Bika extends Base {
       body: { keyword, sort: sort === Options.Default ? 'dd' : sort },
       headers: this.getHeaders(path, 'POST'),
       timeout: 20000,
+      authErrorMessage: ErrorMessage.AuthFailBIKA,
     };
   };
 

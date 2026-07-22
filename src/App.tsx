@@ -13,21 +13,20 @@ import { StyleSheet } from 'react-native';
 import { Provider } from 'react-redux';
 import ErrorFallback from '~/components/ErrorFallback';
 import RNBootSplash from 'react-native-bootsplash';
-import loadable from '@loadable/component';
 import Header from '~/components/Header';
+import { cleanupTemporaryImages } from '~/utils/imageProcessor';
+import Home from '~/views/Home';
+import Search from '~/views/Search';
+import Discovery from '~/views/Discovery';
+import Detail from '~/views/Detail';
+import Chapter from '~/views/Chapter';
+import Plugin from '~/views/Plugin';
+import Webview from '~/views/Webview';
+import About from '~/views/About';
 
 interface NavigationScreenProps {
   ready?: boolean;
 }
-
-const Home = loadable(() => import('~/views/Home'));
-const Search = loadable(() => import('~/views/Search'));
-const Discovery = loadable(() => import('~/views/Discovery'));
-const Detail = loadable(() => import('~/views/Detail'));
-const Chapter = loadable(() => import('~/views/Chapter'));
-const Plugin = loadable(() => import('~/views/Plugin'));
-const Webview = loadable(() => import('~/views/Webview'));
-const About = loadable(() => import('~/views/About'));
 
 const styles = StyleSheet.create({ wrapper: { flex: 1 } });
 const { Navigator, Screen } = createNativeStackNavigator<RootStackParamList>();
@@ -38,12 +37,15 @@ const NavigationScreen = ({ ready = false }: NavigationScreenProps) => {
   const haveUpdate = Boolean(latestRelease);
 
   const DefaultHeader = useCallback(
-    (props: NativeStackHeaderProps) => <Header {...props} enableShake={haveUpdate} />,
+    (props: NativeStackHeaderProps) => <Header {...props} showUpdateIndicator={haveUpdate} />,
     [haveUpdate]
   );
 
   useEffect(() => {
-    if (ready && launchStatus === AsyncStatus.Fulfilled) {
+    if (
+      ready &&
+      (launchStatus === AsyncStatus.Fulfilled || launchStatus === AsyncStatus.Rejected)
+    ) {
       RNBootSplash.hide();
     }
   }, [ready, launchStatus]);
@@ -78,6 +80,10 @@ const NavigationScreen = ({ ready = false }: NavigationScreenProps) => {
 
 const App = () => {
   const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    cleanupTemporaryImages();
+  }, []);
 
   return (
     <GestureHandlerRootView style={styles.wrapper}>

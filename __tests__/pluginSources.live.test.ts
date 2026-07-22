@@ -1,4 +1,4 @@
-import { expect, test } from '@jest/globals';
+import { expect, jest, test } from '@jest/globals';
 import { fetchData } from '~/utils';
 import HComic from '~/plugins/hcomic';
 import Bika from '~/plugins/bika';
@@ -7,6 +7,9 @@ import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
 
 const liveTest = process.env.RUN_LIVE_SOURCE_TESTS === '1' ? test : test.skip;
+if (process.env.RUN_LIVE_SOURCE_TESTS === '1') {
+  jest.setTimeout(30000);
+}
 
 liveTest('HComic 实时列表可请求并解析', async () => {
   const response = await fetchData(HComic.prepareDiscoveryFetch(1, {}));
@@ -85,9 +88,8 @@ liveTest('NHentai 实时列表可请求并解析', async () => {
 
 liveTest('Bika 实时签名请求到达认证边界', async () => {
   const response = await fetchData(Bika.prepareDiscoveryFetch(1, {}));
-  expect(response.error).toBeUndefined();
-  const result = Bika.handleDiscovery(response.data);
-  expect(result.error?.message).toContain('Token');
+  const authError = response.error || Bika.handleDiscovery(response.data).error;
+  expect(authError?.message).toContain('Token');
 });
 
 liveTest('肉漫屋实时列表、详情与章节可请求并解析', async () => {

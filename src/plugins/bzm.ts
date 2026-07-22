@@ -1,5 +1,5 @@
 import Base, { Plugin, Options } from './base';
-import { MangaStatus, ErrorMessage } from '~/utils';
+import { MangaStatus } from '~/utils';
 import { Platform } from 'react-native';
 import queryString from 'query-string';
 import * as cheerio from 'cheerio';
@@ -24,32 +24,32 @@ const discoveryOptions = [
     name: 'type',
     options: [
       { label: '选择分类', value: Options.Default },
-      { value: '全部', label: 'all' },
-      { value: '恋爱', label: 'lianai' },
-      { value: '纯爱', label: 'chunai' },
-      { value: '古风', label: 'gufeng' },
-      { value: '异能', label: 'yineng' },
-      { value: '悬疑', label: 'xuanyi' },
-      { value: '剧情', label: 'juqing' },
-      { value: '科幻', label: 'kehuan' },
-      { value: '奇幻', label: 'qihuan' },
-      { value: '玄幻', label: 'xuanhuan' },
-      { value: '穿越', label: 'chuanyue' },
-      { value: '冒险', label: 'mouxian' },
-      { value: '推理', label: 'tuili' },
-      { value: '武侠', label: 'wuxia' },
-      { value: '格斗', label: 'gedou' },
-      { value: '战争', label: 'zhanzheng' },
-      { value: '热血', label: 'rexie' },
-      { value: '搞笑', label: 'gaoxiao' },
-      { value: '大女主', label: 'danuzhu' },
-      { value: '都市', label: 'dushi' },
-      { value: '总裁', label: 'zongcai' },
-      { value: '后宫', label: 'hougong' },
-      { value: '日常', label: 'richang' },
-      { value: '韩漫', label: 'hanman' },
-      { value: '少年', label: 'shaonian' },
-      { value: '其它', label: 'qita' },
+      { label: '全部', value: 'all' },
+      { label: '恋爱', value: 'lianai' },
+      { label: '纯爱', value: 'chunai' },
+      { label: '古风', value: 'gufeng' },
+      { label: '异能', value: 'yineng' },
+      { label: '悬疑', value: 'xuanyi' },
+      { label: '剧情', value: 'juqing' },
+      { label: '科幻', value: 'kehuan' },
+      { label: '奇幻', value: 'qihuan' },
+      { label: '玄幻', value: 'xuanhuan' },
+      { label: '穿越', value: 'chuanyue' },
+      { label: '冒险', value: 'mouxian' },
+      { label: '推理', value: 'tuili' },
+      { label: '武侠', value: 'wuxia' },
+      { label: '格斗', value: 'gedou' },
+      { label: '战争', value: 'zhanzheng' },
+      { label: '热血', value: 'rexie' },
+      { label: '搞笑', value: 'gaoxiao' },
+      { label: '大女主', value: 'danuzhu' },
+      { label: '都市', value: 'dushi' },
+      { label: '总裁', value: 'zongcai' },
+      { label: '后宫', value: 'hougong' },
+      { label: '日常', value: 'richang' },
+      { label: '韩漫', value: 'hanman' },
+      { label: '少年', value: 'shaonian' },
+      { label: '其它', value: 'qita' },
     ],
   },
   {
@@ -71,7 +71,7 @@ const discoveryOptions = [
     ],
   },
   {
-    name: 'sort',
+    name: 'filter',
     options: [
       { label: '选择排序', value: Options.Default },
       { label: 'ABCD', value: 'ABCD' },
@@ -147,7 +147,8 @@ class BaoziManga extends Base {
   };
   prepareSearchFetch: Base['prepareSearchFetch'] = (keyword, _page) => {
     return {
-      url: `https://cn.baozimhcn.com/search?q=${keyword}`,
+      url: 'https://cn.baozimhcn.com/search',
+      body: { q: keyword },
       headers: new Headers(this.defaultHeaders),
     };
   };
@@ -157,7 +158,6 @@ class BaoziManga extends Base {
       headers: new Headers(this.defaultHeaders),
     };
   };
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => {};
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, page, extra) => {
     return {
       url:
@@ -320,10 +320,6 @@ class BaoziManga extends Base {
     manga.chapters = chapters;
 
     return { manga };
-  };
-
-  handleChapterList: Base['handleChapterList'] = () => {
-    return { error: new Error(ErrorMessage.NoSupport + 'handleChapterList') };
   };
 
   handleChapter: Base['handleChapter'] = (text: string | null, mangaId, chapterId, page) => {

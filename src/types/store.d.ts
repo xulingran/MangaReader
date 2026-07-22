@@ -61,7 +61,7 @@ declare global {
     /** 章节名 */
     title: string;
     headers?: Record<string, string>;
-    images: { uri: string; needUnscramble?: boolean; scrambleType?: ScrambleType }[];
+    images: { uri: string; needUnscramble?: boolean }[];
   }
   interface Release {
     loadStatus: AsyncStatus;
@@ -145,7 +145,6 @@ declare global {
         disabled: boolean;
         injectedJavaScript?: string;
       }[];
-      extra: Record<string, any>;
     };
     batch: {
       loadStatus: AsyncStatus;
@@ -171,12 +170,10 @@ declare global {
       list: string[];
     };
     manga: {
-      loadStatus: AsyncStatus;
-      loadingMangaHash: string;
+      loadByHash: Record<string, { status: AsyncStatus; actionId: string }>;
     };
     chapter: {
-      loadStatus: AsyncStatus;
-      loadingChapterHash: string;
+      loadByHash: Record<string, AsyncStatus>;
       openDrawer: boolean;
       showDrawer: boolean;
     };
@@ -199,5 +196,3 @@ declare global {
     };
   }
 }
-
-export type ExportRootState = { A: string };

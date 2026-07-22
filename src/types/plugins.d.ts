@@ -5,10 +5,6 @@ declare global {
     [A in Extract<keyof T, K>]?: T[A];
   };
 
-  interface String {
-    splic(f: string): string[];
-  }
-
   interface InitPluginOptions {
     OS: 'ios' | 'android' | 'windows' | 'macos' | 'web';
   }

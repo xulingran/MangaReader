@@ -11,21 +11,16 @@ export const DRAG_PAGE_THRESHOLD_RATIO = 0.2;
 
 /**
  * 相邻页磁盘预取窗口：优先当前页两侧，再额外准备后两页。
- * 只返回普通图片；解密/base64 图片仍由可见组件按需处理，避免离屏 Canvas 占用。
+ * 只返回普通图片；扰乱图片仍由可见组件按需处理，避免离屏解码占用。
  */
 export const getReaderPrefetchUris = <
-  T extends { uri: string; needUnscramble?: boolean; isBase64Image?: boolean },
+  T extends { uri: string; needUnscramble?: boolean },
 >(data: readonly T[], currentIndex: number): string[] => {
   const indexes = [currentIndex + 1, currentIndex - 1, currentIndex + 2];
 
   return indexes.reduce<string[]>((uris, index) => {
     const image = data[index];
-    if (
-      image &&
-      !image.needUnscramble &&
-      !image.isBase64Image &&
-      !uris.includes(image.uri)
-    ) {
+    if (image && !image.needUnscramble && !uris.includes(image.uri)) {
       uris.push(image.uri);
     }
     return uris;

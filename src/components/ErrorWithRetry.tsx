@@ -1,32 +1,42 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ColorType, SizeType, SafeAreaProps } from 'native-base/lib/typescript/components/types';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { Center } from 'native-base';
 import VectorIcon from '~/components/VectorIcon';
 
 interface ErrorWithRetryProps extends SafeAreaProps {
   color?: ColorType;
   height?: SizeType;
-  onRetry?: () => void;
+  onRetry?: () => void | Promise<void>;
 }
 
 const ErrorWithRetry = ({
-  color = 'white',
+  color = 'black',
   height = 48,
   onRetry,
   ...safeAreaProps
 }: ErrorWithRetryProps) => {
-  const singleTap = Gesture.Tap()
-    .runOnJS(true)
-    .onStart(() => {
-      onRetry && onRetry();
-    });
+  const [retrying, setRetrying] = useState(false);
+  const handleRetry = async () => {
+    if (!onRetry || retrying) return;
+    setRetrying(true);
+    try {
+      await onRetry();
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   return (
     <Center w="full" h={height} bg="transparent" {...safeAreaProps}>
-      <GestureDetector gesture={singleTap}>
-        <VectorIcon name="replay" size="2xl" color={color} />
-      </GestureDetector>
+      <VectorIcon
+        name="replay"
+        size="2xl"
+        color={color}
+        onPress={handleRetry}
+        isDisabled={retrying}
+        accessibilityState={{ disabled: retrying, busy: retrying }}
+        accessibilityLabel="重新加载"
+      />
     </Center>
   );
 };

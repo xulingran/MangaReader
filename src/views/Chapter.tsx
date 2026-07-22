@@ -5,7 +5,6 @@ import {
   ReaderDirection,
   PositionX,
   Orientation,
-  ScrambleType,
   MultipleSeat,
   PageKeys,
   Timer,
@@ -67,13 +66,11 @@ const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) 
   return useMemo(() => {
     const list: {
       uri: string;
-      scrambleType?: ScrambleType;
       needUnscramble?: boolean | undefined;
       pre: number;
       multiplePre: number;
       current: number;
       chapterHash: string;
-      isBase64Image?: boolean;
     }[] = [];
 
     hashList.forEach((hash) => {
@@ -118,7 +115,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const [hashList, setHashList] = useState([initChapterHash]);
 
   const { orientation } = useDebouncedSafeAreaFrame();
-  const loadStatus = useAppSelector((state) => state.chapter.loadStatus);
+  const loadStatus = useAppSelector(
+    (state) => state.chapter.loadByHash[chapterHash] ?? AsyncStatus.Default
+  );
   const seat = useAppSelector((state) => state.setting.seat);
   const mode = useAppSelector((state) => state.setting.mode);
   const timer = useAppSelector((state) => state.setting.timer);
@@ -218,11 +217,11 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         callbackRef.current && callbackRef.current(pageKeyDirection),
       []
     ),
-    pageKeys === PageKeys.Enable
+    pageKeys === PageKeys.Enable && data.length > 0 && loadStatus !== AsyncStatus.Pending
   );
   useInterval(
     useCallback(() => callbackRef.current && callbackRef.current('next'), []),
-    timer === Timer.Enable && timerSwitch,
+    timer === Timer.Enable && timerSwitch && data.length > 0 && loadStatus !== AsyncStatus.Pending,
     timerGap
   );
   const prefetchKey = useMemo(
@@ -245,6 +244,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     }
   }, [current, mode, multiplePre, page]);
   const handleNextPage = useCallback(() => {
+    if (data.length === 0) {
+      return;
+    }
     if (mode !== LayoutMode.Multiple) {
       readerRef.current?.scrollToIndex(Math.min(page + 1, Math.max(data.length - 1, 0)));
     } else {
@@ -260,7 +262,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       setHashList([prev.hash]);
       setPage(0);
       readerRef.current?.clearStateRef();
-      readerRef.current?.scrollToIndex(0);
+      // 旧 Reader 仍持有上一章 data；只负责归零视图，不得把旧章节页码回写到状态。
+      readerRef.current?.scrollToIndex(0, false);
     } else {
       toastRef.current.show({ title: '第一话' });
     }
@@ -271,7 +274,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       setHashList([next.hash]);
       setPage(0);
       readerRef.current?.clearStateRef();
-      readerRef.current?.scrollToIndex(0);
+      readerRef.current?.scrollToIndex(0, false);
     } else {
       toastRef.current.show({ title: '最后一话' });
     }
@@ -335,6 +338,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const handlePageChange = useCallback(
     (newPage: number) => {
       const image = data[newPage];
+      if (!image) {
+        return;
+      }
       if (newPage >= data.length - 1 && !next && !toastRef.current.isActive(lastPageToastId)) {
         toastRef.current.show({ id: lastPageToastId, title: '最后一页' });
       }
@@ -353,8 +359,12 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
 
   const handleScrollBeginDrag = useCallback(() => setTimerSwitch(false), []);
   const handleScrollEndDrag = useCallback(() => setTimerSwitch(true), []);
-  const handleZoomStart = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
+  const handleZoomStart = useCallback(() => setTimerSwitch(false), []);
   const handleZoomEnd = useCallback((scale: number) => setTimerSwitch(scale <= 1), []);
+  useEffect(() => {
+    // Reader 因方向/布局/章节变化重建时，旧手势不会再回调，主动恢复定时器状态。
+    setTimerSwitch(true);
+  }, [chapterHash, mode, orientation]);
 
   const handleImageSave = useCallback(() => {
     if (sourceRef.current !== '') {
@@ -415,18 +425,16 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   }, [dispatch, inverted, toast]);
   const handleVertical = useCallback(() => {
     toast.show({ title: '条漫模式' });
-    readerRef.current?.scrollToIndex(page);
     dispatch(setMode(LayoutMode.Vertical));
-  }, [dispatch, page, toast]);
+  }, [dispatch, toast]);
   const handleHorizontal = useCallback(() => {
     toast.show({ title: '翻页模式' });
     dispatch(setMode(LayoutMode.Horizontal));
   }, [dispatch, toast]);
   const handleMultiple = useCallback(() => {
     toast.show({ title: '双页模式' });
-    readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 1);
     dispatch(setMode(LayoutMode.Multiple));
-  }, [current, dispatch, multiplePre, toast]);
+  }, [dispatch, toast]);
   const handleModeToggle = useCallback(() => {
     switch (mode) {
       case LayoutMode.Horizontal: {
@@ -568,11 +576,23 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             safeAreaRight
           >
             <Flex position="relative" flexDirection="row" alignItems="center">
-              <VectorIcon name="arrow-back" size="2xl" color={color} onPress={handleGoBack} />
+              <VectorIcon
+                name="arrow-back"
+                size="2xl"
+                color={color}
+                accessibilityLabel="返回漫画详情"
+                onPress={handleGoBack}
+              />
               <Text flexShrink={1} fontSize="md" fontWeight="bold" numberOfLines={1} color={color}>
                 {title}
               </Text>
-              <VectorIcon name="replay" size="md" color={color} onPress={handleReload} />
+              <VectorIcon
+                name="replay"
+                size="md"
+                color={color}
+                accessibilityLabel="重新加载章节"
+                onPress={handleReload}
+              />
 
               <Box w={0} flexGrow={1} />
 
@@ -584,6 +604,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                 }
                 size="lg"
                 color={color}
+                accessibilityLabel="切换屏幕方向"
                 onPress={handleOrientationToggle}
               />
               <VectorIcon
@@ -591,6 +612,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                 size="lg"
                 source="materialCommunityIcons"
                 color={color}
+                accessibilityLabel={isMenuOpen ? '关闭阅读设置' : '打开阅读设置'}
+                accessibilityState={{ expanded: isMenuOpen }}
                 onPress={isMenuOpen ? onMenuClose : onMenuOpen}
               />
             </Flex>
@@ -602,6 +625,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                   size="lg"
                   source="materialCommunityIcons"
                   color={color}
+                  accessibilityLabel="切换阅读布局"
                   onPress={handleModeToggle}
                 />
                 {mode !== LayoutMode.Vertical && (
@@ -609,6 +633,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                     name={inverted ? 'west' : 'east'}
                     size="lg"
                     color={color}
+                    accessibilityLabel={inverted ? '改为从左向右阅读' : '改为从右向左阅读'}
                     onPress={handleDirectionToggle}
                   />
                 )}
@@ -622,6 +647,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                     size="lg"
                     source="materialCommunityIcons"
                     color={color}
+                    accessibilityLabel="切换双页起始位置"
                     onPress={handleSeatToggle}
                   />
                 )}
@@ -630,6 +656,10 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                   size="lg"
                   source="materialCommunityIcons"
                   color={color}
+                  accessibilityLabel={
+                    pageKeys === PageKeys.Enable ? '关闭实体键翻页' : '开启实体键翻页'
+                  }
+                  accessibilityState={{ checked: pageKeys === PageKeys.Enable }}
                   onPress={handlePageKeysToggle}
                 />
                 <VectorIcon
@@ -637,6 +667,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
                   size="lg"
                   source="materialCommunityIcons"
                   color={color}
+                  accessibilityLabel={timer === Timer.Enable ? '关闭定时翻页' : '开启定时翻页'}
+                  accessibilityHint="长按设置翻页间隔"
+                  accessibilityState={{ checked: timer === Timer.Enable }}
                   onPress={handleTimerToggle}
                   onLongPress={handleTimerGapOpen}
                 />
@@ -663,6 +696,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
               size="lg"
               color={color}
               disabled={!prev}
+              accessibilityLabel="上一章"
+              accessibilityState={{ disabled: !prev }}
               opacity={prev ? 1 : 0.3}
               onPress={handlePrevChapter}
             />
@@ -684,6 +719,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
               size="lg"
               color={color}
               disabled={!next}
+              accessibilityLabel="下一章"
+              accessibilityState={{ disabled: !next }}
               opacity={next ? 1 : 0.3}
               onPress={handleNextChapter}
             />

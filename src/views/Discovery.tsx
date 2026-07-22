@@ -182,7 +182,13 @@ export const PluginSelect = () => {
             <Text color="gray.500" fontSize={16}>
               选择插件
             </Text>
-            <VectorIcon name="settings" size="lg" color="gray.500" onPress={handleSetting} />
+            <VectorIcon
+              name="settings"
+              size="lg"
+              color="gray.500"
+              accessibilityLabel="设置发现页筛选条件"
+              onPress={handleSetting}
+            />
           </HStack>
         }
       />

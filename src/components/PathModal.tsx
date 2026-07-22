@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Input, InputGroup, Box, Button, Text } from 'native-base';
 import { initialState } from '~/redux/slice';
 import VectorIcon from '~/components/VectorIcon';
@@ -13,6 +13,12 @@ interface PathModalProps {
 /** 电子墨水版：Modal 改为无动画静态覆盖层 */
 const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps) => {
   const [path, setPath] = useState(defaultValue);
+
+  useEffect(() => {
+    if (isOpen) {
+      setPath(defaultValue);
+    }
+  }, [defaultValue, isOpen]);
 
   const handleClose = () => {
     onClose && onClose(path);

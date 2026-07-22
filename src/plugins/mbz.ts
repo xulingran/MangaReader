@@ -1,5 +1,6 @@
 import Base, { Plugin, Options } from './base';
 import { MangaStatus, ErrorMessage } from '~/utils';
+import { decodeJavaScriptString, parseJavaScriptStringArray, unpackPacker } from '~/utils/unpack';
 import dayjs from 'dayjs';
 import * as cheerio from 'cheerio';
 
@@ -46,7 +47,7 @@ const PATTERN_BEFORE_YESTERDAY = /(前天 [0-9]{2}:[0-9]{2})/;
 const PATTERN_MMDD = /([0-9]{2}月[0-9]{2}號)/;
 const PATTERN_YYYYMMDD = /([0-9]{4}-[0-9]{2}-[0-9]{2})/;
 const PATTERN_IMAGE_INDEX = /\/([0-9]+)_.*/;
-const PATTERN_EVAL = /^eval(.*)/;
+const PATTERN_PACKED_SCRIPT = /^eval\s*\(/;
 const PATTERN_CHAPTER_TITLE = /var MANGABZ_CTITLE = "([^"]+)";/;
 const PATTERN_CHAPTER_DATE = /var MANGABZ_VIEWSIGN_DT="([^"]+)";/;
 const PATTERN_CHAPTER_SIGN = /var MANGABZ_VIEWSIGN="([^"]+)";/;
@@ -86,7 +87,8 @@ class MangaBZ extends Base {
   };
   prepareSearchFetch: Base['prepareSearchFetch'] = (keyword, page) => {
     return {
-      url: `https://mangabz.com/search?title=${keyword}&page=${page}`,
+      url: 'https://mangabz.com/search',
+      body: { title: keyword, page },
       headers: new Headers(this.defaultHeaders),
     };
   };
@@ -96,7 +98,6 @@ class MangaBZ extends Base {
       headers: new Headers(this.defaultHeaders),
     };
   };
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => {};
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, page, extra) => {
     if (typeof extra.sign === 'string' && typeof extra.date === 'string') {
       const cid = chapterId.replace('m', '');
@@ -275,17 +276,13 @@ class MangaBZ extends Base {
     };
   };
 
-  handleChapterList: Base['handleChapterList'] = () => {
-    return { error: new Error(ErrorMessage.NoSupport + 'handleChapterList') };
-  };
-
   handleChapter: Base['handleChapter'] = (
     text: string | null,
     mangaId: string,
     chapterId: string,
     page: number
   ) => {
-    if (!PATTERN_EVAL.test(text || '')) {
+    if (!PATTERN_PACKED_SCRIPT.test(text || '')) {
       const $ = cheerio.load(text || '');
       const scriptContent =
         ($('script:not([src])').toArray() as cheerio.TagElement[]).filter(
@@ -316,8 +313,7 @@ class MangaBZ extends Base {
       };
     }
 
-    // eslint-disable-next-line no-eval
-    const images: string[] = eval(text || '');
+    const images = parseMangaBzImages(text || '');
     const [, last] = images[images.length - 1].match(PATTERN_IMAGE_INDEX) || [];
 
     return {
@@ -335,5 +331,38 @@ class MangaBZ extends Base {
     };
   };
 }
+
+export const parseMangaBzImages = (source: string): string[] => {
+  const script = unpackPacker(source);
+  const pixMatch = script.match(/\bvar\s+pix\s*=\s*(["'][\s\S]*?["'])\s*;/);
+  const pagesMatch = script.match(/\bvar\s+pvalue\s*=\s*(\[[\s\S]*?\])\s*;/);
+  const suffixMatch = script.match(
+    /pvalue\s*\[\s*i\s*\]\s*=\s*pix\s*\+\s*pvalue\s*\[\s*i\s*\]\s*\+\s*(["'][\s\S]*?["'])/
+  );
+  if (!pixMatch || !pagesMatch) {
+    throw new Error(ErrorMessage.MissingChapterInfo);
+  }
+
+  const prefix = decodeJavaScriptString(pixMatch[1]);
+  const suffix = suffixMatch ? decodeJavaScriptString(suffixMatch[1]) : '';
+  const images = parseJavaScriptStringArray(pagesMatch[1]).map((page) => prefix + page + suffix);
+  if (
+    images.length === 0 ||
+    images.some((image) => {
+      try {
+        const hostname = new URL(image).hostname;
+        return !(
+          image.startsWith('https://') &&
+          (hostname === 'mangabz.com' || hostname.endsWith('.mangabz.com'))
+        );
+      } catch {
+        return true;
+      }
+    })
+  ) {
+    throw new Error(ErrorMessage.MissingChapterInfo);
+  }
+  return images;
+};
 
 export default new MangaBZ();

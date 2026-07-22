@@ -1,3 +1,6 @@
+// 项目当前明确保留 RN 旧架构；切换 newArchEnabled 后应删除此抑制及 ReactNativeHost。
+@file:Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+
 package com.mangareader
 
 import android.app.Application
@@ -9,7 +12,6 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
-import com.mangareader.eink.EInkKeyPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -17,7 +19,7 @@ class MainApplication : Application(), ReactApplication {
       object : DefaultReactNativeHost(this) {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
-              add(EInkKeyPackage())
+              add(MangaReaderPackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

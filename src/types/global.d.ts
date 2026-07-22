@@ -19,7 +19,7 @@ declare global {
     undefined extends T
       ? { error?: Error; actionId?: string }
       :
-          | { error: Error; data?: undefined; actionId?: string }
+          | { error: Error; data?: T; actionId?: string }
           | { error?: undefined; data: T; actionId?: string }
   >;
 
@@ -31,6 +31,8 @@ declare global {
     body?: FormData | Record<string, any>;
     headers?: Headers;
     timeout?: number;
+    /** 仅认证型接口在 401/403 时覆盖通用 HTTP 错误。 */
+    authErrorMessage?: string;
   }
 
   interface OptionItem {

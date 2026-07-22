@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Text, Input, InputGroup, InputRightAddon, Button, Box } from 'native-base';
 import { KeyboardTypeOptions } from 'react-native';
 import Overlay from './Overlay';
@@ -22,6 +22,12 @@ const InputModal = ({
   onClose,
 }: InputModalProps) => {
   const [value, setValue] = useState(defaultValue);
+
+  useEffect(() => {
+    if (isOpen) {
+      setValue(defaultValue);
+    }
+  }, [defaultValue, isOpen]);
 
   const handleClose = () => {
     onClose && onClose(value);

@@ -5,10 +5,10 @@ import { getHeaderTitle } from '@react-navigation/elements';
 import VectorIcon from '~/components/VectorIcon';
 
 interface HeaderProps extends NativeStackHeaderProps {
-  enableShake?: boolean;
+  showUpdateIndicator?: boolean;
 }
 
-const Header = ({ navigation, options, route, enableShake = false }: HeaderProps) => {
+const Header = ({ navigation, options, route, showUpdateIndicator = false }: HeaderProps) => {
   const title = getHeaderTitle(options, route.name);
   const canGoBack = useMemo(() => navigation.canGoBack(), [navigation]);
 
@@ -44,7 +44,7 @@ const Header = ({ navigation, options, route, enableShake = false }: HeaderProps
           ) : (
             <Box>
               <VectorIcon name="home" size="2xl" onPress={handleAbout} />
-              {enableShake && (
+              {showUpdateIndicator && (
                 <Box
                   position="absolute"
                   top={1}

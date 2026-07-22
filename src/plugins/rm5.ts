@@ -1,5 +1,5 @@
 import Base, { Plugin, Options } from './base';
-import { MangaStatus, ErrorMessage, ScrambleType } from '~/utils';
+import { MangaStatus, ErrorMessage } from '~/utils';
 import * as cheerio from 'cheerio';
 import dayjs from 'dayjs';
 
@@ -258,7 +258,6 @@ class RouMan5 extends Base {
       headers: new Headers(this.defaultHeaders),
     };
   };
-  prepareChapterListFetch: Base['prepareChapterListFetch'] = () => {};
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, _page, extra) => {
     return {
       url:
@@ -460,10 +459,6 @@ class RouMan5 extends Base {
       },
     };
   };
-  handleChapterList: Base['handleChapterList'] = () => {
-    return { error: new Error(ErrorMessage.NoSupport + 'handleChapterList') };
-  };
-
   handleChapter: Base['handleChapter'] = (
     res: string | ChapterImageData,
     mangaId: string,
@@ -486,7 +481,6 @@ class RouMan5 extends Base {
             headers: this.defaultHeaders,
             images: images.map((item) => ({
               uri: item.src,
-              scrambleType: ScrambleType.RM5,
               needUnscramble: !item.src.includes('.gif') && item.scramble,
             })),
           },
@@ -513,7 +507,6 @@ class RouMan5 extends Base {
           headers: this.defaultHeaders,
           images: images.map((uri) => ({
             uri,
-            scrambleType: ScrambleType.RM5,
             needUnscramble: !uri.includes('.gif') && uri.includes('/sr:1/'),
           })),
         },
@@ -531,7 +524,6 @@ class RouMan5 extends Base {
           headers: this.defaultHeaders,
           images: images.map((item) => ({
             uri: item.src,
-            scrambleType: ScrambleType.RM5,
             needUnscramble: !item.src.includes('.gif') && item.scramble,
           })),
         },

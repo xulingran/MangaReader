@@ -61,7 +61,7 @@ test('删除漫画源后清理旧数据并回退当前源', () => {
     Plugin.MOEIMG,
   ]);
   expect(migrated.plugin.list[0].disabled).toBe(true);
-  expect(migrated.plugin.extra).toEqual({ bikaToken: 'legacy-token' });
+  expect('extra' in migrated.plugin).toBe(false);
   expect(migrated.favorites.map((item) => item.mangaHash)).toEqual([mbzMangaHash]);
   expect(Object.keys(migrated.dict.manga)).toEqual([mbzMangaHash]);
   expect(Object.keys(migrated.dict.chapter)).toEqual([mbzChapterHash]);

@@ -80,7 +80,12 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
     if (isSelectMode) {
       return (
         <HStack flexShrink={0}>
-          <VectorIcon source="materialCommunityIcons" name="window-close" onPress={handleCancel} />
+          <VectorIcon
+            source="materialCommunityIcons"
+            name="window-close"
+            accessibilityLabel="退出多选"
+            onPress={handleCancel}
+          />
           <VectorIcon
             source="materialCommunityIcons"
             name={
@@ -90,12 +95,22 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
                 ? 'checkbox-marked-outline'
                 : 'checkbox-intermediate'
             }
+            accessibilityLabel="全选或取消全选漫画"
+            accessibilityState={{
+              checked:
+                selectedManga.length <= 0
+                  ? false
+                  : selectedManga.length >= list.length
+                    ? true
+                    : 'mixed',
+            }}
             onPress={handleSelectAll}
           />
           <VectorIcon
             name="delete-forever"
             opacity={selectedManga.length <= 0 ? 0.5 : 1}
             disabled={selectedManga.length <= 0}
+            accessibilityLabel="删除所选漫画"
             onPress={onOpen}
           />
         </HStack>
@@ -165,10 +180,16 @@ export const SearchAndAbout = () => {
 
   return (
     <HStack flexShrink={0}>
-      <VectorIcon name="search" onPress={handleSearch} />
-      <VectorIcon name="settings" onPress={handlePlugin} />
+      <VectorIcon name="search" accessibilityLabel="搜索漫画" onPress={handleSearch} />
+      <VectorIcon name="settings" accessibilityLabel="管理漫画来源" onPress={handlePlugin} />
       <View position="relative">
-        <VectorIcon isDisabled={isUpdating} name="autorenew" onPress={handleUpdate} />
+        <VectorIcon
+          isDisabled={isUpdating}
+          name="autorenew"
+          accessibilityLabel="更新收藏漫画"
+          accessibilityState={{ disabled: isUpdating, busy: isUpdating }}
+          onPress={handleUpdate}
+        />
         {isUpdating && (
           <Text position="absolute" top={0} right={0} color="black" fontWeight="extrabold">
             {queueLength + stackLength}
