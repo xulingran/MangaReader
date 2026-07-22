@@ -33,6 +33,9 @@ import SpinLoading from '~/components/SpinLoading';
 import VectorIcon from '~/components/VectorIcon';
 import Empty from '~/components/Empty';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
+import ContinueReadingButton, {
+  ContinueReadingTarget,
+} from '~/components/ContinueReadingButton';
 import { useBackgroundColor } from '~/utils/theme/hooks';
 
 const {
@@ -152,7 +155,10 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     chapter && dispatch(exportChapter([chapter.hash]));
   };
   const handleChapter = useCallback(
-    (chapterHash: string) => {
+    (
+      chapterHash: string,
+      page = chapterHash === lastWatch.chapter ? lastWatch.page || 1 : 1
+    ) => {
       if (favorites.find((item) => item.mangaHash === mangaHash)) {
         dispatch(viewFavorites(mangaHash));
       }
@@ -160,10 +166,14 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
       navigation.navigate('Chapter', {
         mangaHash,
         chapterHash,
-        page: chapterHash === lastWatch.chapter ? lastWatch.page || 1 : 1,
+        page,
       });
     },
     [dispatch, favorites, lastWatch.chapter, lastWatch.page, mangaHash, navigation]
+  );
+  const handleContinueReading = useCallback(
+    ({ chapterHash, page }: ContinueReadingTarget) => handleChapter(chapterHash, page),
+    [handleChapter]
   );
 
   const renderItem = useCallback(
@@ -305,9 +315,16 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             {data.author.length <= 0 && '未知'}
           </Text>
           <Box flexGrow={1} />
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
-            上次观看：{lastWatch.title || '未知'}
-          </Text>
+          <HStack alignItems="center" space={2}>
+            <Text flex={1} color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+              上次观看：{lastWatch.title || '未知'}
+            </Text>
+            <ContinueReadingButton
+              chapters={data.chapters}
+              lastWatch={lastWatch}
+              onContinue={handleContinueReading}
+            />
+          </HStack>
           <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
             分类：
             {data.tag.map((text, index) => (
