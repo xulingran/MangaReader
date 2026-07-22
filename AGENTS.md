@@ -9,11 +9,12 @@
 ## 电子墨水版核心约定
 
 - **无动画**：导航 `animation: 'none'`；阅读器所有 `scrollToIndex/scrollToOffset` 固定 `animated: false`；弹窗/抽屉统一使用 `src/components/Overlay.tsx` / 静态 `Drawer`；禁止 GIF、Spinner、Stagger、摇晃/旋转/弹跳/淡入淡出组件（已全部移除，勿再加回）
-- **黑白主题**：`src/utils/theme.ts` 只有灰阶调色板 `gray`，无暗色模式、无阴影、无透明遮罩、无渐变；语义色板在 `src/utils/theme/tokens.ts`（light/dark 同值）
+- **黑白主题**：支持亮色、深色和跟随系统三态，默认跟随 Android；深色使用纯黑背景、纯白文字/边框及少量中灰，无阴影、透明遮罩和渐变。语义色板在 `src/utils/theme/tokens.ts`；漫画正文、封面与 WebView 内容不反色、不滤镜
+- **冷启动主题**：Redux 的 `setting.themeMode` 是持久化、备份和恢复的正式来源；Android SharedPreferences 与系统应用夜间模式仅镜像冷启动主题，确保 Splash 同步，缺失或非法值统一回退为跟随系统
 - **横向翻页**：FlashList 横向拖拽内容直接跟随手指，松手时由 `src/utils/reader.ts` 的 `resolveDragTargetIndex` 按拖动距离/方向决策目标页（最多一页、无惯性），再 `scrollToIndex(animated: false)` 瞬时对齐；阈值比例 `DRAG_PAGE_THRESHOLD_RATIO = 0.2`
 - **实体键翻页**：原生模块 `android/.../eink/EInkKeyModule.java` 仅在阅读页（`setReaderActive(true)`）拦截 VOLUME_UP/PAGE_UP/DPAD_LEFT（上一页）与 VOLUME_DOWN/PAGE_DOWN/DPAD_RIGHT（下一页），按键抬起时发一次 `pageKey` 事件；JS 侧 `src/utils/einkKey.ts` + `src/hooks/usePageKeys.ts`，设置项为 `setting.pageKeys`（旧 `hearing` 迁移而来）
 - **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
-- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
+- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode` 时补为跟随系统，首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
 
 ## 技术栈
 

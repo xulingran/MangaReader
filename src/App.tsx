@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createNativeStackNavigator, NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { navigationRef, customTheme, AsyncStatus } from '~/utils';
 import { HeartAndBrowser, PrehandleDrawer } from '~/views/Detail';
 import { SearchAndPlugin, PluginSelect } from '~/views/Discovery';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { store, useAppSelector } from '~/redux';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { NativeBaseProvider } from 'native-base';
 import { useMessageToast } from '~/hooks';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -23,6 +23,8 @@ import Chapter from '~/views/Chapter';
 import Plugin from '~/views/Plugin';
 import Webview from '~/views/Webview';
 import About from '~/views/About';
+import { useResolvedThemeMode, useThemePalette } from '~/utils/theme/hooks';
+import { syncNativeThemeMode } from '~/utils/theme/native';
 
 interface NavigationScreenProps {
   ready?: boolean;
@@ -78,26 +80,61 @@ const NavigationScreen = ({ ready = false }: NavigationScreenProps) => {
   );
 };
 
-const App = () => {
+const AppShell = () => {
   const [ready, setReady] = useState(false);
+  const launchStatus = useAppSelector((state) => state.app.launchStatus);
+  const themeMode = useAppSelector((state) => state.setting.themeMode);
+  const resolvedThemeMode = useResolvedThemeMode();
+  const palette = useThemePalette();
+  const navigationTheme = useMemo(
+    () => ({
+      ...DefaultTheme,
+      dark: resolvedThemeMode === 'dark',
+      colors: {
+        primary: palette.text,
+        background: palette.bg,
+        card: palette.header,
+        text: palette.text,
+        border: palette.border,
+        notification: palette.selectedBg,
+      },
+    }),
+    [palette, resolvedThemeMode]
+  );
 
   useEffect(() => {
     cleanupTemporaryImages();
   }, []);
 
+  useEffect(() => {
+    if (launchStatus === AsyncStatus.Fulfilled || launchStatus === AsyncStatus.Rejected) {
+      syncNativeThemeMode(themeMode).catch((error) => {
+        console.warn('同步 Android 主题失败', error);
+      });
+    }
+  }, [launchStatus, themeMode]);
+
   return (
-    <GestureHandlerRootView style={styles.wrapper}>
-      <Provider store={store}>
-        <NativeBaseProvider theme={customTheme}>
-          <NavigationContainer ref={navigationRef} onReady={() => setReady(true)}>
-            <NavigationScreen ready={ready} />
-            <PrehandleDrawer />
-          </NavigationContainer>
-        </NativeBaseProvider>
-      </Provider>
+    <GestureHandlerRootView style={[styles.wrapper, { backgroundColor: palette.bg }]}>
+      <NativeBaseProvider theme={customTheme}>
+        <NavigationContainer
+          ref={navigationRef}
+          theme={navigationTheme}
+          onReady={() => setReady(true)}
+        >
+          <NavigationScreen ready={ready} />
+          <PrehandleDrawer />
+        </NavigationContainer>
+      </NativeBaseProvider>
     </GestureHandlerRootView>
   );
 };
+
+const App = () => (
+  <Provider store={store}>
+    <AppShell />
+  </Provider>
+);
 
 /** for the json schema generate */
 /** https://github.com/YousefED/typescript-json-schema/issues/307 */

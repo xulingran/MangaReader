@@ -3,6 +3,7 @@ import { Input, InputGroup, Box, Button, Text } from 'native-base';
 import { initialState } from '~/redux/slice';
 import VectorIcon from '~/components/VectorIcon';
 import Overlay from './Overlay';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 interface PathModalProps {
   isOpen?: boolean;
@@ -13,6 +14,7 @@ interface PathModalProps {
 /** 电子墨水版：Modal 改为无动画静态覆盖层 */
 const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps) => {
   const [path, setPath] = useState(defaultValue);
+  const palette = useThemePalette();
 
   useEffect(() => {
     if (isOpen) {
@@ -34,8 +36,10 @@ const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps
           <Input
             fontSize="sm"
             flex={1}
-            bg="white"
-            color="black"
+            bg={palette.bg}
+            color={palette.text}
+            borderColor={palette.border}
+            placeholderTextColor={palette.placeholderTextColor}
             borderRightWidth={0}
             value={path}
             onChangeText={setPath}
@@ -43,14 +47,21 @@ const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps
           <VectorIcon
             size="md"
             name="restore"
-            color="gray.600"
+            color={palette.text}
             borderWidth={1}
-            borderColor="gray.300"
+            borderColor={palette.border}
             onPress={handleReset}
           />
         </InputGroup>
-        <Button mt={3} colorScheme="gray" onPress={handleClose}>
-          <Text color="white" fontWeight="bold">
+        <Button
+          mt={3}
+          bg={palette.selectedBg}
+          borderWidth={1}
+          borderColor={palette.border}
+          _pressed={{ bg: palette.selectedBg }}
+          onPress={handleClose}
+        >
+          <Text color={palette.selectedText} fontWeight="bold">
             确定
           </Text>
         </Button>

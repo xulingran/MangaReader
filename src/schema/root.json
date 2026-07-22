@@ -294,6 +294,15 @@
             ],
             "type": "number"
         },
+        "ThemeMode": {
+            "description": "应用外观偏好；System 由 Android 当前 uiMode 解析为亮色或深色。",
+            "enum": [
+                "light",
+                "dark",
+                "system"
+            ],
+            "type": "string"
+        },
         "Timer": {
             "enum": [
                 0,
@@ -606,6 +615,10 @@
                     "$ref": "#/definitions/Sequence",
                     "description": "章节排列顺序"
                 },
+                "themeMode": {
+                    "$ref": "#/definitions/ThemeMode",
+                    "description": "应用外观：亮色、深色或跟随系统"
+                },
                 "timer": {
                     "$ref": "#/definitions/Timer",
                     "description": "定时翻页"
@@ -621,6 +634,7 @@
                 "pageKeys",
                 "seat",
                 "sequence",
+                "themeMode",
                 "timer",
                 "timerGap"
             ],

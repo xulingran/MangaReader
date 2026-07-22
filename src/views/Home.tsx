@@ -3,7 +3,7 @@ import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~
 import { nonNullable, AsyncStatus } from '~/utils';
 import { View, Text, HStack, Button, useDisclose } from 'native-base';
 import { useFocusEffect } from '@react-navigation/native';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 import VectorIcon from '~/components/VectorIcon';
 import Bookshelf from '~/components/Bookshelf';
 import Overlay from '~/components/Overlay';
@@ -20,7 +20,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   const [selectedManga, setSelectedManga] = useState<string[]>([]);
   const [isSelectMode, setSelectMode] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclose();
-  const bg = useBackgroundColor();
+  const palette = useThemePalette();
 
   // 只订阅收藏列表中的 manga，并做浅比较；后台 batchUpdate 更新非收藏漫画不触发重渲染
   const favoriteList = useAppShallowSelector((state) =>
@@ -108,7 +108,6 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
           />
           <VectorIcon
             name="delete-forever"
-            opacity={selectedManga.length <= 0 ? 0.5 : 1}
             disabled={selectedManga.length <= 0}
             accessibilityLabel="删除所选漫画"
             onPress={onOpen}
@@ -126,7 +125,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   );
 
   return (
-    <View flex={1} bg={bg}>
+    <View flex={1} bg={palette.bg}>
       <Bookshelf
         emptyText="漫画收藏为空~"
         list={favoriteList}
@@ -142,7 +141,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
       />
       <Overlay isOpen={isOpen} title="确认" onClose={onClose}>
         <View p={4}>
-          <Text color="black" fontSize="md">
+          <Text color={palette.text} fontSize="md">
             从列表删除所选漫画？
           </Text>
           <Button.Group size="sm" space="sm" mt={4} justifyContent="flex-end">
@@ -161,6 +160,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
 
 export const SearchAndAbout = () => {
   const dispatch = useAppDispatch();
+  const palette = useThemePalette();
   // 细粒度订阅：saga 推进 batch 队列时只让真正变化的字段触发重渲染，而不是整个 batch slice
   const batchStatus = useAppSelector((state) => state.batch.loadStatus);
   const stackLength = useAppSelector((state) => state.batch.stack.length);
@@ -191,12 +191,24 @@ export const SearchAndAbout = () => {
           onPress={handleUpdate}
         />
         {isUpdating && (
-          <Text position="absolute" top={0} right={0} color="black" fontWeight="extrabold">
+          <Text
+            position="absolute"
+            top={0}
+            right={0}
+            color={palette.text}
+            fontWeight="extrabold"
+          >
             {queueLength + stackLength}
           </Text>
         )}
         {!isUpdating && failLength > 0 && (
-          <Text position="absolute" top={0} right={0} color="red.400" fontWeight="extrabold">
+          <Text
+            position="absolute"
+            top={0}
+            right={0}
+            color={palette.text}
+            fontWeight="extrabold"
+          >
             {failLength}
           </Text>
         )}

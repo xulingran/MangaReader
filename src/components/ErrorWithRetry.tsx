@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ColorType, SizeType, SafeAreaProps } from 'native-base/lib/typescript/components/types';
 import { Center } from 'native-base';
 import VectorIcon from '~/components/VectorIcon';
+import { useTextColor } from '~/utils/theme/hooks';
 
 interface ErrorWithRetryProps extends SafeAreaProps {
   color?: ColorType;
@@ -10,12 +11,13 @@ interface ErrorWithRetryProps extends SafeAreaProps {
 }
 
 const ErrorWithRetry = ({
-  color = 'black',
+  color,
   height = 48,
   onRetry,
   ...safeAreaProps
 }: ErrorWithRetryProps) => {
   const [retrying, setRetrying] = useState(false);
+  const textColor = useTextColor();
   const handleRetry = async () => {
     if (!onRetry || retrying) return;
     setRetrying(true);
@@ -31,7 +33,7 @@ const ErrorWithRetry = ({
       <VectorIcon
         name="replay"
         size="2xl"
-        color={color}
+        color={color || textColor}
         onPress={handleRetry}
         isDisabled={retrying}
         accessibilityState={{ disabled: retrying, busy: retrying }}

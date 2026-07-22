@@ -5,7 +5,7 @@
 ![license](https://img.shields.io/github/license/youniaogu/MangaReader)
 ![issues](https://img.shields.io/github/issues-raw/youniaogu/MangaReader)
 
-一个漫画 APP📱，基于 React Native 构建。**本仓库为安卓电子墨水版**：仅支持 Android，全局黑白高对比静态 UI，无任何翻页动画，适配电子纸设备（支持音量键/翻页键/方向键翻页）。应用最低支持 Android 7（API 24）。
+一个漫画 APP📱，基于 React Native 构建。**本仓库为安卓电子墨水版**：仅支持 Android，全局黑白高对比静态 UI，支持亮色、深色和跟随系统三态主题，无任何翻页动画，适配电子纸设备（支持音量键/翻页键/方向键翻页）。深色模式不会反转漫画图片或外部网页；当前主题会镜像到 Android 冷启动流程，使系统 Splash 与应用主题保持一致。应用最低支持 Android 7（API 24）。
 
 - 插件式设计、八个漫画源[插件](#插件)
 - 收藏、搜索、批量更新、下载、导出

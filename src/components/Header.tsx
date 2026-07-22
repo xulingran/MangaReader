@@ -3,6 +3,7 @@ import { StatusBar, HStack, Text, Box } from 'native-base';
 import { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { getHeaderTitle } from '@react-navigation/elements';
 import VectorIcon from '~/components/VectorIcon';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 interface HeaderProps extends NativeStackHeaderProps {
   showUpdateIndicator?: boolean;
@@ -11,6 +12,7 @@ interface HeaderProps extends NativeStackHeaderProps {
 const Header = ({ navigation, options, route, showUpdateIndicator = false }: HeaderProps) => {
   const title = getHeaderTitle(options, route.name);
   const canGoBack = useMemo(() => navigation.canGoBack(), [navigation]);
+  const palette = useThemePalette();
 
   const handleAbout = () => {
     navigation.navigate('About');
@@ -25,15 +27,18 @@ const Header = ({ navigation, options, route, showUpdateIndicator = false }: Hea
 
   return (
     <Fragment>
-      <StatusBar backgroundColor="white" barStyle="dark-content" />
+      <StatusBar
+        backgroundColor={palette.header}
+        barStyle={palette.bg === '#000000' ? 'light-content' : 'dark-content'}
+      />
       <HStack
-        bg="white"
+        bg={palette.header}
         p={1}
         w="full"
         justifyContent="space-between"
         alignItems="center"
         borderBottomWidth={1}
-        borderColor="black"
+        borderColor={palette.border}
         safeAreaTop
         safeAreaLeft
         safeAreaRight
@@ -52,13 +57,13 @@ const Header = ({ navigation, options, route, showUpdateIndicator = false }: Hea
                   w={2}
                   h={2}
                   borderRadius="full"
-                  bg="black"
+                  bg={palette.selectedBg}
                 />
               )}
             </Box>
           )}
           {title !== '' && (
-            <Text flex={1} color="black" fontSize={25} fontWeight="bold" numberOfLines={1}>
+            <Text flex={1} color={palette.text} fontSize={25} fontWeight="bold" numberOfLines={1}>
               {title}
             </Text>
           )}

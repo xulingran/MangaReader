@@ -28,6 +28,11 @@ NativeModules.ImageProcessorModule = {
   ),
   cancel: jest.fn(),
 };
+NativeModules.ThemeModeModule = {
+  persistThemeMode: jest.fn(() => Promise.resolve()),
+};
+const { Appearance } = require('react-native');
+Appearance.setColorScheme = jest.fn();
 
 jest.mock('react-native-mmkv', () => ({
   MMKV: jest.fn().mockImplementation(() => ({

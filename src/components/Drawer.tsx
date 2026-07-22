@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { Box, Pressable } from 'native-base';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 export interface DrawerRef {
   open: () => void;
@@ -21,7 +22,7 @@ interface DrawerProps {
 
 /**
  * 电子墨水版静态抽屉：无滑入动画、无透明遮罩
- * 右侧固定宽度白底黑边面板，条件渲染瞬时开合
+ * 右侧固定宽度高对比面板，条件渲染瞬时开合
  */
 const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
   { content = 300, children },
@@ -30,6 +31,7 @@ const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
   const { right } = useDebouncedSafeAreaInsets();
   const [visible, setVisible] = useState(false);
+  const palette = useThemePalette();
 
   const contentWidth = useMemo(() => content + right, [content, right]);
   const panelWidth = Math.min(windowWidth * 0.55, contentWidth);
@@ -61,9 +63,9 @@ const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
         top={0}
         width={panelWidth}
         height={windowHeight}
-        bg="white"
+        bg={palette.bg}
         borderLeftWidth={1}
-        borderColor="black"
+        borderColor={palette.border}
       >
         {children}
       </Box>

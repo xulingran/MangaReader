@@ -15,6 +15,7 @@ import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import ErrorWithRetry from './ErrorWithRetry';
 import NativeScrambleImage from './NativeScrambleImage';
 import StaticCachedImage from './StaticCachedImage';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const resizeModeDict: Record<LayoutMode, ImageResizeMode> = {
   [LayoutMode.Horizontal]: 'contain',
@@ -49,14 +50,24 @@ export interface ComicImageProps extends ImageProps {
   needUnscramble?: boolean;
 }
 
-const StaticPlaceholder = () => (
-  <Center position="absolute" top={0} left={0} right={0} bottom={0}>
-    <Icon as={MaterialIcons} name="image" size={10} color="gray.300" />
-    <Text color="gray.400" fontSize="sm" pt={1}>
-      加载中…
-    </Text>
-  </Center>
-);
+const StaticPlaceholder = () => {
+  const palette = useThemePalette();
+  return (
+    <Center
+      position="absolute"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      bg={palette.imagePlaceholder}
+    >
+      <Icon as={MaterialIcons} name="image" size={10} color={palette.disabled} />
+      <Text color={palette.subText} fontSize="sm" pt={1}>
+        加载中…
+      </Text>
+    </Center>
+  );
+};
 
 const useFillStyle = (
   layoutMode: LayoutMode,

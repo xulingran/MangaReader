@@ -36,7 +36,7 @@ import ErrorWithRetry from '~/components/ErrorWithRetry';
 import ContinueReadingButton, {
   ContinueReadingTarget,
 } from '~/components/ContinueReadingButton';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const {
   loadManga,
@@ -112,7 +112,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
       return [...data.chapters].reverse();
     }
   }, [data, sequence]);
-  const bg = useBackgroundColor();
+  const palette = useThemePalette();
 
   useOnce(() => {
     if (!nonNullable(data) || (nonNullable(data) && data.chapters.length <= 0)) {
@@ -204,7 +204,6 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
 
       return (
         <Pressable
-          _pressed={{ opacity: 0.8 }}
           onPress={handlePress}
           onLongPress={handleLongPress}
           delayLongPress={200}
@@ -214,9 +213,9 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               px={1}
               py={2}
               position="relative"
-              bg={isActived ? 'black' : 'transparent'}
-              color={isActived ? 'white' : 'gray.600'}
-              borderColor={isActived ? 'black' : 'gray.600'}
+              bg={isActived ? palette.selectedBg : 'transparent'}
+              color={isActived ? palette.selectedText : palette.subText}
+              borderColor={isActived ? palette.border : palette.subText}
               overflow="hidden"
               borderRadius="md"
               borderWidth={0.5}
@@ -231,7 +230,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
                 as={MaterialCommunityIcons}
                 size="sm"
                 name="check-circle"
-                color={isChecked ? 'gray.500' : 'gray.400'}
+                color={isChecked ? palette.text : palette.disabled}
                 position="absolute"
                 top={`${gap / 3}px`}
                 right={`${gap / 3}px`}
@@ -243,7 +242,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
                 size="xs"
                 style={{ transform: [{ rotateZ: '30deg' }] }}
                 name={record.isVisited ? 'brightness-1' : 'brightness-2'}
-                color={`gray.${Math.min(Math.floor(record.progress / 25) + 1, 5)}00`}
+                color={record.isVisited ? palette.text : palette.subText}
                 position="absolute"
                 top={`${gap / 3}px`}
                 right={`${gap / 3}px`}
@@ -253,12 +252,12 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
         </Pressable>
       );
     },
-    [gap, handleChapter, navigation, onOpen, selected]
+    [gap, handleChapter, navigation, onOpen, palette, selected]
   );
 
   if (!nonNullable(data)) {
     if (currentLoadStatus === AsyncStatus.Rejected) {
-      return <ErrorWithRetry color="black" height="full" onRetry={handleReload} />;
+      return <ErrorWithRetry color={palette.text} height="full" onRetry={handleReload} />;
     }
     if (currentLoadStatus === AsyncStatus.Fulfilled) {
       return <Empty text="未找到漫画详情" onPress={handleReload} />;
@@ -272,8 +271,16 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
 
 
   return (
-    <Box w="full" h="full" bg={bg}>
-      <Flex safeAreaX w="full" bg="gray.100" flexDirection="row" pl={4} pr={4} pb={4}>
+    <Box w="full" h="full" bg={palette.bg}>
+      <Flex
+        safeAreaX
+        w="full"
+        bg={palette.card}
+        flexDirection="row"
+        pl={4}
+        pr={4}
+        pb={4}
+      >
         <StaticCachedImage
           headers={data.headers}
           source={data.infoCover || data.bookCover || data.cover || ''}
@@ -288,7 +295,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
           <HStack alignItems="center">
             <Text
               flex={1}
-              color="black"
+              color={palette.text}
               fontSize={18}
               fontWeight="bold"
               numberOfLines={2}
@@ -303,7 +310,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               onPress={handleReload}
             />
           </HStack>
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             作者：
             {data.author.map((text, index) => (
               <Fragment key={text}>
@@ -315,7 +322,13 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
           </Text>
           <Box flexGrow={1} />
           <HStack alignItems="center" space={2}>
-            <Text flex={1} color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+            <Text
+              flex={1}
+              color={palette.text}
+              fontSize={14}
+              fontWeight="bold"
+              numberOfLines={1}
+            >
               上次观看：{lastWatch.title || '未知'}
             </Text>
             <ContinueReadingButton
@@ -324,7 +337,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               onContinue={handleContinueReading}
             />
           </HStack>
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             分类：
             {data.tag.map((text, index) => (
               <Fragment key={text}>
@@ -334,13 +347,13 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             ))}
             {data.tag.length <= 0 && '未知'}
           </Text>
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             来源：{data.sourceName}
           </Text>
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             状态：{statusToLabel(data.status)}
           </Text>
-          <Text color="black" fontSize={14} fontWeight="bold" numberOfLines={1}>
+          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             最近更新：{data.updateTime || '未知'}
           </Text>
         </Flex>
@@ -367,7 +380,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             keyExtractor={(item) => item.hash}
           />
         ) : currentLoadStatus === AsyncStatus.Rejected ? (
-          <ErrorWithRetry color="black" height="full" onRetry={handleReload} />
+          <ErrorWithRetry color={palette.text} height="full" onRetry={handleReload} />
         ) : currentLoadStatus === AsyncStatus.Fulfilled ? (
           <Empty text="暂无章节" onPress={handleReload} />
         ) : (
@@ -393,7 +406,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
           }
         }}
         headerComponent={
-          <Text w="full" pl={4} pb={4} color="gray.500" fontSize={16}>
+          <Text w="full" pl={4} pb={4} color={palette.subText} fontSize={16}>
             {chapter?.title}
           </Text>
         }
@@ -411,6 +424,7 @@ export const HeartAndBrowser = () => {
   const favorites = useAppSelector((state) => state.favorites);
   const dict = useAppSelector((state) => state.dict.manga);
   const manga = useMemo(() => dict[mangaHash], [dict, mangaHash]);
+  const palette = useThemePalette();
   const { isActived, enableBatch } = useMemo(() => {
     const favorite = favorites.find((item) => item.mangaHash === mangaHash);
     return { isActived: Boolean(favorite), enableBatch: favorite?.enableBatch || false };
@@ -516,7 +530,7 @@ export const HeartAndBrowser = () => {
       {isActived && (
         <VectorIcon
           name={enableBatch ? 'lock-open' : 'lock-outline'}
-          color={enableBatch ? 'black' : 'gray.400'}
+          color={enableBatch ? palette.text : palette.disabled}
           accessibilityLabel={enableBatch ? '停止自动更新此漫画' : '自动更新此漫画'}
           accessibilityState={{ checked: enableBatch }}
           onPress={toggleQueue}
@@ -525,7 +539,7 @@ export const HeartAndBrowser = () => {
       <VectorIcon
         source="materialCommunityIcons"
         name={isActived ? 'heart' : 'heart-outline'}
-        color="black"
+        color={palette.text}
         accessibilityLabel={isActived ? '取消收藏' : '收藏漫画'}
         accessibilityState={{ checked: isActived }}
         onPress={toggleFavorite}
@@ -562,6 +576,7 @@ const VisiblePrehandleDrawer = () => {
   const openDrawer = useAppSelector((state) => state.chapter.openDrawer);
   const drawerRef = useRef<DrawerRef>(null);
   const insets = useDebouncedSafeAreaInsets();
+  const palette = useThemePalette();
 
   useFocusEffect(
     useCallback(() => {
@@ -590,7 +605,7 @@ const VisiblePrehandleDrawer = () => {
         space={1}
         key={item.taskId}
         alignItems="center"
-        borderColor="gray.200"
+        borderColor={palette.border}
         borderBottomWidth={1}
         borderTopWidth={index === 0 ? 1 : 0}
       >
@@ -598,24 +613,23 @@ const VisiblePrehandleDrawer = () => {
           flex={1}
           fontWeight="bold"
           fontSize="md"
-          color={`gray.${Math.floor(progress * -5) + 9}00`}
+          color={progress >= 1 ? palette.text : palette.subText}
           numberOfLines={1}
         >
           {item.title}
         </Text>
         {item.status === AsyncStatus.Pending && (
           <Box ml={1}>
-            <SpinLoading size="sm" height={1} color={`gray.${Math.floor(progress * -5) + 9}00`} />
+            <SpinLoading size="sm" height={1} color={palette.subText} />
           </Box>
         )}
         {item.status === AsyncStatus.Rejected && (
           <Pressable
             px={1}
-            _pressed={{ opacity: 0.5 }}
             onPress={() => handleRetry(item.taskId)}
             onLongPress={() => handleRemove(item.taskId)}
           >
-            <Text fontWeight="bold" fontSize="sm" color="red.800">
+            <Text fontWeight="bold" fontSize="sm" color={palette.text}>
               {item.fail.length}
             </Text>
           </Pressable>
@@ -626,7 +640,7 @@ const VisiblePrehandleDrawer = () => {
 
   return (
     <Drawer ref={drawerRef}>
-      <Box bg="gray.100" h="full">
+      <Box bg={palette.bg} h="full">
         {list.length > 0 && (
           <FlashList
             data={list}

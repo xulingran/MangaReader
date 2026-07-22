@@ -3,15 +3,17 @@ import { Icon, Text, Button, VStack, Center, ScrollView, useDisclose, View } fro
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { Linking } from 'react-native';
 import { CacheManager } from '@georstat/react-native-image-cache';
-import { AsyncStatus } from '~/utils';
+import { AsyncStatus, ThemeMode } from '~/utils';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import PathModal from '~/components/PathModal';
 import Overlay from '~/components/Overlay';
-import { useBackgroundColor, useTextColor } from '~/utils/theme/hooks';
+import { useResolvedThemeMode, useThemePalette } from '~/utils/theme/hooks';
+import ThemeModeSelector from '~/components/ThemeModeSelector';
 
-const { backup, restore, clearCache, loadLatestRelease, setAndroidDownloadPath } = action;
+const { backup, restore, clearCache, loadLatestRelease, setAndroidDownloadPath, setThemeMode } =
+  action;
 
 const About = () => {
   const { isOpen: isClearing, onOpen: openClearing, onClose: closeClearing } = useDisclose();
@@ -27,8 +29,9 @@ const About = () => {
   const backupStatus = useAppSelector((state) => state.datasync.backupStatus);
   const restoreStatus = useAppSelector((state) => state.datasync.restoreStatus);
   const androidDownloadPath = useAppSelector((state) => state.setting.androidDownloadPath);
-  const bg = useBackgroundColor();
-  const text = useTextColor();
+  const themeMode = useAppSelector((state) => state.setting.themeMode);
+  const resolvedThemeMode = useResolvedThemeMode();
+  const palette = useThemePalette();
 
   const handleRetry = () => {
     dispatch(loadLatestRelease());
@@ -64,43 +67,58 @@ const About = () => {
     onAlbumPathClose();
     dispatch(setAndroidDownloadPath(path));
   };
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    if (mode !== themeMode) {
+      dispatch(setThemeMode(mode));
+    }
+  };
 
   return (
-    <View flex={1} bg={bg}>
+    <View flex={1} bg={palette.bg}>
       <ScrollView>
         <VStack space={6} px={8} py={8} safeAreaX safeAreaBottom>
           <VStack alignItems="center">
-            <Text fontSize="3xl" fontWeight="bold" color={text}>
+            <Text fontSize="3xl" fontWeight="bold" color={palette.text}>
               {release.name}
             </Text>
-            <Text fontSize="md" fontWeight="bold" color={text}>
+            <Text fontSize="md" fontWeight="bold" color={palette.text}>
               {`${release.publishTime}  ${release.version}`}
             </Text>
           </VStack>
 
+          <ThemeModeSelector
+            value={themeMode}
+            resolvedMode={resolvedThemeMode}
+            onChange={handleThemeModeChange}
+          />
+
           {release.loadStatus === AsyncStatus.Pending && <SpinLoading />}
           {release.loadStatus === AsyncStatus.Rejected && (
-            <ErrorWithRetry color="black" onRetry={handleRetry} />
+            <ErrorWithRetry color={palette.text} onRetry={handleRetry} />
           )}
           {release.loadStatus === AsyncStatus.Fulfilled && release.latest === undefined && (
             <Center alignItems="center">
-              <Icon as={MaterialIcons} name="check-circle-outline" size={20} color="black" />
-              <Text pb={4} fontWeight="bold">
+              <Icon
+                as={MaterialIcons}
+                name="check-circle-outline"
+                size={20}
+                color={palette.text}
+              />
+              <Text color={palette.text} pb={4} fontWeight="bold">
                 暂无更新
               </Text>
             </Center>
           )}
           {release.loadStatus === AsyncStatus.Fulfilled && release.latest !== undefined && (
             <Fragment>
-              <Text fontSize="lg" fontWeight="bold">
+              <Text color={palette.text} fontSize="lg" fontWeight="bold">
                 {release.latest.publishTime} {release.latest.version}
               </Text>
-              <Text pb={4} fontSize="md" fontWeight="bold">
+              <Text color={palette.text} pb={4} fontSize="md" fontWeight="bold">
                 {release.latest.changeLog}
               </Text>
 
               <Button
-                _text={{ fontWeight: 'bold' }}
                 leftIcon={<Icon as={MaterialIcons} name="android" size="lg" />}
                 onPress={handleApkDownload}
               >
@@ -110,7 +128,6 @@ const About = () => {
           )}
 
           <Button
-            _text={{ fontWeight: 'bold' }}
             isDisabled={backupStatus === AsyncStatus.Pending}
             leftIcon={<Icon as={MaterialIcons} name="backup" size="lg" />}
             onPress={handleBackup}
@@ -119,14 +136,12 @@ const About = () => {
           </Button>
           <Button
             isDisabled={restoreStatus === AsyncStatus.Pending}
-            _text={{ fontWeight: 'bold' }}
             leftIcon={<Icon as={MaterialIcons} name="restore" size="lg" />}
             onPress={handleRestore}
           >
             {restoreStatus === AsyncStatus.Pending ? '恢复中…' : '恢复'}
           </Button>
           <Button
-            _text={{ fontWeight: 'bold' }}
             leftIcon={<Icon as={MaterialIcons} name="drive-file-move" size="lg" />}
             onPress={onAlbumPathOpen}
           >
@@ -134,8 +149,6 @@ const About = () => {
           </Button>
           <Button
             isDisabled={isClearing}
-            colorScheme="warning"
-            _text={{ fontWeight: 'bold' }}
             leftIcon={<Icon as={MaterialIcons} name="image-not-supported" size="lg" />}
             onPress={handleImageCacheClear}
           >
@@ -144,8 +157,6 @@ const About = () => {
           {__DEV__ && (
             <Button
               isDisabled={clearStatus === AsyncStatus.Pending}
-              colorScheme="danger"
-              _text={{ fontWeight: 'bold' }}
               leftIcon={<Icon as={MaterialIcons} name="clear-all" size="lg" />}
               onPress={onModalOpen}
             >
@@ -156,14 +167,14 @@ const About = () => {
 
         <Overlay isOpen={isModalOpen} title="警告" onClose={onModalClose}>
           <View p={4}>
-            <Text color="black" fontSize="md">
+            <Text color={palette.text} fontSize="md">
               此操作会清空收藏列表、漫画数据、插件和观看设置，请谨慎！
             </Text>
             <Button.Group size="sm" space="sm" mt={4} justifyContent="flex-end">
               <Button px={5} variant="outline" colorScheme="gray" onPress={onModalClose}>
                 取消
               </Button>
-              <Button px={5} colorScheme="danger" onPress={handleStorageCacheClear}>
+              <Button px={5} onPress={handleStorageCacheClear}>
                 确认
               </Button>
             </Button.Group>

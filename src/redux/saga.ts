@@ -281,6 +281,7 @@ const {
   loadLatestReleaseCompletion,
   // setting
   setMode,
+  setThemeMode,
   setPageKeys,
   setDirection,
   setSequence,
@@ -1014,6 +1015,7 @@ function* saveSettingSaga() {
   yield takeLatestSuspense(
     [
       setMode.type,
+      setThemeMode.type,
       setPageKeys.type,
       setDirection.type,
       setSequence.type,

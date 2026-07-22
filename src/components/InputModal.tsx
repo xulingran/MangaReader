@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Text, Input, InputGroup, InputRightAddon, Button, Box } from 'native-base';
 import { KeyboardTypeOptions } from 'react-native';
 import Overlay from './Overlay';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 interface InputModalProps {
   title?: string;
@@ -22,6 +23,7 @@ const InputModal = ({
   onClose,
 }: InputModalProps) => {
   const [value, setValue] = useState(defaultValue);
+  const palette = useThemePalette();
 
   useEffect(() => {
     if (isOpen) {
@@ -40,16 +42,33 @@ const InputModal = ({
           <Input
             flex={1}
             fontSize="sm"
-            bg="white"
-            color="black"
+            bg={palette.bg}
+            color={palette.text}
+            borderColor={palette.border}
+            placeholderTextColor={palette.placeholderTextColor}
             value={value}
             keyboardType={keyboardType}
             onChangeText={setValue}
           />
-          {rightAddon && <InputRightAddon px={2} children={rightAddon} background="gray.100" />}
+          {rightAddon && (
+            <InputRightAddon
+              px={2}
+              children={rightAddon}
+              background={palette.card}
+              borderColor={palette.border}
+              _text={{ color: palette.text }}
+            />
+          )}
         </InputGroup>
-        <Button mt={3} colorScheme="gray" onPress={handleClose}>
-          <Text color="white" fontWeight="bold">
+        <Button
+          mt={3}
+          bg={palette.selectedBg}
+          borderWidth={1}
+          borderColor={palette.border}
+          _pressed={{ bg: palette.selectedBg }}
+          onPress={handleClose}
+        >
+          <Text color={palette.selectedText} fontWeight="bold">
             确定
           </Text>
         </Button>

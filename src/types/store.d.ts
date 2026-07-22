@@ -3,6 +3,7 @@ import {
   MangaStatus,
   Sequence,
   LayoutMode,
+  ThemeMode,
   ReaderDirection,
   MultipleSeat,
   PageKeys,
@@ -119,6 +120,8 @@ declare global {
     setting: {
       /** 布局模式 */
       mode: LayoutMode;
+      /** 应用外观：亮色、深色或跟随系统 */
+      themeMode: ThemeMode;
       /** 漫画阅读方向 */
       direction: ReaderDirection;
       /** 双页模式的图片位置 */

@@ -44,6 +44,20 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/utils/theme/hooks', () => ({
   useBackgroundColor: () => 'white',
+  useThemePalette: () => ({
+    bg: 'white',
+    text: 'black',
+    subText: 'gray.500',
+    card: 'gray.100',
+    border: 'black',
+    header: 'white',
+    placeholderTextColor: 'gray.500',
+    disabled: 'gray.400',
+    selectedBg: 'black',
+    selectedText: 'white',
+    pressedBg: 'gray.200',
+    imagePlaceholder: 'gray.100',
+  }),
 }));
 
 jest.mock('react-native-vector-icons/MaterialIcons', () => 'MaterialIcons');

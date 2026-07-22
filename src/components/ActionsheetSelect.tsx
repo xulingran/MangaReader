@@ -3,6 +3,7 @@ import { ScrollView, Icon, Pressable, HStack, Text } from 'native-base';
 import { sourceMap } from './VectorIcon';
 import { Keyboard } from 'react-native';
 import Overlay from './Overlay';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 export interface ActionsheetSelectProps {
   isOpen?: boolean;
@@ -25,6 +26,7 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
   onChange,
   headerComponent,
 }) => {
+  const palette = useThemePalette();
   useEffect(() => {
     isOpen && Keyboard.dismiss();
   }, [isOpen]);
@@ -47,10 +49,10 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
           <Pressable
             key={item.value}
             disabled={item.disabled}
+            _disabled={{ opacity: 1 }}
             onPress={handleChange(item.value)}
             borderBottomWidth={1}
-            borderColor="gray.200"
-            opacity={item.disabled ? 0.4 : 1}
+            borderColor={palette.border}
           >
             <HStack px={4} py={3} alignItems="center" space={3}>
               {item.icon && (
@@ -58,10 +60,10 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
                   as={sourceMap[item.icon.source]}
                   size="md"
                   name={item.icon.name}
-                  color="black"
+                  color={item.disabled ? palette.disabled : palette.text}
                 />
               )}
-              <Text fontSize="md" color="black">
+              <Text fontSize="md" color={item.disabled ? palette.disabled : palette.text}>
                 {item.label}
               </Text>
             </HStack>

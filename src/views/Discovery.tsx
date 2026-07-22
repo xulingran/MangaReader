@@ -9,7 +9,7 @@ import ActionsheetSelect from '~/components/ActionsheetSelect';
 import VectorIcon from '~/components/VectorIcon';
 import Bookshelf from '~/components/Bookshelf';
 import * as RootNavigation from '~/utils/navigation';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const { loadDiscovery, setSource, setDiscoveryFilter, resetSearchFilter } = action;
 
@@ -22,7 +22,7 @@ const Discovery = ({ navigation }: StackDiscoveryProps) => {
   const updateList = useAppShallowSelector((state) =>
     list.map((hash) => state.dict.manga[hash]).filter(nonNullable)
   );
-  const bg = useBackgroundColor();
+  const palette = useThemePalette();
 
   useFocusEffect(
     useCallback(() => {
@@ -44,7 +44,7 @@ const Discovery = ({ navigation }: StackDiscoveryProps) => {
   );
 
   return (
-    <View flex={1} bg={bg}>
+    <View flex={1} bg={palette.bg}>
       <SearchOption />
       <Bookshelf
         emptyText="没找到相关漫画~"
@@ -65,6 +65,7 @@ export const SearchOption = () => {
   const { isOpen, onOpen, onClose } = useDisclose();
   const [key, setKey] = useState<string>('');
   const [options, setOptions] = useState<OptionItem[]>([]);
+  const palette = useThemePalette();
 
   const discoveryOptions = useMemo(() => {
     return (PluginMap.get(source)?.option.discovery || []).map((item) => {
@@ -95,13 +96,20 @@ export const SearchOption = () => {
   }
 
   return (
-    <HStack safeAreaX px={2} pb={2} bg="white" borderBottomWidth={1} borderColor="black">
+    <HStack
+      safeAreaX
+      px={2}
+      pb={2}
+      bg={palette.bg}
+      borderBottomWidth={1}
+      borderColor={palette.border}
+    >
       {discoveryOptions.map((item) => {
         return (
           <Button
             key={item.name}
             variant="ghost"
-            _text={{ color: 'black', fontWeight: 'bold' }}
+            _text={{ color: palette.text, fontWeight: 'bold' }}
             onPress={handlePress(item.name, item.options)}
           >
             {item.label}
@@ -124,6 +132,7 @@ export const PluginSelect = () => {
   const { source, list } = useAppSelector((state) => state.plugin);
   const route = useRoute<RouteProp<RootStackParamList, 'Discovery' | 'Search'>>();
   const dispatch = useAppDispatch();
+  const palette = useThemePalette();
   const options = useMemo<{ label: string; value: string }[]>(() => {
     return list
       .filter((item) => !item.disabled)
@@ -164,7 +173,12 @@ export const PluginSelect = () => {
         w={12}
         h={12}
         variant="ghost"
-        _text={{ color: 'black', textAlign: 'center', fontSize: 'sm', fontWeight: 'bold' }}
+        _text={{
+          color: palette.text,
+          textAlign: 'center',
+          fontSize: 'sm',
+          fontWeight: 'bold',
+        }}
         onPress={() => {
           handleOpen();
           Keyboard.dismiss();
@@ -179,13 +193,13 @@ export const PluginSelect = () => {
         onChange={handleChange}
         headerComponent={
           <HStack w="full" pl={4} alignItems="center" justifyContent="space-between">
-            <Text color="gray.500" fontSize={16}>
+            <Text color={palette.subText} fontSize={16}>
               选择插件
             </Text>
             <VectorIcon
               name="settings"
               size="lg"
-              color="gray.500"
+              color={palette.subText}
               accessibilityLabel="设置发现页筛选条件"
               onPress={handleSetting}
             />
@@ -199,6 +213,7 @@ export const PluginSelect = () => {
 export const SearchAndPlugin = () => {
   const [keyword, setKeyword] = useState('');
   const source = useAppSelector((state) => state.plugin.source);
+  const palette = useThemePalette();
 
   const handleSearch = () => {
     RootNavigation.navigate('Search', { keyword, source });
@@ -211,12 +226,12 @@ export const SearchAndPlugin = () => {
         w={0}
         flex={1}
         size="xl"
-        bg="white"
-        color="black"
-        borderColor="black"
+        bg={palette.bg}
+        color={palette.text}
+        borderColor={palette.border}
         variant="underlined"
         placeholder="请输入漫画名"
-        placeholderTextColor="gray.400"
+        placeholderTextColor={palette.placeholderTextColor}
         onChangeText={setKeyword}
         onSubmitEditing={handleSearch}
       />

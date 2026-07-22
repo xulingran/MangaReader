@@ -34,6 +34,7 @@ import InputModal from '~/components/InputModal';
 import VectorIcon from '~/components/VectorIcon';
 import Empty from '~/components/Empty';
 import { CacheManager } from '@georstat/react-native-image-cache';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const {
   loadChapter,
@@ -57,10 +58,6 @@ const layoutIconDict = {
   [LayoutMode.Vertical]: 'filmstrip',
   [LayoutMode.Multiple]: 'book-open-outline',
 };
-
-/** 电子墨水版：阅读页固定白底黑字 */
-const bg = 'white';
-const color = 'black';
 
 const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) => {
   return useMemo(() => {
@@ -96,6 +93,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const dispatch = useAppDispatch();
+  const palette = useThemePalette();
+  const bg = palette.bg;
+  const color = palette.text;
   const { isOpen, onOpen, onClose } = useDisclose();
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
   const onOpenRef = useRef(onOpen);
@@ -512,7 +512,11 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
 
   return (
     <Box w="full" h="full" bg={bg}>
-      <StatusBar backgroundColor={bg} hidden={!showExtra} barStyle="dark-content" />
+      <StatusBar
+        backgroundColor={bg}
+        hidden={!showExtra}
+        barStyle={bg === '#000000' ? 'light-content' : 'dark-content'}
+      />
       {render && (
         <Reader
           key={orientation}
@@ -570,7 +574,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             right={0}
             bg={bg}
             borderBottomWidth={1}
-            borderColor="black"
+            borderColor={palette.border}
             safeAreaTop
             safeAreaLeft
             safeAreaRight
@@ -619,7 +623,12 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             </Flex>
 
             {isMenuOpen && (
-              <HStack borderTopWidth={1} borderColor="black" justifyContent="space-around" py={1}>
+              <HStack
+                borderTopWidth={1}
+                borderColor={palette.border}
+                justifyContent="space-around"
+                py={1}
+              >
                 <VectorIcon
                   name={layoutIconDict[mode]}
                   size="lg"
@@ -687,18 +696,17 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             justifyContent="space-between"
             bg={bg}
             borderTopWidth={1}
-            borderColor="black"
+            borderColor={palette.border}
             safeAreaX
             safeAreaBottom
           >
             <VectorIcon
               name="skip-previous"
               size="lg"
-              color={color}
+              color={prev ? color : palette.disabled}
               disabled={!prev}
               accessibilityLabel="上一章"
               accessibilityState={{ disabled: !prev }}
-              opacity={prev ? 1 : 0.3}
               onPress={handlePrevChapter}
             />
             <Pressable
@@ -706,7 +714,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
               mx={2}
               py={2}
               borderWidth={1}
-              borderColor="black"
+              borderColor={palette.border}
               alignItems="center"
               onPress={onJumpOpen}
             >
@@ -717,11 +725,10 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
             <VectorIcon
               name="skip-next"
               size="lg"
-              color={color}
+              color={next ? color : palette.disabled}
               disabled={!next}
               accessibilityLabel="下一章"
               accessibilityState={{ disabled: !next }}
-              opacity={next ? 1 : 0.3}
               onPress={handleNextChapter}
             />
           </Flex>

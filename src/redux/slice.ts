@@ -3,6 +3,7 @@ import {
   MangaStatus,
   Sequence,
   LayoutMode,
+  ThemeMode,
   ReaderDirection,
   MultipleSeat,
   PageKeys,
@@ -32,6 +33,7 @@ export const initialState: RootState = {
   },
   setting: {
     mode: LayoutMode.Horizontal,
+    themeMode: ThemeMode.System,
     direction: ReaderDirection.Right,
     sequence: Sequence.Desc,
     seat: MultipleSeat.AToB,
@@ -200,6 +202,9 @@ const settingSlice = createSlice({
   reducers: {
     setMode(state, action: PayloadAction<LayoutMode>) {
       state.mode = action.payload;
+    },
+    setThemeMode(state, action: PayloadAction<ThemeMode>) {
+      state.themeMode = action.payload;
     },
     setDirection(state, action: PayloadAction<ReaderDirection>) {
       state.direction = action.payload;

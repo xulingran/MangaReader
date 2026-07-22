@@ -17,3 +17,6 @@
 # EInkKeyModule 通过 ReactMethod 暴露给 JS；RN 自带 consumer rules 已覆盖
 # NativeModule/ReactMethod，这里仅限定保留项目自定义模块包，避免保留整个应用包。
 -keep class com.mangareader.eink.** { *; }
+
+# 冷启动主题桥由 BaseReactPackage 按模块名创建，并在 Application 启动时静态调用。
+-keep class com.mangareader.theme.** { *; }

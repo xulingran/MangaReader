@@ -1,8 +1,8 @@
 /**
  * 旧设置 / 旧备份迁移回归测试（电子墨水版）
- * light、animated 被剔除，hearing 映射为 pageKeys，首次升级强制横向单页
+ * light、animated 被剔除，hearing 映射为 pageKeys，缺少主题时跟随系统
  */
-import { migrateSetting, validate, LayoutMode } from '~/utils';
+import { migrateSetting, validate, LayoutMode, ThemeMode } from '~/utils';
 import { initialState } from '~/redux/slice';
 import { it, expect, describe } from '@jest/globals';
 
@@ -31,6 +31,7 @@ describe('migrateSetting', () => {
     expect('animated' in result).toBe(false);
     expect('hearing' in result).toBe(false);
     expect(result.pageKeys).toBe(0);
+    expect(result.themeMode).toBe(ThemeMode.System);
   });
 
   it('首次升级（检测到旧字段）强制横向单页', () => {
@@ -58,6 +59,18 @@ describe('migrateSetting', () => {
     expect(result.pageKeys).toBe(initialState.setting.pageKeys);
   });
 
+  it('保留新版显式主题偏好', () => {
+    const setting = { ...initialState.setting, themeMode: ThemeMode.Dark };
+    expect(migrateSetting(setting).themeMode).toBe(ThemeMode.Dark);
+  });
+
+  it('当前电子墨水版设置缺少主题字段时默认跟随系统', () => {
+    const settingWithoutTheme = { ...initialState.setting } as Partial<RootState['setting']>;
+    delete settingWithoutTheme.themeMode;
+    const result = migrateSetting(settingWithoutTheme);
+    expect(result.themeMode).toBe(ThemeMode.System);
+  });
+
   it('非对象输入原样返回', () => {
     expect(migrateSetting(undefined as any)).toBe(undefined);
     expect(migrateSetting(null as any)).toBe(null);
@@ -74,6 +87,7 @@ describe('migrateSetting', () => {
     expect(validate(result, settingSchema, initialState.setting)).toBe(true);
     expect(result.pageKeys).toBe(1);
     expect(result.mode).toBe(LayoutMode.Horizontal);
+    expect(result.themeMode).toBe(ThemeMode.System);
   });
 
   it('旧备份（root 结构）迁移后通过 root schema 校验', () => {

@@ -4,6 +4,7 @@ import { Plugin } from '~/plugins';
 import { WebView } from 'react-native-webview';
 import { useToast } from 'native-base';
 import { SecureToken } from '~/utils/secureToken';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const { setCredential } = action;
 
@@ -47,6 +48,7 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
   const dispatch = useAppDispatch();
   const toast = useToast();
   const { uri, source, userAgent, injectedJavascript } = route.params || {};
+  const palette = useThemePalette();
   const [sessionNonce] = useState(() =>
     source === Plugin.BIKA && injectedJavascript ? SecureToken.createSessionNonce() : ''
   );
@@ -59,6 +61,7 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
   return (
     <WebView
       source={{ uri }}
+      style={{ backgroundColor: palette.bg }}
       userAgent={userAgent}
       originWhitelist={[new URL(uri).origin]}
       onShouldStartLoadWithRequest={({ url }) => isAllowedWebviewUrl(uri, url)}

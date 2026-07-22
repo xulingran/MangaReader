@@ -14,6 +14,7 @@ import {
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import ErrorWithRetry from './ErrorWithRetry';
 import type { ComicImageProps, ImageState } from './ComicImage';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const MAX_PIXEL_SIZE = 8_000_000;
 const resizeMode: Record<LayoutMode, ImageResizeMode> = {
@@ -24,14 +25,24 @@ const resizeMode: Record<LayoutMode, ImageResizeMode> = {
 const EMPTY_STATE: ImageState = { dataUrl: '', loadStatus: AsyncStatus.Default };
 const EMPTY_HEADERS: Record<string, string> = {};
 
-const Placeholder = () => (
-  <Center position="absolute" top={0} left={0} right={0} bottom={0}>
-    <Icon as={MaterialIcons} name="image" size={10} color="gray.300" />
-    <Text color="gray.400" fontSize="sm" pt={1}>
-      加载中…
-    </Text>
-  </Center>
-);
+const Placeholder = () => {
+  const palette = useThemePalette();
+  return (
+    <Center
+      position="absolute"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      bg={palette.imagePlaceholder}
+    >
+      <Icon as={MaterialIcons} name="image" size={10} color={palette.disabled} />
+      <Text color={palette.subText} fontSize="sm" pt={1}>
+        加载中…
+      </Text>
+    </Center>
+  );
+};
 
 const NativeScrambleImage = ({
   uri,

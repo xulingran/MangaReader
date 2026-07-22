@@ -8,7 +8,7 @@ import SpinLoading from '~/components/SpinLoading';
 import Loading from '~/components/Loading';
 import Empty from '~/components/Empty';
 import StaticCachedImage from '~/components/StaticCachedImage';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 /** 书架行高（固定）：小封面 + 标题/来源/状态 */
 export const BOOKSHELF_ROW_HEIGHT = 112;
@@ -74,6 +74,7 @@ const Bookshelf = ({
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
   const insets = useDebouncedSafeAreaInsets();
   const render = useDelayRender(loading && list.length === 0);
+  const palette = useThemePalette();
   const extraData = useMemo(
     () => ({
       fail: failList || [],
@@ -82,10 +83,24 @@ const Bookshelf = ({
       negative: negativeList || [],
       selectMode: isSelectMode || false,
       selected: selectedList || [],
+      bg: palette.bg,
+      text: palette.text,
+      subText: palette.subText,
+      border: palette.border,
+      selectedBg: palette.selectedBg,
+      selectedText: palette.selectedText,
+      pressedBg: palette.pressedBg,
     }),
-    [failList, trendList, activeList, negativeList, isSelectMode, selectedList]
+    [
+      activeList,
+      failList,
+      isSelectMode,
+      negativeList,
+      palette,
+      selectedList,
+      trendList,
+    ]
   );
-  const bg = useBackgroundColor();
 
   const handleEndReached = useCallback(() => {
     !loading && loadMore && loadMore();
@@ -99,7 +114,7 @@ const Bookshelf = ({
       const isSelected = extra.selected?.includes(item.hash);
       return (
         <Pressable
-          _pressed={{ bg: 'gray.100' }}
+          _pressed={{ bg: extra.pressedBg }}
           onPress={() => itemOnPress(item.hash)}
           onLongPress={() => itemOnLongPress?.(item.hash)}
         >
@@ -110,10 +125,15 @@ const Bookshelf = ({
             space={3}
             alignItems="flex-start"
             borderBottomWidth={1}
-            borderColor="gray.200"
-            bg={isSelected ? 'gray.200' : 'white'}
+            borderColor={extra.border}
+            bg={isSelected ? extra.selectedBg : extra.bg}
           >
-            <Box style={styles.cover} borderWidth={1} borderColor="black" overflow="hidden">
+            <Box
+              style={styles.cover}
+              borderWidth={1}
+              borderColor={isSelected ? extra.selectedText : extra.border}
+              overflow="hidden"
+            >
               <StaticCachedImage
                 headers={item.headers}
                 source={item.bookCover || item.infoCover || item.cover || ''}
@@ -128,20 +148,35 @@ const Bookshelf = ({
                     as={MaterialIcons}
                     size="md"
                     name={isSelected ? 'check-box' : 'check-box-outline-blank'}
-                    color="black"
+                    color={isSelected ? extra.selectedText : extra.text}
                   />
                 )}
-                <Text fontSize="md" fontWeight="bold" numberOfLines={1} flex={1}>
+                <Text
+                  color={isSelected ? extra.selectedText : extra.text}
+                  fontSize="md"
+                  fontWeight="bold"
+                  numberOfLines={1}
+                  flex={1}
+                >
                   {item.title || item.hash}
                 </Text>
               </HStack>
-              <Text fontSize="sm" color="gray.600" numberOfLines={1}>
+              <Text
+                fontSize="sm"
+                color={isSelected ? extra.selectedText : extra.subText}
+                numberOfLines={1}
+              >
                 {item.sourceName}
               </Text>
               {status && !extra.selectMode && (
                 <HStack alignItems="center" space={1}>
-                  <Icon as={MaterialIcons} size="xs" name={status.icon} color="black" />
-                  <Text fontSize="xs" color="black">
+                  <Icon
+                    as={MaterialIcons}
+                    size="xs"
+                    name={status.icon}
+                    color={isSelected ? extra.selectedText : extra.text}
+                  />
+                  <Text fontSize="xs" color={isSelected ? extra.selectedText : extra.text}>
                     {status.text}
                   </Text>
                 </HStack>
@@ -158,7 +193,7 @@ const Bookshelf = ({
     return <Loading />;
   }
   if (!loading && list.length === 0) {
-    return <Empty bg={bg} text={emptyText} onPress={reload} />;
+    return <Empty bg={palette.bg} text={emptyText} onPress={reload} />;
   }
 
   return (

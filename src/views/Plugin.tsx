@@ -5,7 +5,7 @@ import { useDebouncedSafeAreaInsets } from '~/hooks';
 import { Plugin as PluginType } from '~/plugins';
 import ScoreRate from '~/components/ScoreRate';
 import VectorIcon from '~/components/VectorIcon';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const { sortPlugin, disablePlugin } = action;
 
@@ -13,7 +13,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.plugin.list);
   const { left, right, bottom } = useDebouncedSafeAreaInsets();
-  const bg = useBackgroundColor();
+  const palette = useThemePalette();
 
   const move = (index: number, offset: -1 | 1) => {
     const target = index + offset;
@@ -26,7 +26,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
   };
 
   return (
-    <Box flex={1} bg={bg}>
+    <Box flex={1} bg={palette.bg}>
       <ScrollView contentContainerStyle={{ paddingLeft: left, paddingRight: right, paddingBottom: bottom }}>
         {list.map((item, index) => (
           <HStack
@@ -36,13 +36,13 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
             px={4}
             py={3}
             borderBottomWidth={1}
-            borderColor="gray.200"
+            borderColor={palette.border}
           >
             <VStack space={1} flexGrow={1} w={0}>
               <Text
                 fontSize="lg"
                 fontWeight="bold"
-                color="black"
+                color={palette.text}
                 accessibilityRole="link"
                 onPress={() =>
                   navigate('Webview', {
@@ -56,9 +56,15 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               >
                 {item.name} - {item.label} 🔗
               </Text>
-              {item.description && <Text fontSize="sm">{item.description}</Text>}
+              {item.description && (
+                <Text color={palette.subText} fontSize="sm">
+                  {item.description}
+                </Text>
+              )}
               <HStack alignItems="center">
-                <Text fontSize="sm">推荐指数：</Text>
+                <Text color={palette.text} fontSize="sm">
+                  推荐指数：
+                </Text>
                 <ScoreRate score={item.score} />
               </HStack>
             </VStack>

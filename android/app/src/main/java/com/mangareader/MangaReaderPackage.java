@@ -10,6 +10,7 @@ import com.facebook.react.module.model.ReactModuleInfoProvider;
 import com.mangareader.eink.EInkKeyModule;
 import com.mangareader.image.ImageProcessorModule;
 import com.mangareader.secure.SecureTokenModule;
+import com.mangareader.theme.ThemeModeModule;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +27,8 @@ public class MangaReaderPackage extends BaseReactPackage {
         return new ImageProcessorModule(reactContext);
       case SecureTokenModule.NAME:
         return new SecureTokenModule(reactContext);
+      case ThemeModeModule.NAME:
+        return new ThemeModeModule(reactContext);
       default:
         return null;
     }
@@ -38,6 +41,7 @@ public class MangaReaderPackage extends BaseReactPackage {
       addModule(modules, EInkKeyModule.NAME, EInkKeyModule.class);
       addModule(modules, ImageProcessorModule.NAME, ImageProcessorModule.class);
       addModule(modules, SecureTokenModule.NAME, SecureTokenModule.class);
+      addModule(modules, ThemeModeModule.NAME, ThemeModeModule.class);
       return modules;
     };
   }

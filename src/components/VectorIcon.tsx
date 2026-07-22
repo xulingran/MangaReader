@@ -4,6 +4,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Octicons from 'react-native-vector-icons/Octicons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 export const sourceMap = {
   materialIcons: MaterialIcons,
@@ -37,7 +38,7 @@ const accessibilityLabels: Record<string, string> = {
 const VectorIcon = ({
   name = 'check',
   size = 'xl',
-  color = 'black',
+  color,
   onPress,
   shadow,
   source = 'materialIcons',
@@ -48,14 +49,22 @@ const VectorIcon = ({
   ...props
 }: VectorIconProps) => {
   const disabledState = Boolean(isDisabled || disabled);
+  const palette = useThemePalette();
   return (
     <IconButton
       p={2}
-      opacity={disabledState ? 0.5 : 1}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || accessibilityLabels[name] || `执行 ${name}`}
       accessibilityState={{ ...accessibilityState, disabled: disabledState }}
-      icon={<Icon shadow={shadow} as={sourceMap[source]} name={name} size={size} color={color} />}
+      icon={
+        <Icon
+          shadow={shadow}
+          as={sourceMap[source]}
+          name={name}
+          size={size}
+          color={color || (disabledState ? palette.disabled : palette.text)}
+        />
+      }
       onPress={onPress}
       isDisabled={disabledState}
       disabled={disabledState}

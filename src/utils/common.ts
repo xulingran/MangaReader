@@ -1,4 +1,4 @@
-import { ErrorMessage, LayoutMode, MangaStatus } from './enum';
+import { ErrorMessage, LayoutMode, MangaStatus, ThemeMode } from './enum';
 import { Draft, Draft07, JsonError, JsonSchema } from 'json-schema-library';
 import { ImageState } from '~/components/ComicImage';
 import { Buffer } from 'buffer';
@@ -43,6 +43,7 @@ export function haveError(payload: any): payload is { error: Error } {
 /**
  * 迁移旧版本设置（电子墨水版）：
  * - 剔除已删除的 light / animated 字段
+ * - 所有缺少 themeMode 的设置默认跟随 Android 系统
  * - 旧的 hearing 字段映射为 pageKeys
  * - 检测到旧字段（首次升级）时强制使用横向单页模式
  * 收藏、插件、阅读记录、下载路径、定时翻页等其余设置保持不变
@@ -56,6 +57,9 @@ export function migrateSetting(raw: any): RootState['setting'] {
 
   delete setting.light;
   delete setting.animated;
+  if (!('themeMode' in setting)) {
+    setting.themeMode = ThemeMode.System;
+  }
   if ('hearing' in setting) {
     if (!('pageKeys' in setting)) {
       setting.pageKeys = setting.hearing;

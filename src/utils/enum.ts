@@ -32,6 +32,13 @@ export enum LayoutMode {
   Multiple = 'multiple',
 }
 
+/** 应用外观偏好；System 由 Android 当前 uiMode 解析为亮色或深色。 */
+export enum ThemeMode {
+  Light = 'light',
+  Dark = 'dark',
+  System = 'system',
+}
+
 export enum ReaderDirection {
   /** 从右向左 */
   Left = 'left',

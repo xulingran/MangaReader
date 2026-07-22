@@ -6,7 +6,7 @@ import { nonNullable, AsyncStatus } from '~/utils';
 import { PluginMap } from '~/plugins';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
 import Bookshelf from '~/components/Bookshelf';
-import { useBackgroundColor } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const { loadSearch, setSearchFilter } = action;
 
@@ -19,7 +19,7 @@ const Search = ({ route, navigation }: StackSearchProps) => {
   const searchList = useAppShallowSelector((state) =>
     list.map((hash) => state.dict.manga[hash]).filter(nonNullable)
   );
-  const bg = useBackgroundColor();
+  const palette = useThemePalette();
 
   useFocusEffect(
     useCallback(() => {
@@ -44,9 +44,9 @@ const Search = ({ route, navigation }: StackSearchProps) => {
   );
 
   return (
-    <View flex={1} bg={bg}>
+    <View flex={1} bg={palette.bg}>
       <SearchOption />
-      <Box bg={bg} flex={1}>
+      <Box bg={palette.bg} flex={1}>
         <Bookshelf
           emptyText="没找到相关漫画~"
           list={searchList}
@@ -69,6 +69,7 @@ export const SearchOption = () => {
   const { isOpen, onOpen, onClose } = useDisclose();
   const [key, setKey] = useState<string>('');
   const [options, setOptions] = useState<OptionItem[]>([]);
+  const palette = useThemePalette();
 
   const searchOptions = useMemo(() => {
     return (PluginMap.get(source)?.option.search || []).map((item) => {
@@ -99,13 +100,20 @@ export const SearchOption = () => {
   }
 
   return (
-    <HStack safeAreaX px={2} pb={2} bg="white" borderBottomWidth={1} borderColor="black">
+    <HStack
+      safeAreaX
+      px={2}
+      pb={2}
+      bg={palette.bg}
+      borderBottomWidth={1}
+      borderColor={palette.border}
+    >
       {searchOptions.map((item) => {
         return (
           <Button
             key={item.name}
             variant="ghost"
-            _text={{ color: 'black', fontWeight: 'bold' }}
+            _text={{ color: palette.text, fontWeight: 'bold' }}
             onPress={handlePress(item.name, item.options)}
           >
             {item.label}
