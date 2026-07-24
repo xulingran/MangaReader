@@ -15,6 +15,10 @@ export interface ControllerProps {
   onZoomEnd?: (scale: number) => void;
   onAccessibilityNext?: () => void;
   onAccessibilityPrevious?: () => void;
+  /** 水平翻页滑动激活时调用（此时起内容不跟随手指） */
+  onSwipeStart?: () => void;
+  /** 水平翻页滑动松手时调用，上报手指水平位移，由调用方决策是否翻页 */
+  onSwipe?: (translationX: number) => void;
   children: ReactNode;
   horizontal?: boolean;
   safeAreaType?: SafeArea;
@@ -28,10 +32,11 @@ export interface LongPressControllerProps {
 /**
  * 电子墨水版 Controller：所有动画语义已移除（双击瞬时切换、无补间）。
  * 性能要点：
- * - 5 个 Gesture 对象用 useMemo 缓存，回调读取 ref，避免每次 render 重建
+ * - 6 个 Gesture 对象用 useMemo 缓存，回调读取 ref，避免每次 render 重建
  * - 14 个 Reanimated shared value 是 worklet 必需的载体，保留不变
- * - Pan 的启用状态用 boolean state 控制：scale=1 时必须真正 .enabled(false)，
- *   否则手势识别器在 ~8dp 移动后会进入 ACTIVE 并 cancel 外层 FlashList 横向滚动。
+ * - 缩放 Pan 与翻页 swipe Pan 互斥，启用状态用 boolean state 控制：
+ *   scale=1 时缩放 Pan 必须真正 .enabled(false)，否则手势识别器在 ~8dp 移动后
+ *   会进入 ACTIVE 并 cancel 外层 FlashList 滚动；swipe Pan 反之，scale>1 时禁用。
  *   缩放切换是低频用户事件（双击/捏合），re-render 开销可接受。
  */
 const Controller = ({
@@ -44,6 +49,8 @@ const Controller = ({
   onZoomEnd = emptyFn,
   onAccessibilityNext,
   onAccessibilityPrevious,
+  onSwipeStart,
+  onSwipe,
 }: ControllerProps) => {
   const insets = useDebouncedSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
@@ -74,11 +81,16 @@ const Controller = ({
   const onLongPressRef = useRef(onLongPress);
   const onZoomStartRef = useRef(onZoomStart);
   const onZoomEndRef = useRef(onZoomEnd);
+  const onSwipeStartRef = useRef(onSwipeStart);
+  const onSwipeRef = useRef(onSwipe);
   onTapRef.current = onTap;
   onLongPressRef.current = onLongPress;
   onZoomStartRef.current = onZoomStart;
   onZoomEndRef.current = onZoomEnd;
+  onSwipeStartRef.current = onSwipeStart;
+  onSwipeRef.current = onSwipe;
   const hasLongPress = onLongPress !== undefined;
+  const hasSwipe = onSwipe !== undefined;
 
   const safeAreaStyle = useMemo(() => {
     return {
@@ -282,16 +294,37 @@ const Controller = ({
         savedTranslationY.value = translationY.value;
       });
 
-    return { singleTap, doubleTap, longPress, pinchGesture, panGesture };
+    // 翻页 swipe Pan：仅 scale=1 时启用（与缩放 Pan 互斥），仅水平方向激活；
+    // 不做任何 onChange 视觉跟随，松手把位移交给调用方（Reader）决策是否翻页。
+    const swipeGesture = Gesture.Pan()
+      .runOnJS(true)
+      .minPointers(1)
+      .maxPointers(1)
+      .enabled(hasSwipe && !panEnabled)
+      .activeOffsetX([-10, 10])
+      .onStart(() => {
+        onSwipeStartRef.current?.();
+      })
+      .onEnd((e) => {
+        onSwipeRef.current?.(e.translationX);
+      });
+
+    return { singleTap, doubleTap, longPress, pinchGesture, panGesture, swipeGesture };
     // shared value 与 ref 引用在生命周期内稳定，不进依赖；eslint 无法识别该稳定性，故禁用 exhaustive-deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [horizontal, oneThirdWidth, windowWidth, windowHeight, panEnabled]);
+  }, [horizontal, oneThirdWidth, windowWidth, windowHeight, panEnabled, hasSwipe]);
 
   const exclusiveGesture = useMemo(() => {
     return hasLongPress
       ? Gesture.Exclusive(gestures.doubleTap, gestures.singleTap, gestures.longPress)
       : Gesture.Exclusive(gestures.doubleTap, gestures.singleTap);
   }, [gestures, hasLongPress]);
+
+  // 缩放 Pan 与翻页 swipe Pan 同一识别位；enabled 互斥，任一时刻至多一个可激活
+  const panOrSwipeGesture = useMemo(
+    () => Gesture.Race(gestures.panGesture, gestures.swipeGesture),
+    [gestures]
+  );
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -309,7 +342,7 @@ const Controller = ({
   return (
     <GestureDetector gesture={exclusiveGesture}>
       <GestureDetector gesture={gestures.pinchGesture}>
-        <GestureDetector gesture={gestures.panGesture}>
+        <GestureDetector gesture={panOrSwipeGesture}>
           <Animated.View
             style={animatedStyle}
             accessible

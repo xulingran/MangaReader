@@ -1,12 +1,13 @@
 /**
- * 阅读器横向拖拽结束后的目标页决策（纯函数，便于单元测试）
+ * 阅读器横向滑动结束后的目标页决策（纯函数，便于单元测试）
+ * 输入为按 inverted 归一化后的手势位移（等效 contentOffset.x 变化语义：正数 = 下一页方向）。
  * 规则：
- * - 拖动距离小于阈值 → 回当前页
+ * - 位移距离小于阈值 → 回当前页
  * - 达到阈值按方向移动一页（最多一页，禁止惯性连翻）
  * - 边界 clamp 在 [0, maxIndex]
  */
 
-/** 触发翻页的拖动距离占屏宽比例 */
+/** 触发翻页的滑动距离占屏宽比例 */
 export const DRAG_PAGE_THRESHOLD_RATIO = 0.2;
 
 /**
@@ -28,7 +29,7 @@ export const getReaderPrefetchUris = <
 };
 
 export interface DragTargetParams {
-  /** 松手时 contentOffset.x 与拖动起始时的差值 */
+  /** 松手时按 inverted 归一化后的水平位移（等效 contentOffset.x 变化） */
   deltaX: number;
   /** 拖动起始时所在的 index */
   currentIndex: number;
@@ -48,8 +49,7 @@ export const resolveDragTargetIndex = ({
   let target = currentIndex;
 
   if (Math.abs(deltaX) >= threshold && threshold > 0) {
-    // 滚动位置增大（手指向左拖）→ 下一页；反之上一页
-    // inverted 列表手势与 offset 同向，无需额外翻转
+    // 正位移 → 下一页；负位移 → 上一页（调用方已按 inverted 归一化手势方向）
     target = currentIndex + (deltaX > 0 ? 1 : -1);
   }
 

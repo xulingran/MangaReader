@@ -72,8 +72,8 @@ export interface ReaderProps {
   onZoomStart?: (scale: number) => void;
   onZoomEnd?: (scale: number) => void;
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  onScrollBeginDrag?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  onScrollEndDrag?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onScrollBeginDrag?: (event?: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  onScrollEndDrag?: (event?: NativeSyntheticEvent<NativeScrollEvent>) => void;
   cache: Cache;
 }
 
@@ -135,10 +135,6 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
   const horizontalStateRef = useRef<(ImageState | null)[]>([]);
   const verticalStateRef = useRef<(ImageState | null)[]>([]);
   const multipleStateRef = useRef<Record<string, ImageState | null>[]>([]);
-  const extraData = useMemo(
-    () => ({ inverted, onTap, onLongPress, onImageLoad }),
-    [inverted, onTap, onLongPress, onImageLoad]
-  );
   const handleAccessibilityNext = useCallback(
     () => onTap?.(inverted ? PositionX.Left : PositionX.Right),
     [inverted, onTap]
@@ -152,9 +148,6 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     [windowWidth, windowHeight]
   );
 
-  // 横向模式拖拽定位：记录拖动起始 offset 与起始 index
-  const dragStartXRef = useRef<number | null>(null);
-  const dragStartIndexRef = useRef(0);
   const currentIndexRef = useRef(0);
 
   const portraitHeight = (Math.max(windowWidth, windowHeight) * 3) / 5;
@@ -222,21 +215,22 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
   }));
 
   /**
-   * 横向拖拽结束决策：按拖动距离与方向确定目标页（最多一页），
-   * 通过 scrollToIndex(animated: false) 瞬时对齐，并终止原生惯性
+   * 横向滑动结束决策：内容不再跟随手指（FlashList scrollEnabled=false），
+   * 松手时按手势位移与方向确定目标页（最多一页），scrollToIndex(animated: false) 瞬时切换
    */
-  const settleHorizontalDrag = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (layoutMode === LayoutMode.Vertical || dragStartXRef.current === null) {
+  const settleSwipe = useCallback(
+    (translationX: number) => {
+      if (layoutMode === LayoutMode.Vertical) {
         return;
       }
-      const deltaX = event.nativeEvent.contentOffset.x - dragStartXRef.current;
-      dragStartXRef.current = null;
+      // inverted 列表视觉翻转，手指方向与页码方向同向；
+      // 归一化为等效 offset 语义：正位移 = 下一页
+      const deltaX = inverted ? translationX : -translationX;
 
       const maxIndex = (layoutMode === LayoutMode.Multiple ? multipleData.length : data.length) - 1;
       const target = resolveDragTargetIndex({
         deltaX,
-        currentIndex: dragStartIndexRef.current,
+        currentIndex: currentIndexRef.current,
         maxIndex,
         threshold: windowWidth * DRAG_PAGE_THRESHOLD_RATIO,
       });
@@ -245,25 +239,32 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       flashListRef.current?.scrollToIndex({ index: target, animated: false });
       reportPage(target);
     },
-    [layoutMode, multipleData.length, data.length, windowWidth, reportPage]
+    [layoutMode, inverted, multipleData.length, data.length, windowWidth, reportPage]
   );
 
-  const handleScrollBeginDrag = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      if (layoutMode !== LayoutMode.Vertical) {
-        dragStartXRef.current = event.nativeEvent.contentOffset.x;
-        dragStartIndexRef.current = currentIndexRef.current;
-      }
-      onScrollBeginDrag && onScrollBeginDrag(event);
+  /** 滑动开始：透传给父级（暂停定时翻页） */
+  const handleSwipeStart = useCallback(() => {
+    onScrollBeginDrag && onScrollBeginDrag();
+  }, [onScrollBeginDrag]);
+  /** 滑动结束：瞬时切页并透传给父级（恢复定时翻页） */
+  const handleSwipe = useCallback(
+    (translationX: number) => {
+      settleSwipe(translationX);
+      onScrollEndDrag && onScrollEndDrag();
     },
-    [layoutMode, onScrollBeginDrag]
+    [settleSwipe, onScrollEndDrag]
   );
-  const handleScrollEndDrag = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      settleHorizontalDrag(event);
-      onScrollEndDrag && onScrollEndDrag(event);
-    },
-    [settleHorizontalDrag, onScrollEndDrag]
+
+  const extraData = useMemo(
+    () => ({
+      inverted,
+      onTap,
+      onLongPress,
+      onImageLoad,
+      onSwipeStart: handleSwipeStart,
+      onSwipe: handleSwipe,
+    }),
+    [inverted, onTap, onLongPress, onImageLoad, handleSwipeStart, handleSwipe]
   );
 
   // https://github.com/Shopify/flash-list/issues/637
@@ -306,6 +307,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
           onZoomEnd={onZoomEnd}
           onAccessibilityNext={handleAccessibilityNext}
           onAccessibilityPrevious={handleAccessibilityPrevious}
+          onSwipeStart={handleSwipeStart}
+          onSwipe={handleSwipe}
           safeAreaType={SafeArea.All}
         >
           <ComicImage
@@ -331,6 +334,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     [
       handleAccessibilityNext,
       handleAccessibilityPrevious,
+      handleSwipe,
+      handleSwipeStart,
       headers,
       onImageLoad,
       onLongPress,
@@ -424,6 +429,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
           onZoomEnd={onZoomEnd}
           onAccessibilityNext={handleAccessibilityNext}
           onAccessibilityPrevious={handleAccessibilityPrevious}
+          onSwipeStart={handleSwipeStart}
+          onSwipe={handleSwipe}
         >
           <Flex w="full" h="full" flexDirection="row" alignItems="center" justifyContent="center">
             {item.map(({ uri, needUnscramble, chapterHash, current }) => {
@@ -469,6 +476,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
     [
       handleAccessibilityNext,
       handleAccessibilityPrevious,
+      handleSwipe,
+      handleSwipeStart,
       headers,
       onImageLoad,
       onLongPress,
@@ -496,6 +505,7 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={multipleData}
         inverted={inverted}
         horizontal
+        scrollEnabled={false}
         extraData={extraData}
         viewabilityConfig={viewabilityConfig}
         drawDistance={READER_DRAW_DISTANCE}
@@ -503,8 +513,6 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         estimatedItemSize={windowWidth}
         estimatedListSize={estimatedListSize}
         onScroll={onScroll}
-        onScrollBeginDrag={handleScrollBeginDrag}
-        onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={3}
         onViewableItemsChanged={handleMultipleViewableItemsChanged}
@@ -522,6 +530,7 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         data={data}
         inverted={inverted}
         horizontal
+        scrollEnabled={false}
         extraData={extraData}
         viewabilityConfig={viewabilityConfig}
         drawDistance={READER_DRAW_DISTANCE}
@@ -529,8 +538,6 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
         estimatedItemSize={windowWidth}
         estimatedListSize={estimatedListSize}
         onScroll={onScroll}
-        onScrollBeginDrag={handleScrollBeginDrag}
-        onScrollEndDrag={handleScrollEndDrag}
         onEndReached={onLoadMore}
         onEndReachedThreshold={5}
         onViewableItemsChanged={handleViewableItemsChanged}

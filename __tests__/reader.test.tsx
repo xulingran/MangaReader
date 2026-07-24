@@ -1,5 +1,5 @@
 /**
- * 阅读器无惯性拖拽翻页回归测试（电子墨水版）
+ * 阅读器无惯性滑动翻页回归测试（电子墨水版）
  */
 import { it, expect, describe, beforeEach, afterEach, jest } from '@jest/globals';
 import React from 'react';
@@ -43,9 +43,21 @@ jest.mock('@shopify/flash-list', () => {
         mockStore.__scrollToIndexCalls.push(args);
       },
     }));
-    return null;
+    // 横向/双页模式渲染首个 item，让 item 内的 Controller mock 能捕获到 Reader 传入的 swipe 回调；
+    // 条漫模式 item 直接渲染 native-base Box（无 Provider），保持返回 null
+    const firstItem = props.data && props.data[0];
+    return props.horizontal && firstItem ? props.renderItem({ item: firstItem, index: 0 }) : null;
   });
   return { FlashList };
+});
+
+/** mock Controller：捕获 Reader 传给每页的 swipe 回调，不渲染图片内容 */
+jest.mock('~/components/Controller', () => {
+  const Controller = (props: any) => {
+    mockStore.__controllerProps = props;
+    return null;
+  };
+  return { __esModule: true, default: Controller, LongPressController: () => null };
 });
 
 const mockCache = {
@@ -181,6 +193,7 @@ describe('Reader 组件', () => {
     mockStore.__scrollToIndexCalls = [];
     mockStore.__flashListProps = undefined;
     mockStore.__flashListRenderCount = 0;
+    mockStore.__controllerProps = undefined;
   });
 
   afterEach(() => {
@@ -266,51 +279,81 @@ describe('Reader 组件', () => {
     expect(mockStore.__flashListRenderCount).toBe(1);
   });
 
-  it('短距离拖拽松手瞬时回当前页（animated: false）', () => {
+  it('短距离滑动松手瞬时回当前页（animated: false）', () => {
     const ref = React.createRef<ReaderRef>();
     renderReader(ref);
 
-    mockStore.__flashListProps.onScrollBeginDrag({ nativeEvent: { contentOffset: { x: 0 } } });
-    mockStore.__flashListProps.onScrollEndDrag({
-      nativeEvent: { contentOffset: { x: threshold * 0.5 } },
-    });
+    act(() => mockStore.__controllerProps.onSwipe(-threshold * 0.5));
 
     expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 0, animated: false }]);
   });
 
-  it('超过阈值拖拽松手瞬时进入相邻页', () => {
+  it('超过阈值左滑松手瞬时进入下一页', () => {
     const ref = React.createRef<ReaderRef>();
     renderReader(ref);
 
-    mockStore.__flashListProps.onScrollBeginDrag({ nativeEvent: { contentOffset: { x: 0 } } });
-    mockStore.__flashListProps.onScrollEndDrag({
-      nativeEvent: { contentOffset: { x: threshold * 2 } },
-    });
+    act(() => mockStore.__controllerProps.onSwipe(-threshold * 2));
 
     expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 1, animated: false }]);
   });
 
-  it('快速拖拽（大 delta）最多移动一页', () => {
+  it('快速滑动（大位移）最多移动一页', () => {
     const ref = React.createRef<ReaderRef>();
     renderReader(ref);
 
-    mockStore.__flashListProps.onScrollBeginDrag({ nativeEvent: { contentOffset: { x: 0 } } });
-    mockStore.__flashListProps.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 99999 } } });
+    act(() => mockStore.__controllerProps.onSwipe(-99999));
 
     expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 1, animated: false }]);
   });
 
-  it('反向拖拽进入上一页且不越界', () => {
+  it('右滑进入上一页且不越界', () => {
     const ref = React.createRef<ReaderRef>();
     renderReader(ref);
 
     // 先定位到第 2 页（currentIndexRef 同步）
-    ref.current?.scrollToIndex(2);
+    act(() => ref.current?.scrollToIndex(2));
     mockStore.__scrollToIndexCalls = [];
 
-    mockStore.__flashListProps.onScrollBeginDrag({ nativeEvent: { contentOffset: { x: 2000 } } });
-    mockStore.__flashListProps.onScrollEndDrag({ nativeEvent: { contentOffset: { x: 0 } } });
+    act(() => mockStore.__controllerProps.onSwipe(threshold * 2));
 
+    expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 1, animated: false }]);
+  });
+
+  it('反向阅读（inverted）时右滑进入下一页', () => {
+    const ref = React.createRef<ReaderRef>();
+    renderReader(ref, makeData(5), 0, undefined, { inverted: true });
+
+    act(() => mockStore.__controllerProps.onSwipe(threshold * 2));
+
+    expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 1, animated: false }]);
+  });
+
+  it('横向/双页模式关闭触摸滚动，条漫模式保留原生滚动', () => {
+    renderReader(React.createRef<ReaderRef>());
+    expect(mockStore.__flashListProps.scrollEnabled).toBe(false);
+
+    renderReader(React.createRef<ReaderRef>(), makeData(5), 0, undefined, {
+      layoutMode: LayoutMode.Multiple,
+    });
+    expect(mockStore.__flashListProps.scrollEnabled).toBe(false);
+
+    renderReader(React.createRef<ReaderRef>(), makeData(5), 0, undefined, {
+      layoutMode: LayoutMode.Vertical,
+    });
+    expect(mockStore.__flashListProps.scrollEnabled).not.toBe(false);
+  });
+
+  it('滑动开始与结束透传父级回调（暂停/恢复定时翻页）', () => {
+    const ref = React.createRef<ReaderRef>();
+    const onScrollBeginDrag = jest.fn();
+    const onScrollEndDrag = jest.fn();
+    renderReader(ref, makeData(5), 0, undefined, { onScrollBeginDrag, onScrollEndDrag });
+
+    act(() => mockStore.__controllerProps.onSwipeStart());
+    expect(onScrollBeginDrag).toHaveBeenCalledTimes(1);
+
+    act(() => mockStore.__controllerProps.onSwipe(-threshold * 2));
+    expect(onScrollEndDrag).toHaveBeenCalledTimes(1);
     expect(mockStore.__scrollToIndexCalls).toEqual([{ index: 1, animated: false }]);
   });
 });
