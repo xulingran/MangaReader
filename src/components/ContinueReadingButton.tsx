@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text } from 'native-base';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 export interface ContinueReadingTarget {
   chapterHash: string;
@@ -46,6 +46,7 @@ const ContinueReadingButton = ({
 }: ContinueReadingButtonProps) => {
   const target = getContinueReadingTarget(chapters, lastWatch);
   const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
 
   if (!target) {
     return null;
@@ -56,17 +57,17 @@ const ContinueReadingButton = ({
       flexShrink={0}
       px={3}
       py={2}
-      bg={palette.selectedBg}
+      bg={pressed ? palette.bg : palette.selectedBg}
       borderWidth={1}
       borderColor={palette.border}
       borderRadius="md"
-      _pressed={{ bg: palette.selectedBg }}
+      {...bind}
       accessibilityRole="button"
       accessibilityLabel={`继续阅读：${target.title}，第 ${target.page} 页`}
       accessibilityHint="打开上次阅读的章节并定位到记录页"
       onPress={() => onContinue(target)}
     >
-      <Text color={palette.selectedText} fontSize={13} fontWeight="bold">
+      <Text color={pressed ? palette.text : palette.selectedText} fontSize={13} fontWeight="bold">
         继续阅读
       </Text>
     </Pressable>

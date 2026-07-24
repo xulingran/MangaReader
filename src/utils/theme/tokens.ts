@@ -13,7 +13,9 @@ export const themeTokens = {
   disabled: { light: '#a3a3a3', dark: '#5c5c5c' },
   selectedBg: { light: '#000000', dark: '#ffffff' },
   selectedText: { light: '#ffffff', dark: '#000000' },
-  pressedBg: { light: '#ffffff', dark: '#000000' },
+  // 按压反馈：瞬时反色，无渐变。正色元素按下呈 pressed 对；反色元素按下回落 bg/text 对
+  pressedBg: { light: '#000000', dark: '#ffffff' },
+  pressedText: { light: '#ffffff', dark: '#000000' },
   imagePlaceholder: { light: '#f0f0f0', dark: '#0a0a0a' },
 } as const;
 
@@ -33,6 +35,7 @@ export const themePalettes = {
     selectedBg: themeTokens.selectedBg.light,
     selectedText: themeTokens.selectedText.light,
     pressedBg: themeTokens.pressedBg.light,
+    pressedText: themeTokens.pressedText.light,
     imagePlaceholder: themeTokens.imagePlaceholder.light,
   },
   dark: {
@@ -47,6 +50,7 @@ export const themePalettes = {
     selectedBg: themeTokens.selectedBg.dark,
     selectedText: themeTokens.selectedText.dark,
     pressedBg: themeTokens.pressedBg.dark,
+    pressedText: themeTokens.pressedText.dark,
     imagePlaceholder: themeTokens.imagePlaceholder.dark,
   },
 } as const;

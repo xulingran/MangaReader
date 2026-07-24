@@ -40,7 +40,12 @@ export const customTheme = extendTheme({
           borderColor: 'black',
           _text: { color: 'white', fontWeight: 'bold' },
           _icon: { color: 'white' },
-          _pressed: { bg: 'black' },
+          _pressed: {
+            bg: 'white',
+            borderColor: 'black',
+            _text: { color: 'black' },
+            _icon: { color: 'black' },
+          },
           _disabled: {
             opacity: 1,
             bg: 'gray.400',
@@ -53,7 +58,12 @@ export const customTheme = extendTheme({
             borderColor: 'white',
             _text: { color: 'black' },
             _icon: { color: 'black' },
-            _pressed: { bg: 'white' },
+            _pressed: {
+              bg: 'black',
+              borderColor: 'white',
+              _text: { color: 'white' },
+              _icon: { color: 'white' },
+            },
             _disabled: {
               opacity: 1,
               bg: 'gray.600',
@@ -69,7 +79,11 @@ export const customTheme = extendTheme({
           borderColor: 'black',
           _text: { color: 'black', fontWeight: 'bold' },
           _icon: { color: 'black' },
-          _pressed: { bg: 'white' },
+          _pressed: {
+            bg: 'black',
+            _text: { color: 'white' },
+            _icon: { color: 'white' },
+          },
           _disabled: {
             opacity: 1,
             borderColor: 'gray.400',
@@ -81,7 +95,11 @@ export const customTheme = extendTheme({
             borderColor: 'white',
             _text: { color: 'white' },
             _icon: { color: 'white' },
-            _pressed: { bg: 'black' },
+            _pressed: {
+              bg: 'white',
+              _text: { color: 'black' },
+              _icon: { color: 'black' },
+            },
             _disabled: {
               opacity: 1,
               borderColor: 'gray.600',
@@ -94,7 +112,11 @@ export const customTheme = extendTheme({
           bg: 'transparent',
           _text: { color: 'black', fontWeight: 'bold' },
           _icon: { color: 'black' },
-          _pressed: { bg: 'transparent' },
+          _pressed: {
+            bg: 'black',
+            _text: { color: 'white' },
+            _icon: { color: 'white' },
+          },
           _disabled: {
             opacity: 1,
             _text: { color: 'gray.400' },
@@ -103,7 +125,11 @@ export const customTheme = extendTheme({
           _dark: {
             _text: { color: 'white' },
             _icon: { color: 'white' },
-            _pressed: { bg: 'transparent' },
+            _pressed: {
+              bg: 'white',
+              _text: { color: 'black' },
+              _icon: { color: 'black' },
+            },
             _disabled: {
               opacity: 1,
               _text: { color: 'gray.600' },
@@ -115,7 +141,11 @@ export const customTheme = extendTheme({
           bg: 'transparent',
           _text: { color: 'black', fontWeight: 'bold' },
           _icon: { color: 'black' },
-          _pressed: { bg: 'transparent' },
+          _pressed: {
+            bg: 'black',
+            _text: { color: 'white' },
+            _icon: { color: 'white' },
+          },
           _disabled: {
             opacity: 1,
             _text: { color: 'gray.400' },
@@ -124,7 +154,11 @@ export const customTheme = extendTheme({
           _dark: {
             _text: { color: 'white' },
             _icon: { color: 'white' },
-            _pressed: { bg: 'transparent' },
+            _pressed: {
+              bg: 'white',
+              _text: { color: 'black' },
+              _icon: { color: 'black' },
+            },
             _disabled: {
               opacity: 1,
               _text: { color: 'gray.600' },

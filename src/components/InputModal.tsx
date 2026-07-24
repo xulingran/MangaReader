@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Text, Input, InputGroup, InputRightAddon, Button, Box } from 'native-base';
 import { KeyboardTypeOptions } from 'react-native';
 import Overlay from './Overlay';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 interface InputModalProps {
   title?: string;
@@ -24,6 +24,7 @@ const InputModal = ({
 }: InputModalProps) => {
   const [value, setValue] = useState(defaultValue);
   const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
 
   useEffect(() => {
     if (isOpen) {
@@ -62,13 +63,14 @@ const InputModal = ({
         </InputGroup>
         <Button
           mt={3}
-          bg={palette.selectedBg}
+          bg={pressed ? palette.bg : palette.selectedBg}
           borderWidth={1}
           borderColor={palette.border}
-          _pressed={{ bg: palette.selectedBg }}
+          _pressed={{ bg: palette.bg }}
+          {...bind}
           onPress={handleClose}
         >
-          <Text color={palette.selectedText} fontWeight="bold">
+          <Text color={pressed ? palette.text : palette.selectedText} fontWeight="bold">
             确定
           </Text>
         </Button>

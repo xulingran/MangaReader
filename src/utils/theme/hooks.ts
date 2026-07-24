@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { ThemeMode } from '~/utils/enum';
 import {
@@ -44,5 +45,23 @@ export const useDisabledColor = () => useTokenColor('disabled');
 export const useSelectedBgColor = () => useTokenColor('selectedBg');
 export const useSelectedTextColor = () => useTokenColor('selectedText');
 export const usePressedBgColor = () => useTokenColor('pressedBg');
+export const usePressedTextColor = () => useTokenColor('pressedText');
+
+/**
+ * 按压反色反馈的状态驱动（瞬时切换，无动画）。
+ * 约定：正色元素 pressed 时翻转 selectedBg/selectedText 对；
+ * 反色元素（黑底按钮、已选中项）pressed 时回落 bg/text 对；边框保持 border。
+ */
+export function usePressedState() {
+  const [pressed, setPressed] = useState(false);
+  const bind = useMemo(
+    () => ({
+      onPressIn: () => setPressed(true),
+      onPressOut: () => setPressed(false),
+    }),
+    []
+  );
+  return [pressed, bind] as const;
+}
 export const useImagePlaceholderColor = () => useTokenColor('imagePlaceholder');
 export const usePlaceholderTextColor = () => useTokenColor('placeholderTextColor');

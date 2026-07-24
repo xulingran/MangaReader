@@ -13,6 +13,7 @@
 - **冷启动主题**：Redux 的 `setting.themeMode` 是持久化、备份和恢复的正式来源；Android SharedPreferences 与系统应用夜间模式仅镜像冷启动主题，确保 Splash 同步，缺失或非法值统一回退为跟随系统
 - **横向翻页**：FlashList 横向拖拽内容直接跟随手指，松手时由 `src/utils/reader.ts` 的 `resolveDragTargetIndex` 按拖动距离/方向决策目标页（最多一页、无惯性），再 `scrollToIndex(animated: false)` 瞬时对齐；阈值比例 `DRAG_PAGE_THRESHOLD_RATIO = 0.2`
 - **实体键翻页**：原生模块 `android/.../eink/EInkKeyModule.java` 仅在阅读页（`setReaderActive(true)`）拦截 VOLUME_UP/PAGE_UP/DPAD_LEFT（上一页）与 VOLUME_DOWN/PAGE_DOWN/DPAD_RIGHT（下一页），按键抬起时发一次 `pageKey` 事件；JS 侧 `src/utils/einkKey.ts` + `src/hooks/usePageKeys.ts`，设置项为 `setting.pageKeys`（旧 `hearing` 迁移而来）
+- **按压反馈**：可交互元素按压时瞬时黑白反色、松开恢复（无渐变/透明度动画）；Button 由 `src/utils/theme.ts` 各 variant 的 `_pressed` 覆盖，图标按钮由 `src/components/VectorIcon.tsx` 统一处理，裸 `Pressable` 用 `src/utils/theme/hooks.ts` 的 `usePressedState` 同步翻转底色与文字/图标（token：`pressedBg`/`pressedText`，常态反色的元素按下回落 `bg`/`text`）；封面与漫画图不反色
 - **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
 - **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode` 时补为跟随系统，首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
 

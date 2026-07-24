@@ -34,7 +34,7 @@ import InputModal from '~/components/InputModal';
 import VectorIcon from '~/components/VectorIcon';
 import Empty from '~/components/Empty';
 import { CacheManager } from '@georstat/react-native-image-cache';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 const {
   loadChapter,
@@ -96,6 +96,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const palette = useThemePalette();
   const bg = palette.bg;
   const color = palette.text;
+  const [pageBoxPressed, pageBoxBind] = usePressedState();
   const { isOpen, onOpen, onClose } = useDisclose();
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
   const onOpenRef = useRef(onOpen);
@@ -716,9 +717,11 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
               borderWidth={1}
               borderColor={palette.border}
               alignItems="center"
+              bg={pageBoxPressed ? palette.selectedBg : 'transparent'}
+              {...pageBoxBind}
               onPress={onJumpOpen}
             >
-              <Text color={color} fontWeight="bold">
+              <Text color={pageBoxPressed ? palette.selectedText : color} fontWeight="bold">
                 {current} / {max}
               </Text>
             </Pressable>

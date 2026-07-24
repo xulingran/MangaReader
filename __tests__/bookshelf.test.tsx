@@ -44,6 +44,7 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/utils/theme/hooks', () => ({
   useBackgroundColor: () => 'white',
+  usePressedState: () => [false, {}],
   useThemePalette: () => ({
     bg: 'white',
     text: 'black',

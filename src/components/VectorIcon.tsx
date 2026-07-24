@@ -4,7 +4,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Octicons from 'react-native-vector-icons/Octicons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 export const sourceMap = {
   materialIcons: MaterialIcons,
@@ -50,22 +50,32 @@ const VectorIcon = ({
 }: VectorIconProps) => {
   const disabledState = Boolean(isDisabled || disabled);
   const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
+  const iconColor = disabledState
+    ? palette.disabled
+    : pressed
+    ? palette.selectedText
+    : color || palette.text;
   return (
     <IconButton
       p={2}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || accessibilityLabels[name] || `执行 ${name}`}
       accessibilityState={{ ...accessibilityState, disabled: disabledState }}
+      bg={pressed ? palette.selectedBg : 'transparent'}
+      _pressed={{ bg: palette.selectedBg }}
+      _disabled={{ opacity: 1, bg: 'transparent' }}
       icon={
         <Icon
           shadow={shadow}
           as={sourceMap[source]}
           name={name}
           size={size}
-          color={color || (disabledState ? palette.disabled : palette.text)}
+          color={iconColor}
         />
       }
       onPress={onPress}
+      {...bind}
       isDisabled={disabledState}
       disabled={disabledState}
       {...props}

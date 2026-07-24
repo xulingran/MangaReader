@@ -3,7 +3,7 @@ import { Input, InputGroup, Box, Button, Text } from 'native-base';
 import { initialState } from '~/redux/slice';
 import VectorIcon from '~/components/VectorIcon';
 import Overlay from './Overlay';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 interface PathModalProps {
   isOpen?: boolean;
@@ -15,6 +15,7 @@ interface PathModalProps {
 const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps) => {
   const [path, setPath] = useState(defaultValue);
   const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
 
   useEffect(() => {
     if (isOpen) {
@@ -55,13 +56,14 @@ const PathModal = ({ isOpen = true, defaultValue = '', onClose }: PathModalProps
         </InputGroup>
         <Button
           mt={3}
-          bg={palette.selectedBg}
+          bg={pressed ? palette.bg : palette.selectedBg}
           borderWidth={1}
           borderColor={palette.border}
-          _pressed={{ bg: palette.selectedBg }}
+          _pressed={{ bg: palette.bg }}
+          {...bind}
           onPress={handleClose}
         >
-          <Text color={palette.selectedText} fontWeight="bold">
+          <Text color={pressed ? palette.text : palette.selectedText} fontWeight="bold">
             确定
           </Text>
         </Button>

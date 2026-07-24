@@ -36,7 +36,7 @@ import ErrorWithRetry from '~/components/ErrorWithRetry';
 import ContinueReadingButton, {
   ContinueReadingTarget,
 } from '~/components/ContinueReadingButton';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 const {
   loadManga,
@@ -203,56 +203,21 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
       };
 
       return (
-        <Pressable
+        <ChapterCell
+          title={item.title}
+          width={width}
+          gap={gap}
+          isActived={isActived}
+          isChecked={isChecked}
+          multiple={multiple}
+          showProgress={!multiple && nonNullable(record) && record.progress >= 0}
+          isVisited={nonNullable(record) && record.isVisited}
           onPress={handlePress}
           onLongPress={handleLongPress}
-          delayLongPress={200}
-        >
-          <Box w={width + gap} p={`${gap / 2}px`} position="relative">
-            <Text
-              px={1}
-              py={2}
-              position="relative"
-              bg={isActived ? palette.selectedBg : 'transparent'}
-              color={isActived ? palette.selectedText : palette.subText}
-              borderColor={isActived ? palette.border : palette.subText}
-              overflow="hidden"
-              borderRadius="md"
-              borderWidth={0.5}
-              textAlign="center"
-              numberOfLines={1}
-              fontWeight="bold"
-            >
-              {item.title}
-            </Text>
-            {multiple && (
-              <Icon
-                as={MaterialCommunityIcons}
-                size="sm"
-                name="check-circle"
-                color={isChecked ? palette.text : palette.disabled}
-                position="absolute"
-                top={`${gap / 3}px`}
-                right={`${gap / 3}px`}
-              />
-            )}
-            {!multiple && record && record.progress >= 0 && (
-              <Icon
-                as={MaterialIcons}
-                size="xs"
-                style={{ transform: [{ rotateZ: '30deg' }] }}
-                name={record.isVisited ? 'brightness-1' : 'brightness-2'}
-                color={record.isVisited ? palette.text : palette.subText}
-                position="absolute"
-                top={`${gap / 3}px`}
-                right={`${gap / 3}px`}
-              />
-            )}
-          </Box>
-        </Pressable>
+        />
       );
     },
-    [gap, handleChapter, navigation, onOpen, palette, selected]
+    [gap, handleChapter, navigation, onOpen, selected]
   );
 
   if (!nonNullable(data)) {
@@ -565,9 +530,113 @@ export const HeartAndBrowser = () => {
   );
 };
 
+interface ChapterCellProps {
+  title: string;
+  width: number;
+  gap: number;
+  isActived: boolean;
+  isChecked: boolean;
+  multiple: boolean;
+  showProgress: boolean;
+  isVisited?: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+}
+
+/** 章节格子：按压瞬时反色（当前章回落正色），无动画 */
+const ChapterCell = ({
+  title,
+  width,
+  gap,
+  isActived,
+  isChecked,
+  multiple,
+  showProgress,
+  isVisited,
+  onPress,
+  onLongPress,
+}: ChapterCellProps) => {
+  const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
+  const inverted = isActived !== pressed;
+  const foreground = inverted ? palette.selectedText : palette.text;
+  return (
+    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={200} {...bind}>
+      <Box w={width + gap} p={`${gap / 2}px`} position="relative">
+        <Text
+          px={1}
+          py={2}
+          position="relative"
+          bg={inverted ? palette.selectedBg : 'transparent'}
+          color={inverted ? palette.selectedText : palette.subText}
+          borderColor={inverted ? palette.border : palette.subText}
+          overflow="hidden"
+          borderRadius="md"
+          borderWidth={0.5}
+          textAlign="center"
+          numberOfLines={1}
+          fontWeight="bold"
+        >
+          {title}
+        </Text>
+        {multiple && (
+          <Icon
+            as={MaterialCommunityIcons}
+            size="sm"
+            name="check-circle"
+            color={isChecked ? foreground : palette.disabled}
+            position="absolute"
+            top={`${gap / 3}px`}
+            right={`${gap / 3}px`}
+          />
+        )}
+        {showProgress && (
+          <Icon
+            as={MaterialIcons}
+            size="xs"
+            style={{ transform: [{ rotateZ: '30deg' }] }}
+            name={isVisited ? 'brightness-1' : 'brightness-2'}
+            color={isVisited || inverted ? foreground : palette.subText}
+            position="absolute"
+            top={`${gap / 3}px`}
+            right={`${gap / 3}px`}
+          />
+        )}
+      </Box>
+    </Pressable>
+  );
+};
+
 export const PrehandleDrawer = () => {
   const showDrawer = useAppSelector((state) => state.chapter.showDrawer);
   return showDrawer ? <VisiblePrehandleDrawer /> : null;
+};
+
+/** 失败任务重试角标：按压瞬时反色，无动画 */
+const RetryBadge = ({
+  count,
+  onRetry,
+  onRemove,
+}: {
+  count: number;
+  onRetry: () => void;
+  onRemove: () => void;
+}) => {
+  const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
+  return (
+    <Pressable
+      px={1}
+      {...bind}
+      bg={pressed ? palette.selectedBg : 'transparent'}
+      onPress={onRetry}
+      onLongPress={onRemove}
+    >
+      <Text fontWeight="bold" fontSize="sm" color={pressed ? palette.selectedText : palette.text}>
+        {count}
+      </Text>
+    </Pressable>
+  );
 };
 
 const VisiblePrehandleDrawer = () => {
@@ -624,15 +693,11 @@ const VisiblePrehandleDrawer = () => {
           </Box>
         )}
         {item.status === AsyncStatus.Rejected && (
-          <Pressable
-            px={1}
-            onPress={() => handleRetry(item.taskId)}
-            onLongPress={() => handleRemove(item.taskId)}
-          >
-            <Text fontWeight="bold" fontSize="sm" color={palette.text}>
-              {item.fail.length}
-            </Text>
-          </Pressable>
+          <RetryBadge
+            count={item.fail.length}
+            onRetry={() => handleRetry(item.taskId)}
+            onRemove={() => handleRemove(item.taskId)}
+          />
         )}
       </HStack>
     );

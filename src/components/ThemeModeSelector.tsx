@@ -3,7 +3,7 @@ import { HStack, Icon, Pressable, Text, VStack } from 'native-base';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { ThemeMode } from '~/utils/enum';
 import { ResolvedThemeMode } from '~/utils/theme/tokens';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 interface ThemeModeSelectorProps {
   value: ThemeMode;
@@ -17,6 +17,46 @@ const options = [
   { label: '跟随系统', value: ThemeMode.System },
 ] as const;
 
+interface ThemeModeOptionProps {
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}
+
+/** 单个外观选项：按压瞬时反色（已选中项回落正色），无动画 */
+const ThemeModeOption = ({ label, selected, onSelect }: ThemeModeOptionProps) => {
+  const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
+  const inverted = selected !== pressed;
+  const foreground = inverted ? palette.selectedText : palette.text;
+  return (
+    <Pressable
+      px={4}
+      py={3}
+      bg={inverted ? palette.selectedBg : palette.bg}
+      borderWidth={1}
+      borderColor={palette.border}
+      {...bind}
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
+      onPress={onSelect}
+    >
+      <HStack alignItems="center" space={3}>
+        <Icon
+          as={MaterialIcons}
+          name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
+          size="md"
+          color={foreground}
+        />
+        <Text color={foreground} fontSize="md" fontWeight="bold">
+          {label}
+        </Text>
+      </HStack>
+    </Pressable>
+  );
+};
+
 const ThemeModeSelector = ({ value, resolvedMode, onChange }: ThemeModeSelectorProps) => {
   const palette = useThemePalette();
 
@@ -26,38 +66,17 @@ const ThemeModeSelector = ({ value, resolvedMode, onChange }: ThemeModeSelectorP
         外观模式
       </Text>
       {options.map((option) => {
-        const selected = value === option.value;
-        const foreground = selected ? palette.selectedText : palette.text;
         const label =
           option.value === ThemeMode.System
             ? `${option.label}（当前${resolvedMode === ThemeMode.Dark ? '深色' : '亮色'}）`
             : option.label;
         return (
-          <Pressable
+          <ThemeModeOption
             key={option.value}
-            px={4}
-            py={3}
-            bg={selected ? palette.selectedBg : palette.bg}
-            borderWidth={1}
-            borderColor={palette.border}
-            _pressed={{ bg: selected ? palette.selectedBg : palette.pressedBg }}
-            accessibilityRole="radio"
-            accessibilityLabel={label}
-            accessibilityState={{ checked: selected }}
-            onPress={() => onChange(option.value)}
-          >
-            <HStack alignItems="center" space={3}>
-              <Icon
-                as={MaterialIcons}
-                name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
-                size="md"
-                color={foreground}
-              />
-              <Text color={foreground} fontSize="md" fontWeight="bold">
-                {label}
-              </Text>
-            </HStack>
-          </Pressable>
+            label={label}
+            selected={value === option.value}
+            onSelect={() => onChange(option.value)}
+          />
         );
       })}
     </VStack>

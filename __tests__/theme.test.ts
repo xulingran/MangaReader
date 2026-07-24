@@ -20,12 +20,14 @@ describe('主题解析与墨水屏色板', () => {
   it('深色主表面只使用纯黑白', () => {
     const light = getThemePalette('light');
     const dark = getThemePalette('dark');
-    expect(light.pressedBg).toBe('#ffffff');
+    expect(light.pressedBg).toBe('#000000');
+    expect(light.pressedText).toBe('#ffffff');
     expect(dark.bg).toBe('#000000');
     expect(dark.card).toBe('#000000');
     expect(dark.text).toBe('#ffffff');
     expect(dark.border).toBe('#ffffff');
-    expect(dark.pressedBg).toBe('#000000');
+    expect(dark.pressedBg).toBe('#ffffff');
+    expect(dark.pressedText).toBe('#000000');
     expect(dark.selectedBg).toBe('#ffffff');
     expect(dark.selectedText).toBe('#000000');
   });

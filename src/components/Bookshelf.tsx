@@ -8,7 +8,7 @@ import SpinLoading from '~/components/SpinLoading';
 import Loading from '~/components/Loading';
 import Empty from '~/components/Empty';
 import StaticCachedImage from '~/components/StaticCachedImage';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 /** 书架行高（固定）：小封面 + 标题/来源/状态 */
 export const BOOKSHELF_ROW_HEIGHT = 112;
@@ -56,6 +56,96 @@ const statusOf = (
   return null;
 };
 
+interface BookshelfRowExtra {
+  selectMode: boolean;
+  bg: string;
+  text: string;
+  subText: string;
+  border: string;
+  selectedBg: string;
+  selectedText: string;
+}
+
+interface BookshelfRowProps {
+  item: Manga;
+  extra: BookshelfRowExtra;
+  status: { icon: string; text: string } | null;
+  isSelected: boolean;
+  onPress: (hash: string) => void;
+  onLongPress?: (hash: string) => void;
+}
+
+/** 书架行：按压瞬时反色（已选中行回落正色），封面图不反色 */
+const BookshelfRow = memo(
+  ({ item, extra, status, isSelected, onPress, onLongPress }: BookshelfRowProps) => {
+    const [pressed, bind] = usePressedState();
+    const inverted = isSelected !== pressed;
+    const foreground = inverted ? extra.selectedText : extra.text;
+    return (
+      <Pressable
+        {...bind}
+        onPress={() => onPress(item.hash)}
+        onLongPress={() => onLongPress?.(item.hash)}
+      >
+        <HStack
+          height={BOOKSHELF_ROW_HEIGHT}
+          px={3}
+          py={2}
+          space={3}
+          alignItems="flex-start"
+          borderBottomWidth={1}
+          borderColor={extra.border}
+          bg={inverted ? extra.selectedBg : extra.bg}
+        >
+          <Box
+            style={styles.cover}
+            borderWidth={1}
+            borderColor={inverted ? extra.selectedText : extra.border}
+            overflow="hidden"
+          >
+            <StaticCachedImage
+              headers={item.headers}
+              source={item.bookCover || item.infoCover || item.cover || ''}
+              style={styles.img}
+              resizeMode="contain"
+            />
+          </Box>
+          <VStack flex={1} space={1}>
+            <HStack alignItems="center" space={1}>
+              {extra.selectMode && (
+                <Icon
+                  as={MaterialIcons}
+                  size="md"
+                  name={isSelected ? 'check-box' : 'check-box-outline-blank'}
+                  color={foreground}
+                />
+              )}
+              <Text color={foreground} fontSize="md" fontWeight="bold" numberOfLines={1} flex={1}>
+                {item.title || item.hash}
+              </Text>
+            </HStack>
+            <Text
+              fontSize="sm"
+              color={inverted ? extra.selectedText : extra.subText}
+              numberOfLines={1}
+            >
+              {item.sourceName}
+            </Text>
+            {status && !extra.selectMode && (
+              <HStack alignItems="center" space={1}>
+                <Icon as={MaterialIcons} size="xs" name={status.icon} color={foreground} />
+                <Text fontSize="xs" color={foreground}>
+                  {status.text}
+                </Text>
+              </HStack>
+            )}
+          </VStack>
+        </HStack>
+      </Pressable>
+    );
+  }
+);
+
 const Bookshelf = ({
   list,
   failList,
@@ -89,17 +179,8 @@ const Bookshelf = ({
       border: palette.border,
       selectedBg: palette.selectedBg,
       selectedText: palette.selectedText,
-      pressedBg: palette.pressedBg,
     }),
-    [
-      activeList,
-      failList,
-      isSelectMode,
-      negativeList,
-      palette,
-      selectedList,
-      trendList,
-    ]
+    [activeList, failList, isSelectMode, negativeList, palette, selectedList, trendList]
   );
 
   const handleEndReached = useCallback(() => {
@@ -110,80 +191,15 @@ const Bookshelf = ({
   // 项内 onPress/onLongPress 直接调用稳定引用的 itemOnPress/itemOnLongPress，不再生成 per-hash 闭包。
   const renderItem = useCallback(
     ({ item, extraData: extra }: ListRenderItemInfo<Manga>) => {
-      const status = statusOf(item.hash, extra);
-      const isSelected = extra.selected?.includes(item.hash);
       return (
-        <Pressable
-          _pressed={{ bg: extra.pressedBg }}
-          onPress={() => itemOnPress(item.hash)}
-          onLongPress={() => itemOnLongPress?.(item.hash)}
-        >
-          <HStack
-            height={BOOKSHELF_ROW_HEIGHT}
-            px={3}
-            py={2}
-            space={3}
-            alignItems="flex-start"
-            borderBottomWidth={1}
-            borderColor={extra.border}
-            bg={isSelected ? extra.selectedBg : extra.bg}
-          >
-            <Box
-              style={styles.cover}
-              borderWidth={1}
-              borderColor={isSelected ? extra.selectedText : extra.border}
-              overflow="hidden"
-            >
-              <StaticCachedImage
-                headers={item.headers}
-                source={item.bookCover || item.infoCover || item.cover || ''}
-                style={styles.img}
-                resizeMode="contain"
-              />
-            </Box>
-            <VStack flex={1} space={1}>
-              <HStack alignItems="center" space={1}>
-                {extra.selectMode && (
-                  <Icon
-                    as={MaterialIcons}
-                    size="md"
-                    name={isSelected ? 'check-box' : 'check-box-outline-blank'}
-                    color={isSelected ? extra.selectedText : extra.text}
-                  />
-                )}
-                <Text
-                  color={isSelected ? extra.selectedText : extra.text}
-                  fontSize="md"
-                  fontWeight="bold"
-                  numberOfLines={1}
-                  flex={1}
-                >
-                  {item.title || item.hash}
-                </Text>
-              </HStack>
-              <Text
-                fontSize="sm"
-                color={isSelected ? extra.selectedText : extra.subText}
-                numberOfLines={1}
-              >
-                {item.sourceName}
-              </Text>
-              {status && !extra.selectMode && (
-                <HStack alignItems="center" space={1}>
-                  <Icon
-                    as={MaterialIcons}
-                    size="xs"
-                    name={status.icon}
-                    color={isSelected ? extra.selectedText : extra.text}
-                  />
-                  <Text fontSize="xs" color={isSelected ? extra.selectedText : extra.text}>
-                    {status.text}
-                  </Text>
-                </HStack>
-              )}
-            </VStack>
-          </HStack>
-        </Pressable>
+        <BookshelfRow
+          item={item}
+          extra={extra}
+          status={statusOf(item.hash, extra)}
+          isSelected={extra.selected?.includes(item.hash) ?? false}
+          onPress={itemOnPress}
+          onLongPress={itemOnLongPress}
+        />
       );
     },
     [itemOnPress, itemOnLongPress]

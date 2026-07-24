@@ -3,7 +3,7 @@ import { ScrollView, Icon, Pressable, HStack, Text } from 'native-base';
 import { sourceMap } from './VectorIcon';
 import { Keyboard } from 'react-native';
 import Overlay from './Overlay';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
 
 export interface ActionsheetSelectProps {
   isOpen?: boolean;
@@ -18,6 +18,45 @@ export interface ActionsheetSelectProps {
   headerComponent?: ReactNode;
 }
 
+type Option = ActionsheetSelectProps['options'][number];
+
+/** 单个选项行：按压瞬时反色，无动画；禁用项不反色 */
+const OptionRow = ({ item, onPress }: { item: Option; onPress: () => void }) => {
+  const palette = useThemePalette();
+  const [pressed, bind] = usePressedState();
+  const inverted = pressed && !item.disabled;
+  const foreground = item.disabled
+    ? palette.disabled
+    : inverted
+    ? palette.selectedText
+    : palette.text;
+  return (
+    <Pressable
+      disabled={item.disabled}
+      _disabled={{ opacity: 1 }}
+      {...bind}
+      bg={inverted ? palette.selectedBg : 'transparent'}
+      borderBottomWidth={1}
+      borderColor={palette.border}
+      onPress={onPress}
+    >
+      <HStack px={4} py={3} alignItems="center" space={3}>
+        {item.icon && (
+          <Icon
+            as={sourceMap[item.icon.source]}
+            size="md"
+            name={item.icon.name}
+            color={foreground}
+          />
+        )}
+        <Text fontSize="md" color={foreground}>
+          {item.label}
+        </Text>
+      </HStack>
+    </Pressable>
+  );
+};
+
 /** 电子墨水版：Actionsheet 滑出面板改为无动画静态覆盖层 */
 const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
   options,
@@ -26,7 +65,6 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
   onChange,
   headerComponent,
 }) => {
-  const palette = useThemePalette();
   useEffect(() => {
     isOpen && Keyboard.dismiss();
   }, [isOpen]);
@@ -46,28 +84,7 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
       {headerComponent}
       <ScrollView w="full">
         {options.map((item) => (
-          <Pressable
-            key={item.value}
-            disabled={item.disabled}
-            _disabled={{ opacity: 1 }}
-            onPress={handleChange(item.value)}
-            borderBottomWidth={1}
-            borderColor={palette.border}
-          >
-            <HStack px={4} py={3} alignItems="center" space={3}>
-              {item.icon && (
-                <Icon
-                  as={sourceMap[item.icon.source]}
-                  size="md"
-                  name={item.icon.name}
-                  color={item.disabled ? palette.disabled : palette.text}
-                />
-              )}
-              <Text fontSize="md" color={item.disabled ? palette.disabled : palette.text}>
-                {item.label}
-              </Text>
-            </HStack>
-          </Pressable>
+          <OptionRow key={item.value} item={item} onPress={handleChange(item.value)} />
         ))}
       </ScrollView>
     </Overlay>
