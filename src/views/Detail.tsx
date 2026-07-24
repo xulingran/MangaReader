@@ -8,6 +8,8 @@ import {
   Pressable,
   Toast,
   useDisclose,
+  View,
+  Button,
 } from 'native-base';
 import {
   nonNullable,
@@ -31,6 +33,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
 import VectorIcon from '~/components/VectorIcon';
+import Overlay from '~/components/Overlay';
 import Empty from '~/components/Empty';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
 import ContinueReadingButton, {
@@ -429,7 +432,13 @@ export const HeartAndBrowser = () => {
         : addFavorites({ mangaHash, enableBatch: status !== MangaStatus.End })
     );
   };
+  const {
+    isOpen: isBrowserConfirmOpen,
+    onOpen: onBrowserConfirmOpen,
+    onClose: onBrowserConfirmClose,
+  } = useDisclose();
   const handleToBrowser = () => {
+    onBrowserConfirmClose();
     const href = dict[mangaHash]?.href || '';
     Linking.canOpenURL(href).then((supported) => {
       supported && Linking.openURL(href);
@@ -491,42 +500,60 @@ export const HeartAndBrowser = () => {
   }
 
   return (
-    <HStack pr={1}>
-      {isActived && (
+    <Fragment>
+      <HStack pr={1}>
+        {isActived && (
+          <VectorIcon
+            name={enableBatch ? 'lock-open' : 'lock-outline'}
+            color={enableBatch ? palette.text : palette.disabled}
+            accessibilityLabel={enableBatch ? '停止自动更新此漫画' : '自动更新此漫画'}
+            accessibilityState={{ checked: enableBatch }}
+            onPress={toggleQueue}
+          />
+        )}
         <VectorIcon
-          name={enableBatch ? 'lock-open' : 'lock-outline'}
-          color={enableBatch ? palette.text : palette.disabled}
-          accessibilityLabel={enableBatch ? '停止自动更新此漫画' : '自动更新此漫画'}
-          accessibilityState={{ checked: enableBatch }}
-          onPress={toggleQueue}
+          source="materialCommunityIcons"
+          name={isActived ? 'heart' : 'heart-outline'}
+          color={palette.text}
+          accessibilityLabel={isActived ? '取消收藏' : '收藏漫画'}
+          accessibilityState={{ checked: isActived }}
+          onPress={toggleFavorite}
         />
-      )}
-      <VectorIcon
-        source="materialCommunityIcons"
-        name={isActived ? 'heart' : 'heart-outline'}
-        color={palette.text}
-        accessibilityLabel={isActived ? '取消收藏' : '收藏漫画'}
-        accessibilityState={{ checked: isActived }}
-        onPress={toggleFavorite}
-      />
-      <VectorIcon
-        source="octicons"
-        name={sequence === Sequence.Asc ? 'sort-asc' : 'sort-desc'}
-        accessibilityLabel="切换章节排序"
-        onPress={handleSwapSequence}
-      />
-      <VectorIcon
-        source="materialCommunityIcons"
-        name="download-box-outline"
-        accessibilityLabel="打开下载管理"
-        onPress={handleOpenDownloadManager}
-      />
-      <VectorIcon
-        name="open-in-browser"
-        accessibilityLabel="在浏览器中打开漫画"
-        onPress={handleToBrowser}
-      />
-    </HStack>
+        <VectorIcon
+          source="octicons"
+          name={sequence === Sequence.Asc ? 'sort-asc' : 'sort-desc'}
+          accessibilityLabel="切换章节排序"
+          onPress={handleSwapSequence}
+        />
+        <VectorIcon
+          source="materialCommunityIcons"
+          name="download-box-outline"
+          accessibilityLabel="打开下载管理"
+          onPress={handleOpenDownloadManager}
+        />
+        <VectorIcon
+          name="open-in-browser"
+          accessibilityLabel="在浏览器中打开漫画"
+          onPress={onBrowserConfirmOpen}
+        />
+      </HStack>
+
+      <Overlay isOpen={isBrowserConfirmOpen} title="提示" onClose={onBrowserConfirmClose}>
+        <View p={4}>
+          <Text color={palette.text} fontSize="md">
+            即将离开应用，在浏览器中打开此漫画的源站页面？
+          </Text>
+          <Button.Group size="sm" space="sm" mt={4} justifyContent="flex-end">
+            <Button px={5} variant="outline" colorScheme="gray" onPress={onBrowserConfirmClose}>
+              取消
+            </Button>
+            <Button px={5} onPress={handleToBrowser}>
+              确认
+            </Button>
+          </Button.Group>
+        </View>
+      </Overlay>
+    </Fragment>
   );
 };
 
