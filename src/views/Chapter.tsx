@@ -149,6 +149,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     [mode, direction]
   );
   const data = useChapterFlat(hashList, chapterDict);
+  console.log('[ChapterDebug] data.length:', data.length, 'loadStatus:', loadStatus, 'firstImgUrl:', data[0] ? JSON.stringify(data[0]).slice(0, 200) : '(empty)');
   const { pre, current, multiplePre } = useMemo(
     () => data[page] || { pre: 0, current: 0, multiplePre: 0 },
     [page, data]
