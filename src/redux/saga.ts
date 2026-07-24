@@ -1100,7 +1100,7 @@ function* clearCacheSaga() {
 function* loadLatestReleaseSaga() {
   yield takeLatestSuspense(loadLatestRelease.type, function* () {
     const { error: fetchError, data } = yield call(fetchData, {
-      url: 'https://api.github.com/repos/youniaogu/MangaReader/releases',
+      url: 'https://api.github.com/repos/xulingran/MangaReader/releases',
     });
     const { error: DataError, release } = getLatestRelease(data);
 
