@@ -40,10 +40,14 @@ describe('ThemeModeSelector', () => {
       (node) => node.props.accessibilityRole === 'radio' && typeof node.props.onPress === 'function'
     );
     expect(new Set(radios.map((node) => node.props.accessibilityLabel))).toEqual(
-      new Set(['亮色', '深色', '跟随系统（当前深色）'])
+      new Set(['亮色', '深色', '跟随系统'])
     );
-    expect(radios.find((node) => node.props.accessibilityLabel === '跟随系统（当前深色）')?.props)
-      .toMatchObject({ accessibilityState: { checked: true } });
+    expect(radios.find((node) => node.props.accessibilityLabel === '跟随系统')?.props).toMatchObject(
+      { accessibilityState: { checked: true } }
+    );
+
+    const hints = tree!.root.findAll((node) => node.props.children === '外观模式（当前深色）');
+    expect(hints.length).toBeGreaterThan(0);
 
     await act(async () => {
       radios.find((node) => node.props.accessibilityLabel === '深色')?.props.onPress();

@@ -31,7 +31,8 @@ const ThemeModeOption = ({ label, selected, onSelect }: ThemeModeOptionProps) =>
   const foreground = inverted ? palette.selectedText : palette.text;
   return (
     <Pressable
-      px={4}
+      flex={1}
+      px={2}
       py={3}
       bg={inverted ? palette.selectedBg : palette.bg}
       borderWidth={1}
@@ -42,11 +43,11 @@ const ThemeModeOption = ({ label, selected, onSelect }: ThemeModeOptionProps) =>
       accessibilityState={{ checked: selected }}
       onPress={onSelect}
     >
-      <HStack alignItems="center" space={3}>
+      <HStack alignItems="center" justifyContent="center" space={1}>
         <Icon
           as={MaterialIcons}
           name={selected ? 'radio-button-checked' : 'radio-button-unchecked'}
-          size="md"
+          size="sm"
           color={foreground}
         />
         <Text color={foreground} fontSize="md" fontWeight="bold">
@@ -60,25 +61,26 @@ const ThemeModeOption = ({ label, selected, onSelect }: ThemeModeOptionProps) =>
 const ThemeModeSelector = ({ value, resolvedMode, onChange }: ThemeModeSelectorProps) => {
   const palette = useThemePalette();
 
+  const systemHint =
+    value === ThemeMode.System
+      ? `（当前${resolvedMode === ThemeMode.Dark ? '深色' : '亮色'}）`
+      : '';
+
   return (
     <VStack space={2} accessibilityRole="radiogroup" accessibilityLabel="外观模式">
       <Text color={palette.text} fontSize="md" fontWeight="bold">
-        外观模式
+        {`外观模式${systemHint}`}
       </Text>
-      {options.map((option) => {
-        const label =
-          option.value === ThemeMode.System
-            ? `${option.label}（当前${resolvedMode === ThemeMode.Dark ? '深色' : '亮色'}）`
-            : option.label;
-        return (
+      <HStack space={2}>
+        {options.map((option) => (
           <ThemeModeOption
             key={option.value}
-            label={label}
+            label={option.label}
             selected={value === option.value}
             onSelect={() => onChange(option.value)}
           />
-        );
-      })}
+        ))}
+      </HStack>
     </VStack>
   );
 };

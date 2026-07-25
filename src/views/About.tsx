@@ -86,12 +86,6 @@ const About = () => {
             </Text>
           </VStack>
 
-          <ThemeModeSelector
-            value={themeMode}
-            resolvedMode={resolvedThemeMode}
-            onChange={handleThemeModeChange}
-          />
-
           {release.loadStatus === AsyncStatus.Pending && <SpinLoading />}
           {release.loadStatus === AsyncStatus.Rejected && (
             <ErrorWithRetry color={palette.text} onRetry={handleRetry} />
@@ -126,6 +120,12 @@ const About = () => {
               </Button>
             </Fragment>
           )}
+
+          <ThemeModeSelector
+            value={themeMode}
+            resolvedMode={resolvedThemeMode}
+            onChange={handleThemeModeChange}
+          />
 
           <Button
             isDisabled={backupStatus === AsyncStatus.Pending}
