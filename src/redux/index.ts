@@ -4,8 +4,7 @@ import {
   useSelector,
   shallowEqual,
 } from 'react-redux';
-import { action, reducer } from './slice';
-import saga from './saga';
+import { action } from './slice';
 import store from './store';
 
 const useAppDispatch = () => useDispatch<typeof store.dispatch>();
@@ -23,4 +22,4 @@ export function useAppShallowSelector<T>(selector: (state: RootState) => T): T {
   return useSelector(selector, shallowEqual);
 }
 
-export { action, reducer, store, saga, useAppSelector, useAppDispatch };
+export { action, store, useAppSelector, useAppDispatch };

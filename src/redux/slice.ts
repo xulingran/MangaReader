@@ -14,6 +14,9 @@ import { Plugin, defaultPlugin, defaultPluginList } from '~/plugins';
 import { Dirs } from 'react-native-file-access';
 import { normalizeTaskForRestart } from './task';
 
+/** 默认漫画导出目录；抽成常量避免展示组件直接依赖 initialState（放大 bootstrap 求值顺序的脆弱面） */
+export const DEFAULT_ANDROID_DOWNLOAD_PATH = Dirs.SDCardDir + '/DCIM/{{CHAPTER_NAME}}';
+
 export const initialState: RootState = {
   app: {
     launchStatus: AsyncStatus.Default,
@@ -40,7 +43,7 @@ export const initialState: RootState = {
     pageKeys: PageKeys.Enable,
     timer: Timer.Disabled,
     timerGap: 5000,
-    androidDownloadPath: Dirs.SDCardDir + '/DCIM/{{CHAPTER_NAME}}',
+    androidDownloadPath: DEFAULT_ANDROID_DOWNLOAD_PATH,
   },
   plugin: {
     source: defaultPlugin,

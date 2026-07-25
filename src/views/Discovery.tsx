@@ -3,9 +3,10 @@ import { View, Text, Input, Button, HStack, useDisclose } from 'native-base';
 import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { nonNullable, AsyncStatus } from '~/utils';
-import { Plugin, PluginMap } from '~/plugins';
+import { Plugin } from '~/plugins';
 import { Keyboard } from 'react-native';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
+import SearchOption from '~/components/SearchOption';
 import VectorIcon from '~/components/VectorIcon';
 import Bookshelf from '~/components/Bookshelf';
 import * as RootNavigation from '~/utils/navigation';
@@ -17,6 +18,7 @@ const Discovery = ({ navigation }: StackDiscoveryProps) => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.discovery.list);
   const source = useAppSelector((state) => state.plugin.source);
+  const filter = useAppSelector((state) => state.discovery.filter);
   const loadStatus = useAppSelector((state) => state.discovery.loadStatus);
   // 只订阅本页可见的 hash 对应 manga，并做浅比较，避免后台 batchUpdate 更新其他漫画时触发重渲染
   const updateList = useAppShallowSelector((state) =>
@@ -42,10 +44,17 @@ const Discovery = ({ navigation }: StackDiscoveryProps) => {
     },
     [navigation]
   );
+  const handleFilterChange = useCallback(
+    (name: string, value: string) => {
+      dispatch(setDiscoveryFilter({ [name]: value }));
+      dispatch(loadDiscovery({ source, isReset: true }));
+    },
+    [dispatch, source]
+  );
 
   return (
     <View flex={1} bg={palette.bg}>
-      <SearchOption />
+      <SearchOption source={source} filter={filter} type="discovery" onChange={handleFilterChange} />
       <Bookshelf
         emptyText="没找到相关漫画~"
         list={updateList}
@@ -58,82 +67,14 @@ const Discovery = ({ navigation }: StackDiscoveryProps) => {
   );
 };
 
-export const SearchOption = () => {
-  const dispatch = useAppDispatch();
-  const source = useAppSelector((state) => state.plugin.source);
-  const filter = useAppSelector((state) => state.discovery.filter);
-  const { isOpen, onOpen, onClose } = useDisclose();
-  const [key, setKey] = useState<string>('');
-  const [options, setOptions] = useState<OptionItem[]>([]);
-  const palette = useThemePalette();
-
-  const discoveryOptions = useMemo(() => {
-    return (PluginMap.get(source)?.option.discovery || []).map((item) => {
-      const value = filter[item.name] || item.defaultValue;
-      const label = item.options.find((option) => option.value === value)?.label || '';
-      return {
-        ...item,
-        value,
-        label,
-      };
-    });
-  }, [source, filter]);
-
-  const handlePress = (name: string, newOptions: OptionItem[]) => {
-    return () => {
-      setKey(name);
-      setOptions(newOptions);
-      onOpen();
-    };
-  };
-  const handleChange = (newVal: string) => {
-    dispatch(setDiscoveryFilter({ [key]: newVal }));
-    dispatch(loadDiscovery({ source, isReset: true }));
-  };
-
-  if (discoveryOptions.length <= 0) {
-    return null;
-  }
-
-  return (
-    <HStack
-      safeAreaX
-      px={2}
-      pb={2}
-      bg={palette.bg}
-      borderBottomWidth={1}
-      borderColor={palette.border}
-    >
-      {discoveryOptions.map((item) => {
-        return (
-          <Button
-            key={item.name}
-            variant="ghost"
-            _text={{ color: palette.text, fontWeight: 'bold' }}
-            onPress={handlePress(item.name, item.options)}
-          >
-            {item.label}
-          </Button>
-        );
-      })}
-
-      <ActionsheetSelect
-        isOpen={isOpen}
-        onClose={onClose}
-        options={options}
-        onChange={handleChange}
-      />
-    </HStack>
-  );
-};
-
 export const PluginSelect = () => {
   const { isOpen, onOpen: handleOpen, onClose: handleClose } = useDisclose();
-  const { source, list } = useAppSelector((state) => state.plugin);
+  const source = useAppSelector((state) => state.plugin.source);
+  const list = useAppSelector((state) => state.plugin.list);
   const route = useRoute<RouteProp<RootStackParamList, 'Discovery' | 'Search'>>();
   const dispatch = useAppDispatch();
   const palette = useThemePalette();
-  const options = useMemo<{ label: string; value: string }[]>(() => {
+  const options = useMemo<{ label: string; value: Plugin }[]>(() => {
     return list
       .filter((item) => !item.disabled)
       .map((item) => ({ label: `${item.name} - ${item.label}`, value: item.value }));
@@ -151,13 +92,18 @@ export const PluginSelect = () => {
     return list.find((item) => item.value === plugin)?.label || plugin;
   }, [list, plugin]);
 
-  const handleChange = (newSource: string) => {
+  const handleChange = (newValue: string) => {
+    // value 一定来自 options，反查拿回 Plugin 类型，避免 as 断言
+    const newSource = options.find((item) => item.value === newValue)?.value;
+    if (!newSource) {
+      return;
+    }
     if (route.name === 'Discovery') {
-      dispatch(setSource(newSource as Plugin));
+      dispatch(setSource(newSource));
     }
     if (route.name === 'Search') {
       dispatch(resetSearchFilter());
-      RootNavigation.setParams({ source: newSource as Plugin });
+      RootNavigation.setParams({ source: newSource });
     }
   };
   const handleSetting = () => {

@@ -13,10 +13,13 @@ interface EInkKeyModuleType {
 }
 
 const { EInkKeyModule } = NativeModules as { EInkKeyModule?: EInkKeyModuleType };
-const emitter = EInkKeyModule ? new NativeEventEmitter(NativeModules.EInkKeyModule as any) : null;
+type NativeEventEmitterArg = ConstructorParameters<typeof NativeEventEmitter>[0];
+const emitter = EInkKeyModule
+  ? new NativeEventEmitter(EInkKeyModule as unknown as NativeEventEmitterArg)
+  : null;
 
 export const setReaderActive = (active: boolean) => {
-  EInkKeyModule && EInkKeyModule.setReaderActive(active);
+  EInkKeyModule?.setReaderActive(active);
 };
 
 export const addPageKeyListener = (callback: (direction: PageKeyDirection) => void) => {

@@ -93,7 +93,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               size="lg"
               accessibilityLabel={item.disabled ? '启用来源' : '停用来源'}
               accessibilityState={{ checked: !item.disabled }}
-              onPress={() => dispatch(disablePlugin(item.value as PluginType))}
+              onPress={() => dispatch(disablePlugin(item.value))}
             />
             {item.value === PluginType.BIKA && (
               <VectorIcon

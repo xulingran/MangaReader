@@ -14,9 +14,7 @@ export function navigate<RouteName extends keyof RootStackParamList>(
   }
 }
 
-export function setParams<RouteName extends keyof RootStackParamList>(
-  params: Partial<RootStackParamList[RouteName]>
-) {
+export function setParams(params: Partial<RootStackParamList[keyof RootStackParamList]>) {
   if (navigationRef.isReady()) {
     navigationRef.setParams(params);
   }

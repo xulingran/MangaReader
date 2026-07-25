@@ -19,5 +19,4 @@ declare global {
   type StackChapterProps = NativeStackScreenProps<RootStackParamList, 'Chapter'>;
   type StackPluginProps = NativeStackScreenProps<RootStackParamList, 'Plugin'>;
   type StackWebviewProps = NativeStackScreenProps<RootStackParamList, 'Webview'>;
-  type StackAboutProps = NativeStackScreenProps<RootStackParamList, 'About'>;
 }

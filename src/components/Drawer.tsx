@@ -1,12 +1,4 @@
-import React, {
-  forwardRef,
-  useImperativeHandle,
-  ReactNode,
-  ForwardRefRenderFunction,
-  Fragment,
-  useMemo,
-  useState,
-} from 'react';
+import React, { useImperativeHandle, ReactNode, Ref, Fragment, useState } from 'react';
 import { Box, Pressable } from 'native-base';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import { useThemePalette } from '~/utils/theme/hooks';
@@ -16,6 +8,7 @@ export interface DrawerRef {
   close: () => void;
 }
 interface DrawerProps {
+  ref?: Ref<DrawerRef>;
   content?: number;
   children?: ReactNode;
 }
@@ -24,16 +17,13 @@ interface DrawerProps {
  * 电子墨水版静态抽屉：无滑入动画、无透明遮罩
  * 右侧固定宽度高对比面板，条件渲染瞬时开合
  */
-const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
-  { content = 300, children },
-  ref
-) => {
+const Drawer = ({ ref, content = 300, children }: DrawerProps) => {
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
   const { right } = useDebouncedSafeAreaInsets();
   const [visible, setVisible] = useState(false);
   const palette = useThemePalette();
 
-  const contentWidth = useMemo(() => content + right, [content, right]);
+  const contentWidth = content + right;
   const panelWidth = Math.min(windowWidth * 0.55, contentWidth);
 
   useImperativeHandle(ref, () => ({
@@ -73,4 +63,4 @@ const Drawer: ForwardRefRenderFunction<DrawerRef, DrawerProps> = (
   );
 };
 
-export default forwardRef(Drawer);
+export default Drawer;

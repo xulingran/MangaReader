@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useMemo } from 'react';
 import { useDelayRender, useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import { Box, Text, Icon, HStack, VStack, Pressable } from 'native-base';
-import { Keyboard, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
@@ -196,7 +196,7 @@ const Bookshelf = ({
           item={item}
           extra={extra}
           status={statusOf(item.hash, extra)}
-          isSelected={extra.selected?.includes(item.hash) ?? false}
+          isSelected={extra.selected.includes(item.hash)}
           onPress={itemOnPress}
           onLongPress={itemOnLongPress}
         />
@@ -222,7 +222,7 @@ const Bookshelf = ({
         paddingLeft: insets.left,
         paddingRight: insets.right,
       }}
-      onScroll={Keyboard.dismiss}
+      keyboardDismissMode="on-drag"
       onEndReached={handleEndReached}
       onEndReachedThreshold={1}
       keyExtractor={keyExtractor}

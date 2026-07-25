@@ -71,19 +71,20 @@ export const parseSnapshotManifest = (source: string | null): SnapshotManifest |
     return undefined;
   }
   const parsed: unknown = JSON.parse(source);
+  const m = parsed as Partial<SnapshotManifest>;
   if (
     !parsed ||
     typeof parsed !== 'object' ||
-    (parsed as SnapshotManifest).schemaVersion !== SNAPSHOT_SCHEMA_VERSION ||
-    typeof (parsed as SnapshotManifest).generation !== 'string' ||
-    !Array.isArray((parsed as SnapshotManifest).favorites) ||
-    !(parsed as SnapshotManifest).plugin ||
-    !(parsed as SnapshotManifest).setting ||
-    !isStringArray((parsed as SnapshotManifest).mangaIndex) ||
-    !isStringArray((parsed as SnapshotManifest).chapterIndex) ||
-    !isUniqueStringArray((parsed as SnapshotManifest).taskIndex) ||
-    !isUniqueStringArray((parsed as SnapshotManifest).jobIndex) ||
-    !Number.isInteger((parsed as SnapshotManifest).jobMax)
+    m.schemaVersion !== SNAPSHOT_SCHEMA_VERSION ||
+    typeof m.generation !== 'string' ||
+    !Array.isArray(m.favorites) ||
+    !m.plugin ||
+    !m.setting ||
+    !isStringArray(m.mangaIndex) ||
+    !isStringArray(m.chapterIndex) ||
+    !isUniqueStringArray(m.taskIndex) ||
+    !isUniqueStringArray(m.jobIndex) ||
+    !Number.isInteger(m.jobMax)
   ) {
     throw new Error('本地快照清单格式错误');
   }

@@ -23,6 +23,8 @@ const ErrorWithRetry = ({
     setRetrying(true);
     try {
       await onRetry();
+    } catch (error) {
+      console.warn('重试失败', error);
     } finally {
       setRetrying(false);
     }

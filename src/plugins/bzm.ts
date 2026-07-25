@@ -1,6 +1,5 @@
 import Base, { Plugin, Options } from './base';
-import { MangaStatus } from '~/utils';
-import { Platform } from 'react-native';
+import { MangaStatus, ErrorMessage } from '~/utils';
 import queryString from 'query-string';
 import * as cheerio from 'cheerio';
 import dayjs from 'dayjs';
@@ -94,10 +93,9 @@ const PATTERN_SLOT_HTML = /\/[^_/]+_?([^/]*)\/([0-9]*)_([0-9]*)_?([0-9]*)\.html/
 
 class BaoziManga extends Base {
   constructor() {
+    // 仅支持 Android；移除无意义的 iOS 分支
     const userAgent =
-      Platform.OS === 'android'
-        ? 'Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36'
-        : 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+      'Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36';
     super({
       score: 4,
       id: Plugin.BZM,
@@ -168,11 +166,17 @@ class BaoziManga extends Base {
     };
   };
 
-  handleDiscovery: Base['handleDiscovery'] = (res: DiscoveryResponse) => {
-    const $ = cheerio.load((res || '') as unknown as string);
-    this.checkCloudFlare($);
+  handleDiscovery: Base['handleDiscovery'] = (res) => {
+    // API 正常返回 JSON；命中 Cloudflare 时 fetchData 退回 text（HTML）。
+    // 先按类型分流：字符串才进 cheerio 走 CF 校验，否则 res.items.map 会抛 TypeError。
+    if (typeof res === 'string') {
+      const $ = cheerio.load(res || '');
+      this.checkCloudFlare($);
+      return { error: new Error(`${ErrorMessage.CloudflareFail} - ${this.name}`) };
+    }
+    const items = (res as DiscoveryResponse)?.items || [];
     return {
-      discovery: res.items.map((item) => ({
+      discovery: items.map((item) => ({
         href: `https://cn.baozimhcn.com/comic/${item.comic_id}`,
         hash: Base.combineHash(this.id, String(item.comic_id)),
         source: this.id,

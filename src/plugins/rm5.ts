@@ -465,7 +465,7 @@ class RouMan5 extends Base {
     chapterId: string
   ) => {
     if (typeof res === 'string') {
-      const $ = cheerio.load(res || '');
+      const $ = cheerio.load(res);
       const data = parseNextData<ChapterData>($);
       if (data) {
         const { bookName, chapterName, images = [], chapterAPIPath } = data.props.pageProps;

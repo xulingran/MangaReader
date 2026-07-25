@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Text, Input, Button, Box } from 'native-base';
+import { Input, Box } from 'native-base';
 import Overlay from './Overlay';
-import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
+import ModalConfirmButton from './ModalConfirmButton';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 interface LoginModalProps {
   title?: string;
@@ -15,7 +16,6 @@ const LoginModal = ({ title, isOpen = false, onClose, onSubmit }: LoginModalProp
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const palette = useThemePalette();
-  const [pressed, bind] = usePressedState();
 
   useEffect(() => {
     if (isOpen) {
@@ -29,7 +29,7 @@ const LoginModal = ({ title, isOpen = false, onClose, onSubmit }: LoginModalProp
     if (!account || !password) {
       return;
     }
-    onSubmit && onSubmit(account, password);
+    onSubmit?.(account, password);
   };
 
   return (
@@ -63,19 +63,7 @@ const LoginModal = ({ title, isOpen = false, onClose, onSubmit }: LoginModalProp
           value={password}
           onChangeText={setPassword}
         />
-        <Button
-          mt={3}
-          bg={pressed ? palette.bg : palette.selectedBg}
-          borderWidth={1}
-          borderColor={palette.border}
-          _pressed={{ bg: palette.bg }}
-          {...bind}
-          onPress={handleSubmit}
-        >
-          <Text color={pressed ? palette.text : palette.selectedText} fontWeight="bold">
-            登录
-          </Text>
-        </Button>
+        <ModalConfirmButton label="登录" onPress={handleSubmit} />
       </Box>
     </Overlay>
   );

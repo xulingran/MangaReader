@@ -23,7 +23,7 @@ const Overlay = ({ isOpen = false, title, onClose, children }: OverlayProps) => 
       visible={isOpen}
       animationType="none"
       transparent={false}
-      onRequestClose={() => onClose && onClose()}
+      onRequestClose={onClose}
     >
       <Box flex={1} bg={palette.bg} safeArea>
         <HStack

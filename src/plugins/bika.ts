@@ -283,22 +283,29 @@ class Bika extends Base {
     return { token };
   };
 
-  handleDiscovery: Base['handleDiscovery'] = (response: BikaListResponse) => {
+  private parseList(response: BikaListResponse): { error: Error } | { list: IncreaseManga[] } {
     if (response.code !== 200) {
       return { error: this.responseError(response.code, response.message) };
     }
     const comics = response.data?.comics;
     const docs = Array.isArray(comics) ? comics : comics?.docs || [];
-    return { discovery: docs.map((item) => this.toManga(item)) };
+    return { list: docs.map((item) => this.toManga(item)) };
+  }
+
+  handleDiscovery: Base['handleDiscovery'] = (response: BikaListResponse) => {
+    const result = this.parseList(response);
+    if ('error' in result) {
+      return result;
+    }
+    return { discovery: result.list };
   };
 
   handleSearch: Base['handleSearch'] = (response: BikaListResponse) => {
-    if (response.code !== 200) {
-      return { error: this.responseError(response.code, response.message) };
+    const result = this.parseList(response);
+    if ('error' in result) {
+      return result;
     }
-    const comics = response.data?.comics;
-    const docs = Array.isArray(comics) ? comics : comics?.docs || [];
-    return { search: docs.map((item) => this.toManga(item)) };
+    return { search: result.list };
   };
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: BikaDetailResponse, mangaId) => {
@@ -307,7 +314,7 @@ class Bika extends Base {
     }
     const comic = response.data?.comic;
     if (!comic) {
-      throw new Error('Bika 详情数据缺失');
+      return { error: new Error('Bika 详情数据缺失') };
     }
     const item = this.toManga({ ...comic, _id: mangaId });
     return {
@@ -324,7 +331,7 @@ class Bika extends Base {
     }
     const eps = response.data?.eps;
     if (!eps) {
-      throw new Error('Bika 章节数据缺失');
+      return { error: new Error('Bika 章节数据缺失') };
     }
     const seen = new Set<number>();
     return {
@@ -357,7 +364,7 @@ class Bika extends Base {
     }
     const pages = response.data?.pages;
     if (!pages) {
-      throw new Error('Bika 图片数据缺失');
+      return { error: new Error('Bika 图片数据缺失') };
     }
     return {
       canLoadMore: Number(pages.page || 1) < Number(pages.pages || 1),

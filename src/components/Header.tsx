@@ -1,9 +1,9 @@
-import React, { Fragment, useMemo } from 'react';
+import React, { Fragment } from 'react';
 import { StatusBar, HStack, Text, Box } from 'native-base';
 import { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { getHeaderTitle } from '@react-navigation/elements';
 import VectorIcon from '~/components/VectorIcon';
-import { useThemePalette } from '~/utils/theme/hooks';
+import { useResolvedThemeMode, useThemePalette } from '~/utils/theme/hooks';
 
 interface HeaderProps extends NativeStackHeaderProps {
   showUpdateIndicator?: boolean;
@@ -11,8 +11,9 @@ interface HeaderProps extends NativeStackHeaderProps {
 
 const Header = ({ navigation, options, route, showUpdateIndicator = false }: HeaderProps) => {
   const title = getHeaderTitle(options, route.name);
-  const canGoBack = useMemo(() => navigation.canGoBack(), [navigation]);
+  const canGoBack = navigation.canGoBack();
   const palette = useThemePalette();
+  const resolvedMode = useResolvedThemeMode();
 
   const handleAbout = () => {
     navigation.navigate('About');
@@ -29,7 +30,7 @@ const Header = ({ navigation, options, route, showUpdateIndicator = false }: Hea
     <Fragment>
       <StatusBar
         backgroundColor={palette.header}
-        barStyle={palette.bg === '#000000' ? 'light-content' : 'dark-content'}
+        barStyle={resolvedMode === 'dark' ? 'light-content' : 'dark-content'}
       />
       <HStack
         bg={palette.header}

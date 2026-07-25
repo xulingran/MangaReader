@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Text, Input, InputGroup, InputRightAddon, Button, Box } from 'native-base';
+import React from 'react';
+import { Input, InputGroup, InputRightAddon, Box } from 'native-base';
 import { KeyboardTypeOptions } from 'react-native';
 import Overlay from './Overlay';
-import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
+import ModalConfirmButton, { useResettableValue } from './ModalConfirmButton';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 interface InputModalProps {
   title?: string;
@@ -22,18 +23,11 @@ const InputModal = ({
   keyboardType,
   onClose,
 }: InputModalProps) => {
-  const [value, setValue] = useState(defaultValue);
+  const [value, setValue] = useResettableValue(defaultValue, isOpen);
   const palette = useThemePalette();
-  const [pressed, bind] = usePressedState();
-
-  useEffect(() => {
-    if (isOpen) {
-      setValue(defaultValue);
-    }
-  }, [defaultValue, isOpen]);
 
   const handleClose = () => {
-    onClose && onClose(value);
+    onClose?.(value);
   };
 
   return (
@@ -54,26 +48,15 @@ const InputModal = ({
           {rightAddon && (
             <InputRightAddon
               px={2}
-              children={rightAddon}
               background={palette.card}
               borderColor={palette.border}
               _text={{ color: palette.text }}
-            />
+            >
+              {rightAddon}
+            </InputRightAddon>
           )}
         </InputGroup>
-        <Button
-          mt={3}
-          bg={pressed ? palette.bg : palette.selectedBg}
-          borderWidth={1}
-          borderColor={palette.border}
-          _pressed={{ bg: palette.bg }}
-          {...bind}
-          onPress={handleClose}
-        >
-          <Text color={pressed ? palette.text : palette.selectedText} fontWeight="bold">
-            确定
-          </Text>
-        </Button>
+        <ModalConfirmButton onPress={handleClose} />
       </Box>
     </Overlay>
   );

@@ -10,7 +10,6 @@ export const usePageKeys = (callback: (direction: PageKeyDirection) => void, act
   useFocusEffect(
     useCallback(() => {
       if (!active) {
-        setReaderActive(false);
         return () => setReaderActive(false);
       }
       setReaderActive(true);

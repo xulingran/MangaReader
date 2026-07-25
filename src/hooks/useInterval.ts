@@ -11,9 +11,11 @@ export const useInterval = (callback: () => void, enable = true, ms = 5000) => {
       }
     };
 
-    timeoutRef.current = setTimeout(fn, ms);
+    if (enable) {
+      timeoutRef.current = setTimeout(fn, ms);
+    }
     return () => {
-      timeoutRef.current && clearTimeout(timeoutRef.current);
+      clearTimeout(timeoutRef.current);
       timeoutRef.current = undefined;
     };
   }, [callback, enable, ms]);

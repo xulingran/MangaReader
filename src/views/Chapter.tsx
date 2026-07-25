@@ -23,7 +23,13 @@ import {
   useToast,
   useDisclose,
 } from 'native-base';
-import { usePrevNext, usePageKeys, useDebouncedSafeAreaFrame, useInterval } from '~/hooks';
+import {
+  usePrevNext,
+  usePageKeys,
+  useDebouncedSafeAreaFrame,
+  useInterval,
+  useLatest,
+} from '~/hooks';
 import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useFocusEffect } from '@react-navigation/native';
 import Reader, { ReaderRef } from '~/components/Reader';
@@ -63,7 +69,7 @@ const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) 
   return useMemo(() => {
     const list: {
       uri: string;
-      needUnscramble?: boolean | undefined;
+      needUnscramble?: boolean;
       pre: number;
       multiplePre: number;
       current: number;
@@ -88,10 +94,9 @@ const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) 
 };
 
 const Chapter = ({ route, navigation }: StackChapterProps) => {
-  const { mangaHash, chapterHash: initChapterHash, page: initPage } = route.params || {};
+  const { mangaHash, chapterHash: initChapterHash, page: initPage } = route.params;
   const toast = useToast();
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
+  const toastRef = useLatest(toast);
   const dispatch = useAppDispatch();
   const palette = useThemePalette();
   const bg = palette.bg;
@@ -99,10 +104,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const [pageBoxPressed, pageBoxBind] = usePressedState();
   const { isOpen, onOpen, onClose } = useDisclose();
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
-  const onOpenRef = useRef(onOpen);
-  const onMenuCloseRef = useRef(onMenuClose);
-  onOpenRef.current = onOpen;
-  onMenuCloseRef.current = onMenuClose;
+  const onOpenRef = useLatest(onOpen);
+  const onMenuCloseRef = useLatest(onMenuClose);
   const { isOpen: isJumpOpen, onOpen: onJumpOpen, onClose: onJumpClose } = useDisclose();
   const {
     isOpen: isTimerGapOpen,
@@ -149,7 +152,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     [mode, direction]
   );
   const data = useChapterFlat(hashList, chapterDict);
-  console.log('[ChapterDebug] data.length:', data.length, 'loadStatus:', loadStatus, 'firstImgUrl:', data[0] ? JSON.stringify(data[0]).slice(0, 200) : '(empty)');
   const { pre, current, multiplePre } = useMemo(
     () => data[page] || { pre: 0, current: 0, multiplePre: 0 },
     [page, data]
@@ -165,19 +167,17 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const [prev, next] = usePrevNext(chapterList, chapterHash);
   const [, more] = usePrevNext(chapterList, hashList[hashList.length - 1]);
   const readerRef = useRef<ReaderRef>(null);
-  const callbackRef = useRef<((direction: PageKeyDirection) => void) | undefined>(undefined);
   const sourceRef = useRef('');
   const [render, setRender] = useState(false);
   const cache = useMemo(() => new Cache(mangaHash), [mangaHash]);
 
-  callbackRef.current = (pageKeyDirection) => {
+  const callbackRef = useLatest((pageKeyDirection: PageKeyDirection) => {
     if (pageKeyDirection === 'next') {
       handleNextPage();
-    }
-    if (pageKeyDirection === 'previous') {
+    } else if (pageKeyDirection === 'previous') {
       handlePrevPage();
     }
-  };
+  });
 
   useFocusEffect(
     useCallback(() => {
@@ -201,6 +201,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     try {
       await cache.initCacheMap();
     } catch (error) {
+      console.warn('章节缓存初始化失败', error);
     } finally {
       setRender(true);
     }
@@ -215,14 +216,13 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   );
   usePageKeys(
     useCallback(
-      (pageKeyDirection: PageKeyDirection) =>
-        callbackRef.current && callbackRef.current(pageKeyDirection),
-      []
+      (pageKeyDirection: PageKeyDirection) => callbackRef.current(pageKeyDirection),
+      [callbackRef]
     ),
     pageKeys === PageKeys.Enable && data.length > 0 && loadStatus !== AsyncStatus.Pending
   );
   useInterval(
-    useCallback(() => callbackRef.current && callbackRef.current('next'), []),
+    useCallback(() => callbackRef.current('next'), [callbackRef]),
     timer === Timer.Enable && timerSwitch && data.length > 0 && loadStatus !== AsyncStatus.Pending,
     timerGap
   );
@@ -240,9 +240,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
 
   const handlePrevPage = useCallback(() => {
     if (mode !== LayoutMode.Multiple) {
-      readerRef.current?.scrollToIndex(Math.max(page - 1, 0));
+      readerRef.current?.scrollToIndex(page - 1);
     } else {
-      readerRef.current?.scrollToIndex(Math.max(multiplePre + Math.ceil(current / 2) - 2, 0));
+      readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2) - 2);
     }
   }, [current, mode, multiplePre, page]);
   const handleNextPage = useCallback(() => {
@@ -250,12 +250,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       return;
     }
     if (mode !== LayoutMode.Multiple) {
-      readerRef.current?.scrollToIndex(Math.min(page + 1, Math.max(data.length - 1, 0)));
+      readerRef.current?.scrollToIndex(page + 1);
     } else {
-      const multipleMax = data[data.length - 1].multiplePre + data[data.length - 1].current;
-      readerRef.current?.scrollToIndex(
-        Math.min(multiplePre + Math.ceil(current / 2), Math.max(multipleMax - 1, 0))
-      );
+      readerRef.current?.scrollToIndex(multiplePre + Math.ceil(current / 2));
     }
   }, [current, data, mode, multiplePre, page]);
   const handlePrevChapter = useCallback(() => {
@@ -269,7 +266,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     } else {
       toastRef.current.show({ title: '第一话' });
     }
-  }, [prev]);
+  }, [prev, toastRef]);
   const handleNextChapter = useCallback(() => {
     if (next) {
       setChapterHash(next.hash);
@@ -280,14 +277,14 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     } else {
       toastRef.current.show({ title: '最后一话' });
     }
-  }, [next]);
+  }, [next, toastRef]);
   const handleTap = useCallback(
     (position: PositionX) => {
       if (position === PositionX.Mid) {
-        setShowExtra((isVisible) => {
-          isVisible && onMenuCloseRef.current();
-          return !isVisible;
-        });
+        if (showExtra) {
+          onMenuCloseRef.current();
+        }
+        setShowExtra(!showExtra);
       }
       if (inverted) {
         if (position === PositionX.Right) {
@@ -305,7 +302,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         }
       }
     },
-    [inverted]
+    [callbackRef, inverted, onMenuCloseRef, showExtra]
   );
   const handleLongPress = useCallback(
     (position: PositionX, source?: string) => {
@@ -329,7 +326,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         }
       }
     },
-    [handleNextChapter, handlePrevChapter, inverted]
+    [handleNextChapter, handlePrevChapter, inverted, onOpenRef]
   );
   const handleImageLoad = useCallback(
     (_uri: string, hash: string, index: number) => {
@@ -350,7 +347,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       setChapterHash(image.chapterHash);
       setPage(newPage);
     },
-    [data, next]
+    [data, next, toastRef]
   );
   const handleLoadMore = useCallback(() => {
     if (more && !hashList.includes(more.hash)) {
@@ -372,9 +369,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     if (sourceRef.current !== '') {
       dispatch(saveImage({ source: sourceRef.current, headers }));
     } else {
-      toast.show({ title: '保存失败' });
+      toastRef.current.show({ title: '保存失败' });
     }
-  }, [dispatch, headers, toast]);
+  }, [dispatch, headers, toastRef]);
   const handleGoBack = useCallback(() => navigation.goBack(), [navigation]);
   const handleSeatToggle = useCallback(() => {
     if (seat === MultipleSeat.AToB) {
@@ -411,7 +408,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     [navigation, orientation]
   );
   const handleReload = useCallback(() => {
-    setChapterHash(chapterHash);
     setHashList([chapterHash]);
     readerRef.current?.clearStateRef();
     dispatch(loadChapter({ chapterHash }));

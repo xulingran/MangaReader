@@ -1,4 +1,5 @@
 export * from './useOnce';
+export * from './useLatest';
 export * from './useMessageToast';
 export * from './usePrevNext';
 export * from './useDelayRender';

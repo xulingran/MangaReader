@@ -73,11 +73,15 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
 
   const handleDelete = useCallback(() => {
     dispatch(removeFavorites(selectedManga));
+    setSelectedManga([]);
+    setSelectMode(false);
     onClose();
   }, [dispatch, onClose, selectedManga]);
 
   const renderHeaderRight = useCallback(() => {
     if (isSelectMode) {
+      const checked =
+        selectedManga.length <= 0 ? false : selectedManga.length >= list.length ? true : 'mixed';
       return (
         <HStack flexShrink={0}>
           <VectorIcon
@@ -89,21 +93,14 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
           <VectorIcon
             source="materialCommunityIcons"
             name={
-              selectedManga.length <= 0
+              checked === false
                 ? 'checkbox-blank-outline'
-                : selectedManga.length >= list.length
+                : checked === true
                 ? 'checkbox-marked-outline'
                 : 'checkbox-intermediate'
             }
             accessibilityLabel="全选或取消全选漫画"
-            accessibilityState={{
-              checked:
-                selectedManga.length <= 0
-                  ? false
-                  : selectedManga.length >= list.length
-                    ? true
-                    : 'mixed',
-            }}
+            accessibilityState={{ checked }}
             onPress={handleSelectAll}
           />
           <VectorIcon
@@ -158,7 +155,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
   );
 };
 
-export const SearchAndAbout = () => {
+const SearchAndAbout = () => {
   const dispatch = useAppDispatch();
   const palette = useThemePalette();
   // 细粒度订阅：saga 推进 batch 队列时只让真正变化的字段触发重渲染，而不是整个 batch slice
@@ -190,7 +187,7 @@ export const SearchAndAbout = () => {
           accessibilityState={{ disabled: isUpdating, busy: isUpdating }}
           onPress={handleUpdate}
         />
-        {isUpdating && (
+        {(isUpdating || failLength > 0) && (
           <Text
             position="absolute"
             top={0}
@@ -198,18 +195,7 @@ export const SearchAndAbout = () => {
             color={palette.text}
             fontWeight="extrabold"
           >
-            {queueLength + stackLength}
-          </Text>
-        )}
-        {!isUpdating && failLength > 0 && (
-          <Text
-            position="absolute"
-            top={0}
-            right={0}
-            color={palette.text}
-            fontWeight="extrabold"
-          >
-            {failLength}
+            {isUpdating ? queueLength + stackLength : failLength}
           </Text>
         )}
       </View>

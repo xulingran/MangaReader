@@ -24,8 +24,7 @@ import { useOnce, useSplitWidth, useDebouncedSafeAreaInsets } from '~/hooks';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { StyleSheet, Linking } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import StaticCachedImage from '~/components/StaticCachedImage';
 import ActionsheetSelect, { ActionsheetSelectProps } from '~/components/ActionsheetSelect';
 import Drawer, { DrawerRef } from '~/components/Drawer';
@@ -74,8 +73,10 @@ const ChapterSelectOptions: ActionsheetSelectProps['options'] = [
   },
 ];
 
+const EMPTY_SELECTED: string[] = [];
+
 const Detail = ({ route, navigation }: StackDetailProps) => {
-  const { mangaHash, enabledMultiple = false, selected = [] } = route.params;
+  const { mangaHash, enabledMultiple = false, selected = EMPTY_SELECTED } = route.params;
   const { gap, insets, itemWidth, numColumns, windowWidth, windowHeight } = useSplitWidth({
     gap: 12,
     minNumColumns: 3,
@@ -89,7 +90,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   );
   // 只订阅当前漫画，后台更新其他漫画不触发 Detail 重渲染
   const data = useAppSelector((state) => state.dict.manga[mangaHash]);
-  const reocrdDict = useAppSelector((state) => state.dict.record);
+  const recordDict = useAppSelector((state) => state.dict.record);
   const lastWatchDict = useAppSelector((state) => state.dict.lastWatch);
   const favorites = useAppSelector((state) => state.favorites);
   const sequence = useAppSelector((state) => state.setting.sequence);
@@ -97,12 +98,12 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const extraData = useMemo(
     () => ({
       width: itemWidth,
-      dict: reocrdDict,
+      dict: recordDict,
       chapterHash: lastWatch.chapter,
       multiple: enabledMultiple,
       checkList: selected,
     }),
-    [itemWidth, reocrdDict, lastWatch.chapter, enabledMultiple, selected]
+    [itemWidth, recordDict, lastWatch.chapter, enabledMultiple, selected]
   );
   const chapters = useMemo(() => {
     if (!data) {
@@ -118,7 +119,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   const palette = useThemePalette();
 
   useOnce(() => {
-    if (!nonNullable(data) || (nonNullable(data) && data.chapters.length <= 0)) {
+    if (!data || data.chapters.length <= 0) {
       dispatch(loadManga({ mangaHash }));
     }
   });
@@ -237,7 +238,6 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     );
   }
 
-
   return (
     <Box w="full" h="full" bg={palette.bg}>
       <Flex
@@ -278,16 +278,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               onPress={handleReload}
             />
           </HStack>
-          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
-            作者：
-            {data.author.map((text, index) => (
-              <Fragment key={text}>
-                <Text onPress={() => handleSearch(text)}>{text}</Text>
-                {index < data.author.length - 1 && <Text>、</Text>}
-              </Fragment>
-            ))}
-            {data.author.length <= 0 && '未知'}
-          </Text>
+          <MetaField label="作者" list={data.author} onSearch={handleSearch} />
           <Box flexGrow={1} />
           <HStack alignItems="center" space={2}>
             <Text
@@ -305,16 +296,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
               onContinue={handleContinueReading}
             />
           </HStack>
-          <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
-            分类：
-            {data.tag.map((text, index) => (
-              <Fragment key={text}>
-                <Text onPress={() => handleSearch(text)}>{text}</Text>
-                {index < data.tag.length - 1 && <Text>、</Text>}
-              </Fragment>
-            ))}
-            {data.tag.length <= 0 && '未知'}
-          </Text>
+          <MetaField label="分类" list={data.tag} onSearch={handleSearch} />
           <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
             来源：{data.sourceName}
           </Text>
@@ -386,7 +368,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
 export const HeartAndBrowser = () => {
   const route = useRoute<StackDetailProps['route']>();
   const navigation = useNavigation<StackDetailProps['navigation']>();
-  const { mangaHash, enabledMultiple = false, selected = [] } = route.params;
+  const { mangaHash, enabledMultiple = false, selected = EMPTY_SELECTED } = route.params;
   const dispatch = useAppDispatch();
   const sequence = useAppSelector((state) => state.setting.sequence);
   const favorites = useAppSelector((state) => state.favorites);
@@ -557,8 +539,32 @@ export const HeartAndBrowser = () => {
   );
 };
 
-interface ChapterCellProps {
-  title: string;
+/** 详情元信息行（作者/分类）：顿号分隔、可点击搜索、空值显示未知 */
+const MetaField = ({
+  label,
+  list,
+  onSearch,
+}: {
+  label: string;
+  list: string[];
+  onSearch: (text: string) => void;
+}) => {
+  const palette = useThemePalette();
+  return (
+    <Text color={palette.text} fontSize={14} fontWeight="bold" numberOfLines={1}>
+      {label}：
+      {list.map((text, index) => (
+        <Fragment key={text}>
+          <Text onPress={() => onSearch(text)}>{text}</Text>
+          {index < list.length - 1 && <Text>、</Text>}
+        </Fragment>
+      ))}
+      {list.length <= 0 && '未知'}
+    </Text>
+  );
+};
+
+interface ChapterCellProps {  title: string;
   width: number;
   gap: number;
   isActived: boolean;
@@ -699,7 +705,6 @@ const VisiblePrehandleDrawer = () => {
         pl={3}
         pr={2}
         space={1}
-        key={item.taskId}
         alignItems="center"
         borderColor={palette.border}
         borderBottomWidth={1}
@@ -737,6 +742,7 @@ const VisiblePrehandleDrawer = () => {
           <FlashList
             data={list}
             renderItem={renderItem}
+            keyExtractor={(item) => item.taskId}
             estimatedItemSize={50}
             contentContainerStyle={{
               paddingTop: insets.top,

@@ -171,12 +171,11 @@ class HComic extends Base {
   }
 
   private getImagePrefix(comicSource = ''): string {
-    const suffix =
-      comicSource.toUpperCase() === 'MMCG_SHORT'
-        ? 'mms'
-        : comicSource.toUpperCase() === 'MMCG_LONG'
-        ? 'mml'
-        : 'nh';
+    const suffixMap: Record<string, string> = {
+      MMCG_SHORT: 'mms',
+      MMCG_LONG: 'mml',
+    };
+    const suffix = suffixMap[comicSource.toUpperCase()] || 'nh';
     return `https://h-comic.link/api/${suffix}`;
   }
 

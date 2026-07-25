@@ -4,11 +4,11 @@ import createSagaMiddleware from 'redux-saga';
 import saga from './saga';
 
 const sagaMiddleware = createSagaMiddleware();
-const middleware = [sagaMiddleware];
 
 const store = configureStore({
   reducer,
-  middleware,
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({ thunk: false }).concat(sagaMiddleware),
   // Redux state 包含完整离线漫画字典；逐 action 打印/序列化会让低性能真机明显卡顿。
   devTools: false,
 });

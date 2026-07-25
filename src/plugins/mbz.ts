@@ -198,12 +198,12 @@ class MangaBZ extends Base {
   handleMangaInfo: Base['handleMangaInfo'] = (text: string | null) => {
     const $ = cheerio.load(text || '');
 
-    const scriptContent =
-      ($('script:not([src])').toArray() as cheerio.TagElement[]).filter((script) =>
-        PATTERN_SCRIPT_MANGA_ID.test(script.children[0].data || '')
-      )[0].children[0].data || '';
+    const scriptNode = ($('script:not([src])').toArray() as cheerio.TagElement[]).find((script) =>
+      PATTERN_SCRIPT_MANGA_ID.test(script.children?.[0]?.data || '')
+    );
+    const scriptContent = scriptNode?.children?.[0]?.data || '';
     const [, id] = scriptContent.match(PATTERN_SCRIPT_MANGA_ID) || [];
-    const mangaId = id + 'bz';
+    const mangaId = (id || '') + 'bz';
     const cover = $('.detail-info img.detail-info-cover').first().attr('src');
     const title = $('.detail-info p.detail-info-title').first().text().trim();
     const author = (
@@ -284,13 +284,17 @@ class MangaBZ extends Base {
   ) => {
     if (!PATTERN_PACKED_SCRIPT.test(text || '')) {
       const $ = cheerio.load(text || '');
-      const scriptContent =
-        ($('script:not([src])').toArray() as cheerio.TagElement[]).filter(
-          (script) =>
-            PATTERN_CHAPTER_TITLE.test(script.children[0].data || '') &&
-            PATTERN_CHAPTER_DATE.test(script.children[0].data || '') &&
-            PATTERN_CHAPTER_SIGN.test(script.children[0].data || '')
-        )[0].children[0].data || '';
+      const scriptNode = ($('script:not([src])').toArray() as cheerio.TagElement[]).find(
+        (script) => {
+          const data = script.children?.[0]?.data || '';
+          return (
+            PATTERN_CHAPTER_TITLE.test(data) &&
+            PATTERN_CHAPTER_DATE.test(data) &&
+            PATTERN_CHAPTER_SIGN.test(data)
+          );
+        }
+      );
+      const scriptContent = scriptNode?.children?.[0]?.data || '';
       const [, title] = scriptContent.match(PATTERN_CHAPTER_TITLE) || [];
       const [, date] = scriptContent.match(PATTERN_CHAPTER_DATE) || [];
       const [, sign] = scriptContent.match(PATTERN_CHAPTER_SIGN) || [];

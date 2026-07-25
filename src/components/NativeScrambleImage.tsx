@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, type DimensionValue, type ImageResizeMode } from 'react-native';
-import { Box, Center, Icon, Text } from 'native-base';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Image } from 'react-native';
+import { Box, Center } from 'native-base';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { FileSystem } from 'react-native-file-access';
 import { nanoid } from '@reduxjs/toolkit';
-import { aspectFit, AsyncStatus, getRM5SplitCount, LayoutMode, Orientation } from '~/utils';
+import { aspectFit, AsyncStatus, getRM5SplitCount, LayoutMode } from '~/utils';
 import {
   IMAGE_PROCESSOR_OUTPUT_DIR,
   ImageProcessor,
@@ -13,95 +12,63 @@ import {
 } from '~/utils/imageProcessor';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import ErrorWithRetry from './ErrorWithRetry';
-import type { ComicImageProps, ImageState } from './ComicImage';
-import { useThemePalette } from '~/utils/theme/hooks';
+import {
+  EMPTY_HEADERS,
+  EMPTY_IMAGE_STATE,
+  ImagePlaceholder,
+  resizeModeDict,
+  useFillStyle,
+} from './ComicImageShared';
+import type { ImageProps, ImageState } from './ComicImage';
 
 const MAX_PIXEL_SIZE = 8_000_000;
-const resizeMode: Record<LayoutMode, ImageResizeMode> = {
-  [LayoutMode.Horizontal]: 'contain',
-  [LayoutMode.Vertical]: 'cover',
-  [LayoutMode.Multiple]: 'contain',
-};
-const EMPTY_STATE: ImageState = { dataUrl: '', loadStatus: AsyncStatus.Default };
-const EMPTY_HEADERS: Record<string, string> = {};
-
-const Placeholder = () => {
-  const palette = useThemePalette();
-  return (
-    <Center
-      position="absolute"
-      top={0}
-      left={0}
-      right={0}
-      bottom={0}
-      bg={palette.imagePlaceholder}
-    >
-      <Icon as={MaterialIcons} name="image" size={10} color={palette.disabled} />
-      <Text color={palette.subText} fontSize="sm" pt={1}>
-        加载中…
-      </Text>
-    </Center>
-  );
-};
 
 const NativeScrambleImage = ({
   uri,
   index,
   headers = EMPTY_HEADERS,
   layoutMode = LayoutMode.Horizontal,
-  prevState = EMPTY_STATE,
+  prevState = EMPTY_IMAGE_STATE,
   defaultPortraitHeight,
   defaultLandscapeHeight,
   onChange,
   onRelease,
-}: ComicImageProps) => {
+}: ImageProps) => {
   const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
   const [state, setState] = useState(prevState);
   const [retry, setRetry] = useState(0);
   const tempPath = useRef<string | null>(null);
+  // 加载 effect 只依赖真实输入；prevState/index/onRelease 经 ref 读取最新值，
+  // 避免它们的引用变化触发整条重载（删临时文件 + 重新解密）
+  const prevStateRef = useRef(prevState);
+  const indexRef = useRef(index);
+  const onReleaseRef = useRef(onRelease);
+  prevStateRef.current = prevState;
+  indexRef.current = index;
+  onReleaseRef.current = onRelease;
 
-  const style = useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
-    if (layoutMode === LayoutMode.Horizontal) {
-      return { width: '100%', height: '100%' };
-    }
-    if (layoutMode === LayoutMode.Vertical) {
-      return {
-        width: '100%',
-        height:
-          orientation === Orientation.Landscape
-            ? state.landscapeHeight || defaultLandscapeHeight
-            : state.portraitHeight || defaultPortraitHeight,
-      };
-    }
-    return {
-      width: state.multipleFitWidth || '100%',
-      height: state.multipleFitHeight || '100%',
-    };
-  }, [
-    defaultLandscapeHeight,
-    defaultPortraitHeight,
+  const style = useFillStyle(
     layoutMode,
-    orientation,
     state,
-  ]);
-
-  const release = useCallback(
-    (path = tempPath.current) => {
-      if (path) {
-        unlinkTemporaryImage(path);
-        if (tempPath.current === path) {
-          tempPath.current = null;
-          onRelease?.(index);
-        }
-      }
-    },
-    [index, onRelease]
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
   );
+
+  const release = useCallback((path = tempPath.current) => {
+    if (path) {
+      unlinkTemporaryImage(path);
+      if (tempPath.current === path) {
+        tempPath.current = null;
+        onReleaseRef.current?.(indexRef.current);
+      }
+    }
+  }, []);
 
   const handleImageError = useCallback(() => {
     release();
-    const failedState = { ...EMPTY_STATE, loadStatus: AsyncStatus.Rejected };
+    const failedState = { ...EMPTY_IMAGE_STATE, loadStatus: AsyncStatus.Rejected };
     setState(failedState);
     onChange?.(failedState, index);
   }, [index, onChange, release]);
@@ -109,7 +76,7 @@ const NativeScrambleImage = ({
   useEffect(() => {
     let aborted = false;
     let currentRequestId: string | null = null;
-    setState({ ...prevState, loadStatus: AsyncStatus.Pending });
+    setState({ ...prevStateRef.current, loadStatus: AsyncStatus.Pending });
 
     const load = async () => {
       await FileSystem.mkdir(IMAGE_PROCESSOR_OUTPUT_DIR).catch(() => {});
@@ -161,7 +128,7 @@ const NativeScrambleImage = ({
 
     load().catch(() => {
       if (!aborted) {
-        setState({ ...EMPTY_STATE, loadStatus: AsyncStatus.Rejected });
+        setState({ ...EMPTY_IMAGE_STATE, loadStatus: AsyncStatus.Rejected });
       }
     });
 
@@ -173,21 +140,7 @@ const NativeScrambleImage = ({
       }
       release();
     };
-  }, [
-    bottom,
-    headers,
-    index,
-    left,
-    onChange,
-    prevState,
-    release,
-    retry,
-    right,
-    top,
-    uri,
-    windowHeight,
-    windowWidth,
-  ]);
+  }, [bottom, headers, left, release, retry, right, top, uri, windowHeight, windowWidth]);
 
   if (state.loadStatus === AsyncStatus.Rejected) {
     return (
@@ -204,14 +157,14 @@ const NativeScrambleImage = ({
   if (state.loadStatus !== AsyncStatus.Fulfilled) {
     return (
       <Box style={style}>
-        <Placeholder />
+        <ImagePlaceholder />
       </Box>
     );
   }
   return (
     <Image
       style={style}
-      resizeMode={resizeMode[layoutMode]}
+      resizeMode={resizeModeDict[layoutMode]}
       source={{ uri: state.dataUrl }}
       onLoad={() => onChange?.(state, index)}
       onError={handleImageError}

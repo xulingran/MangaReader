@@ -70,26 +70,10 @@
                                 "size"
                             ],
                             "type": "object"
-                        },
-                        "ipa": {
-                            "properties": {
-                                "downloadUrl": {
-                                    "type": "string"
-                                },
-                                "size": {
-                                    "type": "number"
-                                }
-                            },
-                            "required": [
-                                "downloadUrl",
-                                "size"
-                            ],
-                            "type": "object"
                         }
                     },
                     "required": [
-                        "apk",
-                        "ipa"
+                        "apk"
                     ],
                     "type": "object"
                 },

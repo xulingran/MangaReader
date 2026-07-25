@@ -3,25 +3,30 @@ import { ImageState } from '~/components/ComicImage';
 
 type CacheMap = Record<string, Omit<ImageState, 'dataUrl' | 'loadStatus'>>;
 
+const BASE_PATH = `${Dirs.DocumentDir}/@cache`;
+
 class Cache {
-  private _basePath = `${Dirs.DocumentDir}/@cache`; // 或者Dirs.CacheDir？
   private _path: string;
   private _cacheMap: CacheMap = {};
 
   constructor(identification: string) {
-    this._path = `${this._basePath}/${identification}.json`;
+    this._path = `${BASE_PATH}/${identification}.json`;
   }
 
   async initCacheMap() {
     try {
-      const dirExists = await FileSystem.exists(this._basePath);
+      const dirExists = await FileSystem.exists(BASE_PATH);
       if (!dirExists) {
-        await FileSystem.mkdir(this._basePath);
+        await FileSystem.mkdir(BASE_PATH);
       }
       const exists = await FileSystem.exists(this._path);
       if (exists) {
         const content = await FileSystem.readFile(this._path);
-        this._cacheMap = JSON.parse(content);
+        const parsed: unknown = JSON.parse(content);
+        this._cacheMap =
+          typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            ? (parsed as CacheMap)
+            : {};
       } else {
         await FileSystem.writeFile(this._path, JSON.stringify({}));
       }
@@ -52,11 +57,10 @@ class Cache {
 
   // 清除缓存
   static async clearCache() {
-    const basePath = `${Dirs.DocumentDir}/@cache`;
     try {
-      const dirExists = await FileSystem.exists(basePath);
+      const dirExists = await FileSystem.exists(BASE_PATH);
       if (dirExists) {
-        await FileSystem.unlink(basePath);
+        await FileSystem.unlink(BASE_PATH);
       }
     } catch (error) {
       console.error('An error in clearCache:', error);

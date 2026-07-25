@@ -3,6 +3,7 @@ import { Draft, Draft07, JsonError, JsonSchema } from 'json-schema-library';
 import { ImageState } from '~/components/ComicImage';
 import { Buffer } from 'buffer';
 import CryptoJS from 'crypto-js';
+import type { KeyValuePair } from './storage';
 
 export const PATTERN_VERSION = /v?([0-9]+)\.([0-9]+)\.([0-9]+)/;
 export const PATTERN_PUBLISH_TIME = /([0-9]+)-([0-9]+)-([0-9]+)/;
@@ -148,9 +149,6 @@ export function getLatestRelease(
     const apk = (latest.assets as any[]).find(
       (item) => item.content_type === 'application/vnd.android.package-archive'
     );
-    const ipa = (latest.assets as any[]).find(
-      (item) => item.content_type === 'application/octet-stream'
-    );
 
     return {
       release: {
@@ -160,7 +158,6 @@ export function getLatestRelease(
         publishTime: `${y}-${m}-${d}`,
         file: {
           apk: { size: apk.size, downloadUrl: apk.browser_download_url },
-          ipa: { size: ipa.size, downloadUrl: ipa.browser_download_url },
         },
       },
     };
@@ -184,25 +181,6 @@ export function compareVersion(prev: string, current: string) {
   return false;
 }
 
-export function AESDecrypt(contentKey: string, key: string): string {
-  const a = contentKey.substring(0x0, 0x10);
-  const b = contentKey.substring(0x10, contentKey.length);
-
-  const c = CryptoJS.enc.Utf8.parse(key);
-  const d = CryptoJS.enc.Utf8.parse(a);
-
-  const e = CryptoJS.enc.Hex.parse(b);
-  const f = CryptoJS.enc.Base64.stringify(e);
-
-  return CryptoJS.AES.decrypt(f, c, {
-    iv: d,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  })
-    .toString(CryptoJS.enc.Utf8)
-    .toString();
-}
-
 export function nonNullable<T>(v: T | null | undefined): v is T {
   return v !== null && v !== undefined;
 }
@@ -223,7 +201,16 @@ export function trycatch<T extends (...args: any) => any>(fn: T, prefix?: string
 
 export function pairsToDict(list: KeyValuePair[]) {
   return list.reduce<Record<string, any>>((dict, [key, value]) => {
-    dict[key] = nonNullable(value) && value !== '' ? JSON.parse(value) : undefined;
+    if (nonNullable(value) && value !== '') {
+      // 单条损坏的 MMKV 记录不应中断整个启动同步：解析失败时丢弃该值
+      try {
+        dict[key] = JSON.parse(value);
+      } catch {
+        dict[key] = undefined;
+      }
+    } else {
+      dict[key] = undefined;
+    }
     return dict;
   }, {});
 }

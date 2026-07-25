@@ -32,7 +32,7 @@ const OptionRow = ({ item, onPress }: { item: Option; onPress: () => void }) => 
     : palette.text;
   return (
     <Pressable
-      disabled={item.disabled}
+      isDisabled={item.disabled}
       _disabled={{ opacity: 1 }}
       {...bind}
       bg={inverted ? palette.selectedBg : 'transparent'}
@@ -70,11 +70,11 @@ const ActionsheetSelect: FC<ActionsheetSelectProps> = ({
   }, [isOpen]);
 
   const handleClose = () => {
-    onClose && onClose();
+    onClose?.();
   };
   const handleChange = (value: string) => {
     return () => {
-      onChange && onChange(value);
+      onChange?.(value);
       handleClose();
     };
   };

@@ -12,12 +12,15 @@ export const useMessageToast = () => {
   useFocusEffect(
     useCallback(() => {
       if (message.length > 0) {
-        message.forEach((text) => {
+        const timeouts = message.map((text) =>
           setTimeout(() => {
             Toast.show({ title: text, duration: 5000, placement: 'bottom' });
-          }, 0);
-        });
+          }, 0)
+        );
         dispatch(throwMessage());
+        return () => {
+          timeouts.forEach((timeout) => clearTimeout(timeout));
+        };
       }
     }, [message, dispatch])
   );

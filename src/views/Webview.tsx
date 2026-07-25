@@ -1,8 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { action, useAppDispatch } from '~/redux';
 import { Plugin } from '~/plugins';
 import { WebView } from 'react-native-webview';
-import { useToast } from 'native-base';
+import { Center, Text, useToast } from 'native-base';
 import { SecureToken } from '~/utils/secureToken';
 import { useThemePalette } from '~/utils/theme/hooks';
 
@@ -54,16 +54,32 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
   );
   const credentialAcceptedRef = useRef(false);
   const titleRef = useRef('');
+  const loadErrorToastedRef = useRef(false);
+  const origin = useMemo(() => {
+    try {
+      return new URL(uri).origin;
+    } catch {
+      return undefined;
+    }
+  }, [uri]);
   const securedInjectedJavascript = injectedJavascript
     ? `window.__MANGA_READER_NONCE__=${JSON.stringify(sessionNonce)};\n${injectedJavascript}`
     : undefined;
+
+  if (!origin) {
+    return (
+      <Center flex={1} bg={palette.bg}>
+        <Text color={palette.text}>网页地址无效，无法打开</Text>
+      </Center>
+    );
+  }
 
   return (
     <WebView
       source={{ uri }}
       style={{ backgroundColor: palette.bg }}
       userAgent={userAgent}
-      originWhitelist={[new URL(uri).origin]}
+      originWhitelist={[origin]}
       onShouldStartLoadWithRequest={({ url }) => isAllowedWebviewUrl(uri, url)}
       sharedCookiesEnabled
       thirdPartyCookiesEnabled
@@ -75,11 +91,11 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
           isAllowedWebviewUrl(uri, event.nativeEvent.url)
         ) {
           const token = parseBikaTokenMessage(source, event.nativeEvent.data, sessionNonce);
-          if (token && source === Plugin.BIKA) {
+          if (token) {
             credentialAcceptedRef.current = true;
             try {
               await SecureToken.setBikaToken(token);
-              dispatch(setCredential({ source }));
+              dispatch(setCredential({ source: Plugin.BIKA }));
             } catch (error) {
               credentialAcceptedRef.current = false;
               toast.show({
@@ -87,6 +103,18 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
               });
             }
           }
+        }
+      }}
+      onError={() => {
+        if (!loadErrorToastedRef.current) {
+          loadErrorToastedRef.current = true;
+          toast.show({ title: '网页加载失败，请检查网络后重试' });
+        }
+      }}
+      onHttpError={({ nativeEvent }) => {
+        if (!loadErrorToastedRef.current) {
+          loadErrorToastedRef.current = true;
+          toast.show({ title: `网页加载失败（HTTP ${nativeEvent.statusCode}）` });
         }
       }}
       onNavigationStateChange={({ title }) => {

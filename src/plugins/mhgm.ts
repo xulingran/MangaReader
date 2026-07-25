@@ -295,18 +295,18 @@ class ManHuaGuiMobile extends Base {
     };
     const chapters: ChapterItem[] = [];
 
-    const scriptContent =
-      ($('script:not([src]):not([type])').toArray() as cheerio.TagElement[]).filter((script) =>
-        PATTERN_MANGA_INFO.test(script.children[0].data || '')
-      )[0].children[0].data || '';
+    const scriptNode = ($('script:not([src]):not([type])').toArray() as cheerio.TagElement[]).find(
+      (script) => PATTERN_MANGA_INFO.test(script.children?.[0]?.data || '')
+    );
+    const scriptContent = scriptNode?.children?.[0]?.data || '';
     const [, mangaId] = scriptContent.match(PATTERN_MANGA_INFO) || [];
     const statusLabel = $('div.book-detail div.thumb i').first().text(); // 连载 or 完结
 
-    const [latest, updateTimeLabel = '', authorLabel = '', tagLabel] = $('div.cont-list dl')
+    const [latest, updateTimeLabel = '', authorLabel = '', tagLabel = ''] = $('div.cont-list dl')
       .toArray()
       .map((dl) => $(dl).text());
-    const [, tag] = tagLabel.match(PATTERN_TAG) || [];
-    const [, author] = authorLabel.match(PATTERN_AUTHOR) || [];
+    const [, tag] = (tagLabel || '').match(PATTERN_TAG) || [];
+    const [, author] = (authorLabel || '').match(PATTERN_AUTHOR) || [];
     const [updateTime = ''] = updateTimeLabel.match(PATTERN_FULL_TIME) || [];
 
     const isAudit = $('#erroraudit_show').length > 0;
@@ -362,8 +362,8 @@ class ManHuaGuiMobile extends Base {
     manga.infoCover = 'https:' + $('div.thumb img').first().attr('src');
     manga.latest = latest;
     manga.updateTime = updateTime;
-    manga.author = author.split(',');
-    manga.tag = tag.split(',');
+    manga.author = (author || '').split(',').filter(Boolean);
+    manga.tag = (tag || '').split(',').filter(Boolean);
     manga.chapters = chapters;
 
     return { manga };
@@ -372,13 +372,13 @@ class ManHuaGuiMobile extends Base {
   handleChapter: Base['handleChapter'] = (text: string | null) => {
     const $ = cheerio.load(text || '');
     const scriptAfterFilter = ($('script:not([src])').toArray() as cheerio.TagElement[]).filter(
-      (item) => PATTERN_SCRIPT.test(item.children[0].data || '')
+      (item) => PATTERN_SCRIPT.test(item.children?.[0]?.data || '')
     );
 
     if (scriptAfterFilter.length <= 0) {
       throw new Error(ErrorMessage.MissingChapterInfo);
     }
-    const script = scriptAfterFilter[0].children[0].data || '';
+    const script = scriptAfterFilter[0].children?.[0]?.data || '';
     const [, scriptContent] = script.match(PATTERN_SCRIPT) || [];
     const readerScript = unpackPacker(scriptContent);
     const [, stringifyData] = readerScript.match(PATTERN_READER_DATA) || [];

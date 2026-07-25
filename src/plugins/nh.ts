@@ -19,8 +19,6 @@ interface NhListItem {
 
 interface NhListResponse {
   result?: NhListItem[];
-  num_pages?: number;
-  total_pages?: number;
 }
 
 interface NhDetailResponse {
@@ -185,8 +183,11 @@ class NHentai extends Base {
   });
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: NhDetailResponse, mangaId) => {
-    if (!response.id || String(response.id) !== mangaId) {
+    if (!response.id) {
       throw new Error('NHentai 详情数据缺失');
+    }
+    if (String(response.id) !== mangaId) {
+      throw new Error('NHentai 返回了错误的漫画数据');
     }
     const tags = response.tags || [];
     const title =

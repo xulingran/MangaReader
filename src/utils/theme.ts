@@ -1,5 +1,36 @@
 import { extendTheme } from 'native-base';
 
+/** ghost 与 link 共用：透明底、按压瞬时反色，仅语义不同。 */
+const ghostLikeVariant = {
+  bg: 'transparent',
+  _text: { color: 'black', fontWeight: 'bold' },
+  _icon: { color: 'black' },
+  _pressed: {
+    bg: 'black',
+    _text: { color: 'white' },
+    _icon: { color: 'white' },
+  },
+  _disabled: {
+    opacity: 1,
+    _text: { color: 'gray.400' },
+    _icon: { color: 'gray.400' },
+  },
+  _dark: {
+    _text: { color: 'white' },
+    _icon: { color: 'white' },
+    _pressed: {
+      bg: 'white',
+      _text: { color: 'black' },
+      _icon: { color: 'black' },
+    },
+    _disabled: {
+      opacity: 1,
+      _text: { color: 'gray.600' },
+      _icon: { color: 'gray.600' },
+    },
+  },
+};
+
 /** 电子墨水主题：只保留黑白与有限灰阶，并由 Android uiMode 驱动 NativeBase。 */
 export const customTheme = extendTheme({
   colors: {
@@ -108,64 +139,8 @@ export const customTheme = extendTheme({
             },
           },
         },
-        ghost: {
-          bg: 'transparent',
-          _text: { color: 'black', fontWeight: 'bold' },
-          _icon: { color: 'black' },
-          _pressed: {
-            bg: 'black',
-            _text: { color: 'white' },
-            _icon: { color: 'white' },
-          },
-          _disabled: {
-            opacity: 1,
-            _text: { color: 'gray.400' },
-            _icon: { color: 'gray.400' },
-          },
-          _dark: {
-            _text: { color: 'white' },
-            _icon: { color: 'white' },
-            _pressed: {
-              bg: 'white',
-              _text: { color: 'black' },
-              _icon: { color: 'black' },
-            },
-            _disabled: {
-              opacity: 1,
-              _text: { color: 'gray.600' },
-              _icon: { color: 'gray.600' },
-            },
-          },
-        },
-        link: {
-          bg: 'transparent',
-          _text: { color: 'black', fontWeight: 'bold' },
-          _icon: { color: 'black' },
-          _pressed: {
-            bg: 'black',
-            _text: { color: 'white' },
-            _icon: { color: 'white' },
-          },
-          _disabled: {
-            opacity: 1,
-            _text: { color: 'gray.400' },
-            _icon: { color: 'gray.400' },
-          },
-          _dark: {
-            _text: { color: 'white' },
-            _icon: { color: 'white' },
-            _pressed: {
-              bg: 'white',
-              _text: { color: 'black' },
-              _icon: { color: 'black' },
-            },
-            _disabled: {
-              opacity: 1,
-              _text: { color: 'gray.600' },
-              _icon: { color: 'gray.600' },
-            },
-          },
-        },
+        ghost: ghostLikeVariant,
+        link: ghostLikeVariant,
       },
     },
     IconButton: {

@@ -1,10 +1,9 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
-import { useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
-import { Box, Button, HStack, useDisclose, View } from 'native-base';
+import { useFocusEffect } from '@react-navigation/native';
+import { Box, View } from 'native-base';
 import { nonNullable, AsyncStatus } from '~/utils';
-import { PluginMap } from '~/plugins';
-import ActionsheetSelect from '~/components/ActionsheetSelect';
+import SearchOption from '~/components/SearchOption';
 import Bookshelf from '~/components/Bookshelf';
 import { useThemePalette } from '~/utils/theme/hooks';
 
@@ -14,6 +13,7 @@ const Search = ({ route, navigation }: StackSearchProps) => {
   const { keyword, source } = route.params;
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.search.list);
+  const filter = useAppSelector((state) => state.search.filter);
   const loadStatus = useAppSelector((state) => state.search.loadStatus);
   // 只订阅搜索结果对应的 manga，并做浅比较；后台更新无关 manga 不触发重渲染
   const searchList = useAppShallowSelector((state) =>
@@ -42,10 +42,17 @@ const Search = ({ route, navigation }: StackSearchProps) => {
     },
     [navigation]
   );
+  const handleFilterChange = useCallback(
+    (name: string, value: string) => {
+      dispatch(setSearchFilter({ [name]: value }));
+      dispatch(loadSearch({ keyword, source, isReset: true }));
+    },
+    [dispatch, keyword, source]
+  );
 
   return (
     <View flex={1} bg={palette.bg}>
-      <SearchOption />
+      <SearchOption source={source} filter={filter} type="search" onChange={handleFilterChange} />
       <Box bg={palette.bg} flex={1}>
         <Bookshelf
           emptyText="没找到相关漫画~"
@@ -57,77 +64,6 @@ const Search = ({ route, navigation }: StackSearchProps) => {
         />
       </Box>
     </View>
-  );
-};
-
-export const SearchOption = () => {
-  const route = useRoute<RouteProp<RootStackParamList, 'Search'>>();
-  const source = route.params.source;
-  const dispatch = useAppDispatch();
-  const filter = useAppSelector((state) => state.search.filter);
-  const keyword = useAppSelector((state) => state.search.keyword);
-  const { isOpen, onOpen, onClose } = useDisclose();
-  const [key, setKey] = useState<string>('');
-  const [options, setOptions] = useState<OptionItem[]>([]);
-  const palette = useThemePalette();
-
-  const searchOptions = useMemo(() => {
-    return (PluginMap.get(source)?.option.search || []).map((item) => {
-      const value = filter[item.name] || item.defaultValue;
-      const label = item.options.find((option) => option.value === value)?.label || '';
-      return {
-        ...item,
-        value,
-        label,
-      };
-    });
-  }, [source, filter]);
-
-  const handlePress = (name: string, newOptions: OptionItem[]) => {
-    return () => {
-      setKey(name);
-      setOptions(newOptions);
-      onOpen();
-    };
-  };
-  const handleChange = (newVal: string) => {
-    dispatch(setSearchFilter({ [key]: newVal }));
-    dispatch(loadSearch({ keyword, source, isReset: true }));
-  };
-
-  if (searchOptions.length <= 0) {
-    return null;
-  }
-
-  return (
-    <HStack
-      safeAreaX
-      px={2}
-      pb={2}
-      bg={palette.bg}
-      borderBottomWidth={1}
-      borderColor={palette.border}
-    >
-      {searchOptions.map((item) => {
-        return (
-          <Button
-            key={item.name}
-            variant="ghost"
-            _text={{ color: palette.text, fontWeight: 'bold' }}
-            onPress={handlePress(item.name, item.options)}
-          >
-            {item.label}
-          </Button>
-        );
-      })}
-
-      <ActionsheetSelect
-        isOpen={isOpen}
-        onClose={onClose}
-        options={options}
-        onChange={handleChange}
-      />
-    </HStack>
   );
 };
 

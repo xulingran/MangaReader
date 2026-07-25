@@ -10,10 +10,9 @@ declare module 'native-base' {
 }
 
 declare global {
-  type GET = 'GET' | 'get';
-  type POST = 'POST' | 'post';
-
-  type ArrayFirst<T> = T extends [infer U, ...any[]] ? U : any;
+  type PartialOption<T, K extends string | number | symbol> = Omit<T, K> & {
+    [A in Extract<keyof T, K>]?: T[A];
+  };
 
   type FetchResponseAction<T = undefined> = PayloadAction<
     undefined extends T
@@ -23,12 +22,10 @@ declare global {
           | { error?: undefined; data: T; actionId?: string }
   >;
 
-  type KeyValuePair = [string, string | null];
-
   interface FetchData {
     url: string;
-    method?: GET | POST;
-    body?: FormData | Record<string, any>;
+    method?: 'GET' | 'get' | 'POST' | 'post';
+    body?: FormData | Record<string, unknown>;
     headers?: Headers;
     timeout?: number;
     /** 仅认证型接口在 401/403 时覆盖通用 HTTP 错误。 */

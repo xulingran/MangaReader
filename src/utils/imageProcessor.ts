@@ -20,6 +20,22 @@ interface ImageProcessorNativeModule {
   cancel(requestId: string): void;
 }
 
+const requireModule = (): ImageProcessorNativeModule => {
+  const nativeModule = NativeModules.ImageProcessorModule as ImageProcessorNativeModule | undefined;
+  if (Platform.OS !== 'android' || !nativeModule) {
+    throw new Error('当前平台不支持扰乱图片处理');
+  }
+  return nativeModule;
+};
+
+const getModule = (): ImageProcessorNativeModule | undefined => {
+  try {
+    return requireModule();
+  } catch {
+    return undefined;
+  }
+};
+
 export const ImageProcessor = {
   unscramble(
     sourcePath: string,
@@ -28,17 +44,14 @@ export const ImageProcessor = {
     maxPixels: number,
     requestId: string
   ) {
-    const module = NativeModules.ImageProcessorModule as ImageProcessorNativeModule | undefined;
-    if (Platform.OS !== 'android' || !module) {
-      return Promise.reject(new Error('当前平台不支持扰乱图片处理'));
+    try {
+      return requireModule().unscramble(sourcePath, outputPath, splitCount, maxPixels, requestId);
+    } catch (error) {
+      return Promise.reject(error);
     }
-    return module.unscramble(sourcePath, outputPath, splitCount, maxPixels, requestId);
   },
   cancel(requestId: string) {
-    const module = NativeModules.ImageProcessorModule as ImageProcessorNativeModule | undefined;
-    if (Platform.OS === 'android' && module) {
-      module.cancel(requestId);
-    }
+    getModule()?.cancel(requestId);
   },
 };
 
@@ -47,9 +60,11 @@ export const unlinkTemporaryImage = async (path: string, attempts = 3): Promise<
     try {
       await FileSystem.unlink(path);
       return;
-    } catch {
+    } catch (error) {
       if (attempt + 1 < attempts) {
         await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      } else {
+        console.warn('An error in unlinkTemporaryImage:', error);
       }
     }
   }

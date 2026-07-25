@@ -40,7 +40,6 @@ const VectorIcon = ({
   size = 'xl',
   color,
   onPress,
-  shadow,
   source = 'materialIcons',
   isDisabled,
   disabled,
@@ -65,19 +64,10 @@ const VectorIcon = ({
       bg={pressed ? palette.selectedBg : 'transparent'}
       _pressed={{ bg: palette.selectedBg }}
       _disabled={{ opacity: 1, bg: 'transparent' }}
-      icon={
-        <Icon
-          shadow={shadow}
-          as={sourceMap[source]}
-          name={name}
-          size={size}
-          color={iconColor}
-        />
-      }
+      icon={<Icon as={sourceMap[source]} name={name} size={size} color={iconColor} />}
       onPress={onPress}
       {...bind}
       isDisabled={disabledState}
-      disabled={disabledState}
       {...props}
     />
   );

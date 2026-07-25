@@ -1,28 +1,20 @@
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
-import {
-  type DimensionValue,
-  type ImageLoadEventData,
-  type ImageResizeMode,
-  type NativeSyntheticEvent,
-  StyleSheet,
-} from 'react-native';
-import { Box, Center, Icon, Text } from 'native-base';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import React, { memo, useCallback, useRef, useState } from 'react';
+import { type ImageLoadEventData, type NativeSyntheticEvent, StyleSheet } from 'react-native';
+import { Box, Center } from 'native-base';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { useFocusEffect } from '@react-navigation/native';
-import { aspectFit, AsyncStatus, LayoutMode, Orientation } from '~/utils';
+import { aspectFit, AsyncStatus, LayoutMode } from '~/utils';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
 import ErrorWithRetry from './ErrorWithRetry';
 import NativeScrambleImage from './NativeScrambleImage';
 import StaticCachedImage from './StaticCachedImage';
-import { useThemePalette } from '~/utils/theme/hooks';
-
-const resizeModeDict: Record<LayoutMode, ImageResizeMode> = {
-  [LayoutMode.Horizontal]: 'contain',
-  [LayoutMode.Vertical]: 'cover',
-  [LayoutMode.Multiple]: 'contain',
-};
-const defaultState: ImageState = { dataUrl: '', loadStatus: AsyncStatus.Default };
+import {
+  EMPTY_HEADERS,
+  EMPTY_IMAGE_STATE,
+  ImagePlaceholder,
+  resizeModeDict,
+  useFillStyle,
+} from './ComicImageShared';
 
 export interface ImageState {
   /** 普通图为原始 URL，扰乱图为 file:// 临时文件。 */
@@ -50,64 +42,13 @@ export interface ComicImageProps extends ImageProps {
   needUnscramble?: boolean;
 }
 
-const StaticPlaceholder = () => {
-  const palette = useThemePalette();
-  return (
-    <Center
-      position="absolute"
-      top={0}
-      left={0}
-      right={0}
-      bottom={0}
-      bg={palette.imagePlaceholder}
-    >
-      <Icon as={MaterialIcons} name="image" size={10} color={palette.disabled} />
-      <Text color={palette.subText} fontSize="sm" pt={1}>
-        加载中…
-      </Text>
-    </Center>
-  );
-};
-
-const useFillStyle = (
-  layoutMode: LayoutMode,
-  imageState: ImageState,
-  orientation: Orientation,
-  defaultPortraitHeight: number,
-  defaultLandscapeHeight: number
-) =>
-  useMemo<{ width: DimensionValue; height: DimensionValue }>(() => {
-    if (layoutMode === LayoutMode.Horizontal) {
-      return { width: '100%', height: '100%' };
-    }
-    if (layoutMode === LayoutMode.Vertical) {
-      return {
-        width: '100%',
-        height:
-          orientation === Orientation.Landscape
-            ? imageState.landscapeHeight || defaultLandscapeHeight
-            : imageState.portraitHeight || defaultPortraitHeight,
-      };
-    }
-    return {
-      width: imageState.multipleFitWidth || '100%',
-      height: imageState.multipleFitHeight || '100%',
-    };
-  }, [
-    defaultLandscapeHeight,
-    defaultPortraitHeight,
-    imageState,
-    layoutMode,
-    orientation,
-  ]);
-
 /** 普通漫画图直接交给磁盘缓存组件，不把图片转换为 Base64。 */
 const DefaultImage = ({
   uri,
   index,
-  headers = {},
+  headers = EMPTY_HEADERS,
   layoutMode = LayoutMode.Horizontal,
-  prevState = defaultState,
+  prevState = EMPTY_IMAGE_STATE,
   defaultPortraitHeight,
   defaultLandscapeHeight,
   onChange,
@@ -183,7 +124,7 @@ const DefaultImage = ({
           onRetry={async () => {
             await CacheManager.removeCacheEntry(uri).catch(() => {});
             setReloadVersion((version) => version + 1);
-            setImageState({ ...defaultState, loadStatus: AsyncStatus.Pending });
+            setImageState({ ...EMPTY_IMAGE_STATE, loadStatus: AsyncStatus.Pending });
           }}
         />
       </Center>
@@ -201,14 +142,14 @@ const DefaultImage = ({
         onLoad={handleLoad}
         onError={handleError}
       />
-      {imageState.loadStatus !== AsyncStatus.Fulfilled && <StaticPlaceholder />}
+      {imageState.loadStatus !== AsyncStatus.Fulfilled && <ImagePlaceholder />}
     </Box>
   );
 };
 
 const ComicImage = ({ needUnscramble, ...props }: ComicImageProps) => {
   if (needUnscramble) {
-    return <NativeScrambleImage needUnscramble {...props} />;
+    return <NativeScrambleImage {...props} />;
   }
   return <DefaultImage {...props} />;
 };

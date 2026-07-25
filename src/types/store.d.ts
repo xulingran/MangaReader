@@ -20,7 +20,7 @@ declare global {
     sourceName: string;
     mangaId: string;
     // redundancy data for init after upgrade
-    // remove it when next version
+    // 旧版本持久化数据的兜底字段，新数据不再写入
     cover?: string;
     bookCover: string;
     infoCover: string;
@@ -33,19 +33,18 @@ declare global {
     status: MangaStatus;
     chapters: ChapterItem[];
   }
-  interface IncreaseManga
-    extends PartialOption<
-      Manga,
-      | 'latest'
-      | 'updateTime'
-      | 'author'
-      | 'tag'
-      | 'status'
-      | 'chapters'
-      | 'bookCover'
-      | 'infoCover'
-      | 'title'
-    > {}
+  type IncreaseManga = PartialOption<
+    Manga,
+    | 'latest'
+    | 'updateTime'
+    | 'author'
+    | 'tag'
+    | 'status'
+    | 'chapters'
+    | 'bookCover'
+    | 'infoCover'
+    | 'title'
+  >;
   interface ChapterItem {
     hash: string;
     mangaId: string;
@@ -78,7 +77,6 @@ declare global {
     publishTime: string;
     file?: {
       apk: { size: number; downloadUrl: string };
-      ipa: { size: number; downloadUrl: string };
     };
   }
   interface Task {

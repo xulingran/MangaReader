@@ -188,7 +188,7 @@ abstract class Base {
    * @param {Record<string, any>} _data
    * @memberof Base
    */
-  public syncExtraData(_data: Record<string, any>) {}
+  public syncExtraData(_data: Record<string, any>): string | void {}
 
   /**
    * @description optional: build account login request, plugins without login leave it undefined
@@ -217,7 +217,7 @@ abstract class Base {
    * @param {cheerio.Root} $
    * @memberof Base
    */
-  public checkCloudFlare = ($: cheerio.Root, cfTitle?: string) => {
+  public checkCloudFlare($: cheerio.Root, cfTitle?: string) {
     const title = $('title').first().text().trim();
 
     if (title === 'Just a moment...' || (typeof cfTitle === 'string' && title === cfTitle)) {

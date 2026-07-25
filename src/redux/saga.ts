@@ -35,6 +35,7 @@ import { Dirs, FileSystem } from 'react-native-file-access';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { pick, type DocumentPickerResponse } from '@react-native-documents/picker';
+import Cache from '~/utils/cache';
 import { Storage, KeyValuePair } from '~/utils/storage';
 import dayjs from 'dayjs';
 import Share from 'react-native-share';
@@ -106,6 +107,7 @@ export const assertJsonSizeWithinLimit = (value: unknown, limit: number): number
   const add = (current: number, amount: number) => {
     const next = current + amount;
     if (next > limit) {
+      // 上限固定为 64MB（见 MAX_BACKUP_BYTES），文案保持稳定以便测试与用户认知一致
       throw new Error('备份数据超过 64MB 限制，请先清理非收藏缓存');
     }
     return next;
@@ -115,7 +117,7 @@ export const assertJsonSizeWithinLimit = (value: unknown, limit: number): number
     if (item === null) return 4;
     if (typeof item === 'string') return jsonStringByteLength(item);
     if (typeof item === 'boolean') return item ? 4 : 5;
-    if (typeof item === 'number') return JSON.stringify(item)?.length ?? 4;
+    if (typeof item === 'number') return JSON.stringify(item).length;
     if (typeof item !== 'object') return 0;
     if (visiting.has(item)) throw new Error('备份数据包含循环引用');
     visiting.add(item);
@@ -1152,6 +1154,16 @@ function* clearCacheSaga() {
         '清空安全凭据失败：' + (error instanceof Error ? error.message : ErrorMessage.Unknown)
       );
     }
+    // 清掉 DocumentDir/@cache/ 下持久化的图片尺寸缓存，否则它会无限累积
+    try {
+      yield call([Cache, Cache.clearCache]);
+    } catch (error) {
+      credentialError =
+        credentialError ||
+        new Error(
+          '清空尺寸缓存失败：' + (error instanceof Error ? error.message : ErrorMessage.Unknown)
+        );
+    }
     syncPluginExtraData({});
     yield put(syncData());
     const { payload }: ReturnType<typeof syncDataCompletion> = yield take(syncDataCompletion.type);
@@ -1767,48 +1779,54 @@ function* fileExport({
   }
 }
 function* thread() {
-  while (true) {
-    const queue = ((state: RootState) =>
-      state.task.job.list.filter((item) => item.status === AsyncStatus.Default))(yield select());
-    const job = queue.shift();
-
-    if (!nonNullable(job)) {
-      yield delay(100);
-      yield put(finishJob());
-      break;
-    }
-
-    const { taskId, jobId, chapterHash, type, source, headers, index } = job;
-    yield put(startJob({ taskId, jobId }));
-    try {
-      const task = ((state: RootState) => state.task.list.find((item) => item.taskId === taskId))(
+  try {
+    while (true) {
+      const queue = ((state: RootState) =>
+        state.task.job.list.filter((item) => item.status === AsyncStatus.Default))(
         yield select()
       );
-      if (!nonNullable(task)) {
-        throw new Error(ErrorMessage.ExecutionJobFail);
+      const job = queue.shift();
+
+      if (!nonNullable(job)) {
+        yield delay(100);
+        break;
       }
 
-      const { cachedPath, timeout } = yield race({
-        cachedPath: call(fileDownload, { source, headers }),
-        timeout: delay(10000),
-      });
-      if (timeout) {
-        throw new Error(ErrorMessage.Timeout);
-      }
+      const { taskId, jobId, chapterHash, type, source, headers, index } = job;
+      yield put(startJob({ taskId, jobId }));
+      try {
+        const task = ((state: RootState) =>
+          state.task.list.find((item) => item.taskId === taskId))(yield select());
+        if (!nonNullable(task)) {
+          throw new Error(ErrorMessage.ExecutionJobFail);
+        }
 
-      yield put(viewImage({ chapterHash, index, isVisited: false }));
-      if (type === TaskType.Export) {
-        yield call(fileExport, {
-          path: cachedPath,
-          filename: String(index),
-          chapterHash,
-          downloadPath: task.downloadPath,
+        const { cachedPath, timeout } = yield race({
+          cachedPath: call(fileDownload, { source, headers }),
+          timeout: delay(10000),
         });
+        if (timeout) {
+          throw new Error(ErrorMessage.Timeout);
+        }
+
+        yield put(viewImage({ chapterHash, index, isVisited: false }));
+        if (type === TaskType.Export) {
+          yield call(fileExport, {
+            path: cachedPath,
+            filename: String(index),
+            chapterHash,
+            downloadPath: task.downloadPath,
+          });
+        }
+        yield put(endJob({ taskId, jobId, status: AsyncStatus.Fulfilled }));
+      } catch (e) {
+        yield put(endJob({ taskId, jobId, status: AsyncStatus.Rejected }));
       }
-      yield put(endJob({ taskId, jobId, status: AsyncStatus.Fulfilled }));
-    } catch (e) {
-      yield put(endJob({ taskId, jobId, status: AsyncStatus.Rejected }));
     }
+  } finally {
+    // 线程无论正常退出、被取消还是抛异常都必须上报 finishJob，
+    // 否则 taskManagerSaga 的 take(finishJob) 计数永远凑不齐 max，管理器会永久挂起。
+    yield put(finishJob());
   }
 }
 export function* preloadChapter(chapterHash: string) {

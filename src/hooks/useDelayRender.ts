@@ -8,7 +8,7 @@ export const useDelayRender = (defaultValue = false, duration = 0) => {
       setRender(true);
     }, duration);
     return () => clearTimeout(timeout);
-  }, [duration, setRender]);
+  }, [duration]);
 
   return render;
 };

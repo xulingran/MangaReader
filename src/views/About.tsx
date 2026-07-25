@@ -1,5 +1,15 @@
-import React, { Fragment } from 'react';
-import { Icon, Text, Button, VStack, Center, ScrollView, useDisclose, View } from 'native-base';
+import React, { useEffect, useRef } from 'react';
+import {
+  Icon,
+  Text,
+  Button,
+  VStack,
+  Center,
+  ScrollView,
+  useDisclose,
+  useToast,
+  View,
+} from 'native-base';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { Linking } from 'react-native';
 import { CacheManager } from '@georstat/react-native-image-cache';
@@ -24,6 +34,8 @@ const About = () => {
     onClose: onAlbumPathClose,
   } = useDisclose();
   const dispatch = useAppDispatch();
+  const toast = useToast();
+  const clearingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const release = useAppSelector((state) => state.release);
   const clearStatus = useAppSelector((state) => state.datasync.clearStatus);
   const backupStatus = useAppSelector((state) => state.datasync.backupStatus);
@@ -32,6 +44,14 @@ const About = () => {
   const themeMode = useAppSelector((state) => state.setting.themeMode);
   const resolvedThemeMode = useResolvedThemeMode();
   const palette = useThemePalette();
+
+  useEffect(() => {
+    return () => {
+      if (clearingTimerRef.current) {
+        clearTimeout(clearingTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleRetry = () => {
     dispatch(loadLatestRelease());
@@ -45,18 +65,34 @@ const About = () => {
   };
 
   const handleApkDownload = () => {
-    if (release.latest) {
-      Linking.canOpenURL(release.latest.file?.apk.downloadUrl || '').then((supported) => {
-        supported && Linking.openURL(release.latest?.file?.apk.downloadUrl || '');
-      });
+    if (!release.latest) {
+      return;
     }
+    const downloadUrl = release.latest.file?.apk.downloadUrl || '';
+    Linking.canOpenURL(downloadUrl)
+      .then((supported) => {
+        if (supported) {
+          Linking.openURL(downloadUrl).catch(() => {
+            toast.show({ title: '打开下载链接失败' });
+          });
+        } else {
+          toast.show({ title: '当前设备无法打开下载链接' });
+        }
+      })
+      .catch(() => {
+        toast.show({ title: '打开下载链接失败' });
+      });
   };
 
   const handleImageCacheClear = () => {
     openClearing();
-    CacheManager.clearCache().finally(() => {
-      setTimeout(closeClearing, 500);
-    });
+    CacheManager.clearCache()
+      .catch(() => {
+        toast.show({ title: '清除图片缓存失败，请稍后重试' });
+      })
+      .finally(() => {
+        clearingTimerRef.current = setTimeout(closeClearing, 500);
+      });
   };
   const handleStorageCacheClear = () => {
     dispatch(clearCache());
@@ -91,7 +127,7 @@ const About = () => {
             <ErrorWithRetry color={palette.text} onRetry={handleRetry} />
           )}
           {release.loadStatus === AsyncStatus.Fulfilled && release.latest === undefined && (
-            <Center alignItems="center">
+            <Center>
               <Icon
                 as={MaterialIcons}
                 name="check-circle-outline"
@@ -104,7 +140,7 @@ const About = () => {
             </Center>
           )}
           {release.loadStatus === AsyncStatus.Fulfilled && release.latest !== undefined && (
-            <Fragment>
+            <>
               <Text color={palette.text} fontSize="lg" fontWeight="bold">
                 {release.latest.publishTime} {release.latest.version}
               </Text>
@@ -118,7 +154,7 @@ const About = () => {
               >
                 APK下载
               </Button>
-            </Fragment>
+            </>
           )}
 
           <ThemeModeSelector

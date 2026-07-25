@@ -5,15 +5,16 @@ import { CacheManager } from '@georstat/react-native-image-cache';
 import { AppRegistry } from 'react-native';
 import { Dirs } from 'react-native-file-access';
 import { name } from './app.json';
+import advancedFormat from 'dayjs/plugin/advancedFormat';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
 import dayjs from 'dayjs';
 import App from '~/App';
-
-require('dayjs/locale/zh-cn');
+import 'dayjs/locale/zh-cn';
 
 // https://day.js.org/docs/en/plugin/advanced-format
-dayjs.extend(require('dayjs/plugin/advancedFormat'));
+dayjs.extend(advancedFormat);
 // https://day.js.org/docs/zh-CN/plugin/custom-parse-format
-dayjs.extend(require('dayjs/plugin/customParseFormat'));
+dayjs.extend(customParseFormat);
 // https://day.js.org/docs/zh-CN/i18n/changing-locale
 dayjs.locale('zh-cn');
 

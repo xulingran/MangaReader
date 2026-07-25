@@ -4,8 +4,7 @@ import React, {
   useMemo,
   useCallback,
   useImperativeHandle,
-  forwardRef,
-  ForwardRefRenderFunction,
+  type Ref,
 } from 'react';
 import {
   getDefaultFillMedianHeight,
@@ -48,6 +47,9 @@ export const reportFulfilledImage = (
     onImageLoad?.(uri, chapterHash, current);
   }
 };
+/** 双页组换算全局页码 */
+const multiplePageOf = (items: { pre: number; current: number }[]) =>
+  items[0].pre + items[0].current - 1;
 const VerticalListHeader = () => <Box height={0} safeAreaTop />;
 const VerticalListFooter = () => <Box height={0} safeAreaBottom />;
 
@@ -75,6 +77,7 @@ export interface ReaderProps {
   onScrollBeginDrag?: (event?: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onScrollEndDrag?: (event?: NativeSyntheticEvent<NativeScrollEvent>) => void;
   cache: Cache;
+  ref?: Ref<ReaderRef>;
 }
 
 /**
@@ -85,12 +88,15 @@ export interface ReaderRef {
   clearStateRef: () => void;
 }
 
-const useTakeTwo = (data: Required<ReaderProps>['data'], size = 2, seat: MultipleSeat) => {
+const EMPTY_LIST: Required<ReaderProps>['data'] = [];
+const EMPTY_HEADERS: NonNullable<ReaderProps['headers']> = {};
+
+const useTakeTwo = (data: Required<ReaderProps>['data'], seat: MultipleSeat) => {
   return useMemo(() => {
     const list: Required<ReaderProps>['data']['0'][][] = [];
 
     for (let i = 0; i < data.length; ) {
-      const batch = data.slice(i, i + size).reduce<typeof data>((dict, item) => {
+      const batch = data.slice(i, i + 2).reduce<typeof data>((dict, item) => {
         if (dict.length <= 0) {
           dict.push(item);
         } else if (dict[0].chapterHash === item.chapterHash) {
@@ -104,33 +110,34 @@ const useTakeTwo = (data: Required<ReaderProps>['data'], size = 2, seat: Multipl
     }
 
     return list;
-  }, [data, size, seat]);
+  }, [data, seat]);
 };
 
-const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
-  {
-    initPage = 0,
-    inverted = false,
-    seat = MultipleSeat.AToB,
-    layoutMode = LayoutMode.Horizontal,
-    data = [],
-    headers = {},
-    onTap,
-    onLongPress,
-    onImageLoad,
-    onPageChange,
-    onLoadMore,
-    onZoomStart,
-    onZoomEnd,
-    onScroll,
-    onScrollBeginDrag,
-    onScrollEndDrag,
-    cache,
-  },
-  ref
-) => {
+const Reader = ({
+  ref,
+  initPage = 0,
+  inverted = false,
+  seat = MultipleSeat.AToB,
+  layoutMode = LayoutMode.Horizontal,
+  data = EMPTY_LIST,
+  headers = EMPTY_HEADERS,
+  onTap,
+  onLongPress,
+  onImageLoad,
+  onPageChange,
+  onLoadMore,
+  onZoomStart,
+  onZoomEnd,
+  onScroll,
+  onScrollBeginDrag,
+  onScrollEndDrag,
+  cache,
+}: ReaderProps) => {
   const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
-  const multipleData = useTakeTwo(data, 2, seat);
+  const multipleData = useTakeTwo(data, seat);
+  // 同一个 ref 在三种布局间复用：横向/纵向是单图项，双页是图项数组。
+  // FlashList 的泛型只影响 renderItem 的类型推断，scrollToIndex 与泛型无关，
+  // 这里用 any 与原始实现保持一致，避免三种 item 类型互不兼容导致的赋值冲突。
   const flashListRef = useRef<FlashList<any>>(null);
   const horizontalStateRef = useRef<(ImageState | null)[]>([]);
   const verticalStateRef = useRef<(ImageState | null)[]>([]);
@@ -186,7 +193,7 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       if (layoutMode === LayoutMode.Multiple) {
         const pair = multipleData[index];
         if (pair && pair.length > 0) {
-          onPageChangeRef.current(pair[0].pre + pair[0].current - 1);
+          onPageChangeRef.current(multiplePageOf(pair));
         }
       } else {
         onPageChangeRef.current(index);
@@ -276,8 +283,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       }
 
       const last = viewableItems[viewableItems.length - 1];
-      currentIndexRef.current = last.index || 0;
-      onPageChangeRef.current && onPageChangeRef.current(last.index || 0);
+      currentIndexRef.current = last.index ?? 0;
+      onPageChangeRef.current && onPageChangeRef.current(last.index ?? 0);
     },
     []
   );
@@ -288,9 +295,8 @@ const Reader: ForwardRefRenderFunction<ReaderRef, ReaderProps> = (
       }
 
       const last = viewableItems[viewableItems.length - 1];
-      currentIndexRef.current = last.index || 0;
-      onPageChangeRef.current &&
-        onPageChangeRef.current(last.item[0].pre + last.item[0].current - 1);
+      currentIndexRef.current = last.index ?? 0;
+      onPageChangeRef.current && onPageChangeRef.current(multiplePageOf(last.item));
     },
     []
   );
@@ -592,4 +598,4 @@ const areReaderPropsEqual = (previous: ReaderProps, next: ReaderProps) =>
   previous.cache === next.cache;
 
 // initPage 只在挂载时生效；翻页后忽略它，避免父页面进度更新让可见图片重新渲染。
-export default memo(forwardRef(Reader), areReaderPropsEqual);
+export default memo(Reader, areReaderPropsEqual);

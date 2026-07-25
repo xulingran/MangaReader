@@ -221,7 +221,10 @@ class MoeImg extends Base {
         headers: this.imageHeaders,
         title,
         latest: chapterTitle,
-        updateTime: updateTime ? dayjs(updateTime).format('YYYY-MM-DD') : undefined,
+        updateTime:
+          updateTime && dayjs(updateTime).isValid()
+            ? dayjs(updateTime).format('YYYY-MM-DD')
+            : undefined,
         author: authors,
         tag: tags,
         status: MangaStatus.End,
