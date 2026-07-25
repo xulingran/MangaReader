@@ -191,6 +191,27 @@ abstract class Base {
   public syncExtraData(_data: Record<string, any>) {}
 
   /**
+   * @description optional: build account login request, plugins without login leave it undefined
+   * @public
+   * @param {string} _username
+   * @param {string} _password
+   * @return {*}  {FetchData}
+   * @memberof Base
+   */
+  public prepareLoginFetch?(_username: string, _password: string): FetchData;
+
+  /**
+   * @description optional: parse login response into token
+   * @public
+   * @param {*} _response
+   * @return {*}  {({ error: Error; token?: undefined } | { error?: undefined; token: string })}
+   * @memberof Base
+   */
+  public handleLogin?(
+    _response: any
+  ): { error: Error; token?: undefined } | { error?: undefined; token: string };
+
+  /**
    * @description check response is hit by cloudflare protect
    * @public
    * @param {cheerio.Root} $

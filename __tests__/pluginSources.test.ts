@@ -5,7 +5,7 @@ import Bika from '~/plugins/bika';
 import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
-import { MangaStatus } from '~/utils';
+import { MangaStatus, ErrorMessage } from '~/utils';
 
 const hcomicItem = {
   _id: 'mongo-1',
@@ -219,6 +219,27 @@ test('Bika 使用参考协议签名并解析章节分页', () => {
 
   Bika.syncExtraData({});
   expect(Bika.prepareDiscoveryFetch(1, { sort: 'dd' }).headers?.get('authorization')).toBe('');
+});
+
+test('Bika 账号密码登录请求签名并解析 Token', () => {
+  const request = Bika.prepareLoginFetch('testuser', 'secret');
+  expect(request.url).toBe('https://picaapi.picacomic.com/auth/sign-in');
+  expect(request.method).toBe('POST');
+  // API 的 email 字段传的是账户名
+  expect(request.body).toEqual({ email: 'testuser', password: 'secret' });
+  expect(request.headers?.get('api-key')).toBe('C69BAF41DA5ABD1FFEDC6D2FEA56B');
+  expect(request.headers?.get('signature')).toMatch(/^[a-f0-9]{64}$/);
+
+  const success = Bika.handleLogin({ code: 200, data: { token: ' jwt-token ' } }) as {
+    token: string;
+  };
+  expect(success.token).toBe('jwt-token');
+
+  const wrongPassword = Bika.handleLogin({ code: 401, message: 'invalid' }) as { error: Error };
+  expect(wrongPassword.error.message).toBe(ErrorMessage.LoginFailBIKA);
+
+  const missing = Bika.handleLogin({ code: 200, data: {} }) as { error: Error };
+  expect(missing.error.message).toBe('哔咔登录响应缺少 Token');
 });
 
 test('肉漫屋适配新版列表、零基分页与搜索结果', () => {

@@ -1,19 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { Box, Text, VStack, HStack, ScrollView } from 'native-base';
 import { useDebouncedSafeAreaInsets } from '~/hooks';
 import { Plugin as PluginType } from '~/plugins';
 import ScoreRate from '~/components/ScoreRate';
 import VectorIcon from '~/components/VectorIcon';
+import LoginModal from '~/components/LoginModal';
 import { useThemePalette } from '~/utils/theme/hooks';
 
-const { sortPlugin, disablePlugin } = action;
+const { sortPlugin, disablePlugin, loginPlugin } = action;
 
 const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.plugin.list);
   const { left, right, bottom } = useDebouncedSafeAreaInsets();
   const palette = useThemePalette();
+  const [loginVisible, setLoginVisible] = useState(false);
 
   const move = (index: number, offset: -1 | 1) => {
     const target = index + offset;
@@ -93,9 +95,26 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               accessibilityState={{ checked: !item.disabled }}
               onPress={() => dispatch(disablePlugin(item.value as PluginType))}
             />
+            {item.value === PluginType.BIKA && (
+              <VectorIcon
+                name="login"
+                size="lg"
+                accessibilityLabel="账号密码登录"
+                onPress={() => setLoginVisible(true)}
+              />
+            )}
           </HStack>
         ))}
       </ScrollView>
+      <LoginModal
+        title="哔咔账号密码登录"
+        isOpen={loginVisible}
+        onClose={() => setLoginVisible(false)}
+        onSubmit={(username, password) => {
+          setLoginVisible(false);
+          dispatch(loginPlugin({ source: PluginType.BIKA, username, password }));
+        }}
+      />
     </Box>
   );
 };

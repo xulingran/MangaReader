@@ -82,7 +82,7 @@ patches/               # patch-package 补丁
 - 子类需实现 5 个 `prepare*Fetch` 方法（返回 `FetchData` 描述请求）和 5 个 `handle*` 方法（把响应解析成统一数据结构）：discovery（发现页）、search、mangaInfo、chapterList、chapter
 - 漫画/章节的唯一标识是 hash：`combineHash(plugin, mangaId, chapterId?)`，格式为 `插件ID&mangaId&chapterId`，用 `splitHash` 解码
 - 新增加插件：新建文件继承 `Base` → 在 `Plugin` 枚举中登记 → 在 `src/plugins/index.ts` 的 `PluginMap` 中注册
-- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态；Bika Token 由 WebView 获取后仅存入 Android Keystore（`SecureTokenModule`），不进入 Redux/备份
+- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态；Bika 支持账号密码登录（Plugin 页登录按钮 → `loginPlugin` saga → 签名 POST `auth/sign-in`）或 WebView 获取，Token 仅存入 Android Keystore（`SecureTokenModule`），不进入 Redux/备份，账号密码不持久化
 - `batchDelay` 控制批量更新时的请求间隔，避免触发源站风控
 
 ## 状态与 Schema

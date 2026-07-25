@@ -74,6 +74,12 @@ interface BikaChapterResponse {
   };
 }
 
+interface BikaLoginResponse {
+  code: number;
+  message?: string;
+  data?: { token?: string };
+}
+
 const API_BASE_URL = 'https://picaapi.picacomic.com/';
 const API_KEY = 'C69BAF41DA5ABD1FFEDC6D2FEA56B';
 const SECRET_KEY = '~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn';
@@ -98,7 +104,7 @@ class Bika extends Base {
       id: Plugin.BIKA,
       name: '哔咔漫画',
       shortName: 'Bika',
-      description: '需要代理和登录，请先点击来源链接获取 Token',
+      description: '需要代理和登录，可点右侧图标用账号密码登录，或点来源链接在 WebView 获取 Token',
       href: 'https://manhuabika.com/plogin/',
       userAgent,
       defaultHeaders: {
@@ -241,6 +247,18 @@ class Bika extends Base {
     };
   };
 
+  prepareLoginFetch: NonNullable<Base['prepareLoginFetch']> = (username, password) => {
+    const path = 'auth/sign-in';
+    return {
+      url: API_BASE_URL + path,
+      method: 'POST',
+      // API 的 email 字段实际传账户名（哔咔账号并非邮箱）
+      body: { email: username, password },
+      headers: this.getHeaders(path, 'POST'),
+      timeout: 20000,
+    };
+  };
+
   prepareMangaInfoFetch: Base['prepareMangaInfoFetch'] = (mangaId) =>
     this.getRequest(`comics/${mangaId}`);
 
@@ -249,6 +267,21 @@ class Bika extends Base {
 
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, page) =>
     this.getRequest(`comics/${mangaId}/order/${chapterId}/pages`, { page });
+
+  handleLogin: NonNullable<Base['handleLogin']> = (response: BikaLoginResponse) => {
+    if (response.code !== 200) {
+      const message =
+        response.code === 401 || response.code === 403
+          ? ErrorMessage.LoginFailBIKA
+          : ErrorMessage.WrongResponse + (response.message || response.code);
+      return { error: new Error(message) };
+    }
+    const token = response.data?.token?.trim();
+    if (!token) {
+      return { error: new Error('哔咔登录响应缺少 Token') };
+    }
+    return { token };
+  };
 
   handleDiscovery: Base['handleDiscovery'] = (response: BikaListResponse) => {
     if (response.code !== 200) {

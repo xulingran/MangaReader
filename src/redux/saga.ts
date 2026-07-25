@@ -293,6 +293,7 @@ const {
   // plugin
   setSource,
   setCredential,
+  loginPlugin,
   sortPlugin,
   disablePlugin,
   syncPlugin,
@@ -493,6 +494,67 @@ function* pluginSyncDataSaga() {
       if (typeof message === 'string') {
         yield put(toastMessage(message));
       }
+    }
+  );
+}
+
+function* loginPluginSaga() {
+  yield takeLeadingSuspense(
+    loginPlugin.type,
+    function* ({ payload: { source, username, password } }: ReturnType<typeof loginPlugin>) {
+      const plugin = PluginMap.get(source);
+
+      if (!plugin || !plugin.prepareLoginFetch || !plugin.handleLogin) {
+        yield put(toastMessage(ErrorMessage.PluginMissing));
+        return;
+      }
+
+      const account = username.trim();
+      if (!account || !password) {
+        yield put(toastMessage('请输入账户名和密码'));
+        return;
+      }
+
+      const { error: prepareError, request } = tryPrepare(() =>
+        (plugin.prepareLoginFetch as NonNullable<typeof plugin.prepareLoginFetch>)(
+          account,
+          password
+        )
+      );
+      if (prepareError || !request) {
+        yield put(toastMessage((prepareError || new Error(ErrorMessage.Unknown)).message));
+        return;
+      }
+
+      const { error: fetchError, data } = yield call(fetchData, request);
+      if (fetchError) {
+        yield put(toastMessage(fetchError.message));
+        return;
+      }
+
+      const { error: loginError, token } = (
+        plugin.handleLogin as NonNullable<typeof plugin.handleLogin>
+      )(data);
+      if (loginError || !token) {
+        yield put(toastMessage((loginError || new Error(ErrorMessage.Unknown)).message));
+        return;
+      }
+
+      if (source === Plugin.BIKA) {
+        try {
+          yield call(SecureToken.setBikaToken, token);
+        } catch (error) {
+          yield put(
+            toastMessage(
+              error instanceof Error ? error.message : '安全保存 Bika Token 失败'
+            )
+          );
+          return;
+        }
+      }
+
+      const message = plugin.syncExtraData({ bikaToken: token });
+      yield put(toastMessage(typeof message === 'string' ? message : '登录成功'));
     }
   );
 }
@@ -1965,6 +2027,7 @@ export default function* rootSaga() {
 
     fork(launchSaga),
     fork(pluginSyncDataSaga),
+    fork(loginPluginSaga),
     fork(syncDataSaga),
     fork(backupSaga),
     fork(restoreSaga),

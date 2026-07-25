@@ -246,6 +246,10 @@ const pluginSlice = createSlice({
       state.source = action.payload;
     },
     setCredential(_state, _action: PayloadAction<{ source: Plugin }>) {},
+    loginPlugin(
+      _state,
+      _action: PayloadAction<{ source: Plugin; username: string; password: string }>
+    ) {},
     disablePlugin(state, action: PayloadAction<Plugin>) {
       const index = state.list.findIndex((item) => item.value === action.payload);
 
