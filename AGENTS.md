@@ -47,7 +47,9 @@ Windows 环境下注意：`yarn build-android*` 里的 `./gradlew` 是 Unix 写�
 ## 目录结构与模块划分
 
 ```
-index.js               # 入口：dayjs 中文 locale、注入 process.env.NAME/VERSION/PUBLISH_TIME、
+bootstrap.js           # 注入 process.env.NAME/VERSION/PUBLISH_TIME；必须最先加载
+                       # （initialState 在模块求值时读取这些值，晚于 slice 求值注入会固化成 undefined）
+index.js               # 入口：第一个 import './bootstrap'，dayjs 中文 locale、
                        # 配置图片缓存（512MB 上限、淡入 0）、AppRegistry 注册
 android/app/src/main/java/com/mangareader/
 └── eink/              # EInkKeyModule / EInkKeyPackage：实体翻页键原生桥接
