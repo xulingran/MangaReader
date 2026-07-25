@@ -2,7 +2,7 @@
  * 旧设置 / 旧备份迁移回归测试（电子墨水版）
  * light、animated 被剔除，hearing 映射为 pageKeys，缺少主题时跟随系统
  */
-import { migrateSetting, validate, LayoutMode, ThemeMode } from '~/utils';
+import { migrateSetting, validate, validateSampled, LayoutMode, ThemeMode } from '~/utils';
 import { initialState } from '~/redux/slice';
 import { it, expect, describe } from '@jest/globals';
 
@@ -102,5 +102,80 @@ describe('migrateSetting', () => {
 
     backup.setting = migrateSetting(backup.setting);
     expect(validate(backup, rootSchema, initialState)).toBe(true);
+  });
+});
+
+describe('validate 采样校验', () => {
+  // 模拟一个值类型为对象的 schema：用于验证 sampleKeys 参数让大字典只抽样校验
+  const objectDictSchema = {
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    type: 'object',
+    additionalProperties: {
+      type: 'object',
+      properties: { total: { type: 'number' }, progress: { type: 'number' } },
+      required: ['total', 'progress'],
+    },
+  } as any;
+
+  it('不传 sampleKeys 时全量校验，脏数据返回 false', () => {
+    const data: Record<string, any> = {};
+    for (let i = 0; i < 20; i++) {
+      // 第 15 条缺少 required 字段
+      data[`k${i}`] = i === 15 ? { total: 1 } : { total: i, progress: i };
+    }
+    expect(validate(data, objectDictSchema)).toBe(false);
+  });
+
+  it('传 sampleKeys 时只抽样前 N 条，脏数据若不在样本内则通过', () => {
+    const data: Record<string, any> = {};
+    for (let i = 0; i < 20; i++) {
+      data[`k${i}`] = i === 15 ? { total: 1 } : { total: i, progress: i };
+    }
+    // 采样前 8 条（k0..k7），脏数据在 k15 不在样本内 → 校验通过
+    expect(validate(data, objectDictSchema, undefined, 0, 8)).toBe(true);
+  });
+
+  it('脏数据落在样本内时采样校验仍能发现', () => {
+    const data: Record<string, any> = {};
+    for (let i = 0; i < 20; i++) {
+      // 第 3 条脏数据，在采样前 8 条范围内
+      data[`k${i}`] = i === 3 ? { total: 1 } : { total: i, progress: i };
+    }
+    expect(validate(data, objectDictSchema, undefined, 0, 8)).toBe(false);
+  });
+
+  it('数组类型也支持采样', () => {
+    const arraySchema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'array',
+      items: { type: 'number' },
+    } as any;
+    const data = [1, 2, 3, 'bad', 5, 6, 7, 8, 9, 10];
+    // 全量校验会发现第 4 项是字符串
+    expect(validate(data, arraySchema)).toBe(false);
+    // 采样前 3 项（不含脏数据）→ 通过
+    expect(validate(data, arraySchema, undefined, 0, 3)).toBe(true);
+  });
+
+  it('数据量小于 sampleKeys 时退化为全量校验', () => {
+    const data = { a: { total: 1, progress: 1 }, b: { total: 2 } }; // b 缺 progress
+    expect(validate(data, objectDictSchema, undefined, 0, 8)).toBe(false);
+  });
+
+  it('validateSampled 包装等价于 validate 的采样调用', () => {
+    const data: Record<string, any> = {};
+    for (let i = 0; i < 20; i++) {
+      data[`k${i}`] = i === 15 ? { total: 1 } : { total: i, progress: i };
+    }
+    // 包装函数与位置参数写法语义一致：采样前 8 条，脏数据在 k15 不在样本内 → 通过
+    expect(validateSampled(data, 8, objectDictSchema)).toBe(
+      validate(data, objectDictSchema, undefined, 0, 8)
+    );
+    // 脏数据在样本内时两者都发现
+    const dirty: Record<string, any> = {};
+    for (let i = 0; i < 20; i++) {
+      dirty[`k${i}`] = i === 3 ? { total: 1 } : { total: i, progress: i };
+    }
+    expect(validateSampled(dirty, 8, objectDictSchema)).toBe(false);
   });
 });

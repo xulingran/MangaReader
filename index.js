@@ -20,8 +20,10 @@ dayjs.locale('zh-cn');
 
 CacheManager.config = {
   baseDir: `${Dirs.CacheDir}/images_cache/`,
-  // 电子墨水版：缓存上限 512MB，图片无淡入
-  cacheLimit: 512 * 1024 * 1024,
+  // 电子墨水低端设备存储通常 8-32GB：512MB 缓存偏大，LRU 清理可能落在阅读中途造成 IO 抖动。
+  // 下调到 256MB；章节离开时 Chapter.tsx 会主动 pruneCache()，避免 LRU 在阅读中触发。
+  // 图片无淡入。
+  cacheLimit: 256 * 1024 * 1024,
   maxRetries: 2,
   retryDelay: 500,
   sourceAnimationDuration: 0,

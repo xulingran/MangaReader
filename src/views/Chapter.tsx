@@ -211,6 +211,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       init();
       return () => {
         cache.storeCacheMap();
+        // 离开阅读页时主动清理过期缓存条目，避免 LRU 在下次阅读中途触发 IO 抖动；
+        // 缓存上限已下调到 256MB，prune 让磁盘占用贴近真实阅读需求。
+        CacheManager.pruneCache().catch(() => {});
       };
     }, [init, cache])
   );

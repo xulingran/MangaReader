@@ -263,6 +263,28 @@ describe('Reader 组件', () => {
     expect(mockStore.__flashListProps.initialScrollIndex).toBe(2);
   });
 
+  it('双页模式 keyExtractor 用稳定拼接而非 JSON.stringify，且不同分组 key 不同', () => {
+    const ref = React.createRef<ReaderRef>();
+    renderReader(ref, makeData(4), 0, undefined, { layoutMode: LayoutMode.Multiple });
+    const keyExtractor = mockStore.__flashListProps.keyExtractor;
+
+    const groupA = [
+      { chapterHash: 'chapter#1', current: 1 },
+      { chapterHash: 'chapter#1', current: 2 },
+    ];
+    const groupB = [
+      { chapterHash: 'chapter#1', current: 3 },
+      { chapterHash: 'chapter#1', current: 4 },
+    ];
+    const keyA = keyExtractor(groupA);
+    const keyB = keyExtractor(groupB);
+    // 不应是 JSON.stringify 输出（不含 [[, ]] 转义）
+    expect(keyA).not.toMatch(/^\[\[/);
+    expect(keyA).not.toBe(keyB);
+    // 同分组多次调用结果稳定（无随机性）
+    expect(keyExtractor(groupA)).toBe(keyA);
+  });
+
   it('父页面仅更新 initPage 时不重渲染图片列表', () => {
     const ref = React.createRef<ReaderRef>();
     const data = makeData(5);

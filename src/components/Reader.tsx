@@ -34,8 +34,10 @@ const READER_DRAW_DISTANCE = 64;
 const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
 const imageKeyExtractor = (item: { chapterHash: string; current: number }) =>
   `${item.chapterHash}:${item.current}`;
+// 多页项的稳定 key：用 `chapterHash:current` 拼接后再 join，避免 JSON.stringify 在
+// FlashList 滚动/布局阶段高频调用时产生的数组分配与字符串转义开销。
 const multipleKeyExtractor = (items: { chapterHash: string; current: number }[]) =>
-  JSON.stringify(items.map(({ chapterHash, current }) => [chapterHash, current]));
+  items.map(({ chapterHash, current }) => `${chapterHash}:${current}`).join('|');
 export const reportFulfilledImage = (
   state: ImageState,
   onImageLoad: ReaderProps['onImageLoad'],

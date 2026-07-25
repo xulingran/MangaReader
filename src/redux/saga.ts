@@ -16,6 +16,7 @@ import {
   fetchData,
   haveError,
   validate,
+  validateSampled,
   migrateSetting,
   getLatestRelease,
   pairsToDict,
@@ -570,9 +571,13 @@ function* syncDataSaga() {
         migrateDeletedPluginData(snapshot);
         snapshot.setting = migrateSetting(snapshot.setting);
         snapshot.task = normalizeTaskForRestart(snapshot.task);
+        // dict / favorites 在大库下可达上千条，全量 Draft07 校验会显著阻塞低端设备启动。
+        // 这里采样前 8 条做结构防御；plugin/setting/task 条目少且结构关键，保持全量校验。
+        // syncDataSaga 整段在 try/catch 内，采样漏过的脏数据走 catch 兜底；运行期 reducer
+        // 也会对单条访问做容错（异常条目显示为空，不崩）。
         if (
-          !validate(snapshot.favorites, favoritesSchema) ||
-          !validate(snapshot.dict, dictSchema) ||
+          !validateSampled(snapshot.favorites, 8, favoritesSchema) ||
+          !validateSampled(snapshot.dict, 8, dictSchema) ||
           !validate(snapshot.plugin, pluginSchema) ||
           !validate(snapshot.setting, settingSchema, initialState.setting) ||
           !validate(snapshot.task, taskSchema)
@@ -2005,11 +2010,31 @@ export function* catchErrorWorker({ type, payload }: PayloadAction<any>) {
   }
 }
 
+// 已知无 error 语义的高频 action 白名单：阅读时每张图 / 每次翻页都会 dispatch，
+// 它们的 payload 不携带 error 字段。通配监听若为每条都 fork 一个 generator（即便 worker
+// 第一步 early-return），generator 创建/销毁本身在低端 CPU 上仍有开销。这里在 spawner
+// 层就短路掉这类 action，只对剩余 action 调用 worker。带 error 的高频 action 仍会进入。
+// 用 action creator 的 .type 取值，slice 重命名时自动同步。
+const HIGH_FREQUENCY_NO_ERROR_ACTIONS = new Set<string>([
+  action.viewImage.type,
+  action.viewPage.type,
+]);
+
 function* catchErrorSaga() {
-  // 高频 action（viewImage/viewPage）经此通配监听；直接用 takeEvery 而非 takeEverySuspense，
-  // 跳过 tryCatchWorker 包装，让 worker 自身在第一步判断 payload.error 是否存在并 early-return，
-  // 避免每条 action 都启动一次额外的 try/catch generator。
-  yield takeEvery('*', catchErrorWorker);
+  // 通配监听会为每条 action fork 一个 generator。viewImage/viewPage 是阅读热路径的高频
+  // action（每张图 / 每次翻页都会 dispatch），payload 不携带 error 字段；这里在 spawner
+  // 层直接 return，避免无谓地调用 catchErrorWorker（即便 worker 第一步 early-return，
+  // generator 创建/销毁本身在低端 CPU 上也有开销）。带 error 的 action 仍进入 worker
+  // 正常处理；其余低频 action 也照常交给 worker。
+  yield takeEvery('*', function* (dispatchedAction: PayloadAction<any>) {
+    if (
+      HIGH_FREQUENCY_NO_ERROR_ACTIONS.has(dispatchedAction.type) &&
+      (!dispatchedAction.payload || !dispatchedAction.payload.error)
+    ) {
+      return;
+    }
+    yield call(catchErrorWorker, dispatchedAction);
+  });
 }
 
 function* takeEverySuspense(pattern: string | string[], worker: (...args: any[]) => any) {

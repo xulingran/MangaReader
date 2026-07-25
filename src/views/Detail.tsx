@@ -90,9 +90,15 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
   );
   // 只订阅当前漫画，后台更新其他漫画不触发 Detail 重渲染
   const data = useAppSelector((state) => state.dict.manga[mangaHash]);
+  // recordDict / lastWatchDict 在阅读时会随 viewImage/viewPage 高频更新：Detail 不可见时
+  // 已被 freezeOnBlur 冻结不会重渲染；可见时需要整个 recordDict 来渲染章节列表进度，
+  // 故保持现状（自定义 equalityFn 对大字典的比较成本高于收益）。
   const recordDict = useAppSelector((state) => state.dict.record);
   const lastWatchDict = useAppSelector((state) => state.dict.lastWatch);
-  const favorites = useAppSelector((state) => state.favorites);
+  // favorites 收窄为派生订阅：只关心当前漫画是否收藏，避免后台批量更新其他收藏时重渲染。
+  const isFavorited = useAppSelector((state) =>
+    state.favorites.some((item) => item.mangaHash === mangaHash)
+  );
   const sequence = useAppSelector((state) => state.setting.sequence);
   const lastWatch = useMemo(() => lastWatchDict[mangaHash] || {}, [lastWatchDict, mangaHash]);
   const extraData = useMemo(
@@ -162,7 +168,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
       chapterHash: string,
       page = chapterHash === lastWatch.chapter ? lastWatch.page || 1 : 1
     ) => {
-      if (favorites.find((item) => item.mangaHash === mangaHash)) {
+      if (isFavorited) {
         dispatch(viewFavorites(mangaHash));
       }
 
@@ -172,7 +178,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
         page,
       });
     },
-    [dispatch, favorites, lastWatch.chapter, lastWatch.page, mangaHash, navigation]
+    [dispatch, isFavorited, lastWatch.chapter, lastWatch.page, mangaHash, navigation]
   );
   const handleContinueReading = useCallback(
     ({ chapterHash, page }: ContinueReadingTarget) => handleChapter(chapterHash, page),
@@ -371,14 +377,17 @@ export const HeartAndBrowser = () => {
   const { mangaHash, enabledMultiple = false, selected = EMPTY_SELECTED } = route.params;
   const dispatch = useAppDispatch();
   const sequence = useAppSelector((state) => state.setting.sequence);
-  const favorites = useAppSelector((state) => state.favorites);
+  // 只订阅当前漫画的收藏条目，避免后台批量更新其他收藏时重渲染 header。
+  const favorite = useAppSelector((state) =>
+    state.favorites.find((item) => item.mangaHash === mangaHash)
+  );
   const dict = useAppSelector((state) => state.dict.manga);
   const manga = useMemo(() => dict[mangaHash], [dict, mangaHash]);
   const palette = useThemePalette();
-  const { isActived, enableBatch } = useMemo(() => {
-    const favorite = favorites.find((item) => item.mangaHash === mangaHash);
-    return { isActived: Boolean(favorite), enableBatch: favorite?.enableBatch || false };
-  }, [favorites, mangaHash]);
+  const { isActived, enableBatch } = useMemo(
+    () => ({ isActived: Boolean(favorite), enableBatch: favorite?.enableBatch || false }),
+    [favorite]
+  );
 
   const handleClose = () => {
     navigation.setParams({ enabledMultiple: false, selected: [] });

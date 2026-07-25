@@ -107,4 +107,53 @@ describe('墨水屏按压反色', () => {
     expect(button().props.icon.props.color).toBe(palette.text);
     act(() => tree!.unmount());
   });
+
+  it('memo 生效：父组件无关重渲染时不重建 IconButton', () => {
+    // 包一层父组件，强制其重渲染；VectorIcon 的 props 内容不变时应被 memo 拦截
+    const onPress = jest.fn();
+    const Parent = ({ _tick }: { _tick: number }) => (
+      <VectorIcon name="arrow-back" onPress={onPress} />
+    );
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Parent _tick={0} />);
+    });
+    const buttonBefore = tree!.root.findByProps({ accessibilityLabel: '返回' });
+    const iconElementBefore = buttonBefore.props.icon;
+
+    act(() => {
+      tree!.update(<Parent _tick={1} />);
+    });
+
+    const buttonAfter = tree!.root.findByProps({ accessibilityLabel: '返回' });
+    // memo 拦截：TestInstance 引用稳定（同一个 fiber，未重渲染）
+    expect(buttonAfter).toBe(buttonBefore);
+    // icon 元素也因 useMemo 保持引用稳定
+    expect(buttonAfter.props.icon).toBe(iconElementBefore);
+
+    act(() => tree!.unmount());
+  });
+
+  it('memo 自定义比较：调用方内联 accessibilityState 对象不穿透', () => {
+    // 模拟业务代码里常见的内联对象写法：每次渲染都是新对象引用
+    const onPress = jest.fn();
+    const Wrapper = ({ checked }: { checked: boolean }) => (
+      <VectorIcon name="check" onPress={onPress} accessibilityState={{ checked }} />
+    );
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(<Wrapper checked={false} />);
+    });
+    const buttonBefore = tree!.root.findByProps({ accessibilityLabel: '确认' });
+
+    // 同样的 checked=false，但传入全新的内联对象引用 —— 旧实现会重渲染
+    act(() => {
+      tree!.update(<Wrapper checked={false} />);
+    });
+
+    const buttonAfter = tree!.root.findByProps({ accessibilityLabel: '确认' });
+    expect(buttonAfter).toBe(buttonBefore);
+
+    act(() => tree!.unmount());
+  });
 });

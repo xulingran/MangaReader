@@ -33,6 +33,12 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
   // Reader 当前页、相邻页及双页布局可能同时挂载多个组件；队列只保存路径和参数，
   // 解码仍严格单线程。留出完整可见窗口，离屏 effect cleanup 会显式取消并移除任务。
   private static final int MAX_QUEUED_TASKS = 8;
+  // 电子墨水屏为灰阶：RGB_565（每像素 2 字节）相比 ARGB_8888（4 字节）峰值内存减半；
+  // JPEG q85 编码速度比 PNG 快数倍、体积小 5-10 倍，配合 RGB_565 进一步降低 IO 与 Fresco
+  // 二次解码开销。彩屏仅有轻微精度损失，墨水屏灰阶无可见差异。
+  private static final Bitmap.Config OUTPUT_CONFIG = Bitmap.Config.RGB_565;
+  private static final Bitmap.CompressFormat OUTPUT_FORMAT = Bitmap.CompressFormat.JPEG;
+  private static final int OUTPUT_QUALITY = 85;
   private final ThreadPoolExecutor executor =
       new ThreadPoolExecutor(
           1,
@@ -241,7 +247,9 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
           Math.min(1.0, Math.sqrt(maxPixels / ((double) bounds.outWidth * bounds.outHeight)));
       int targetWidth = Math.max(1, (int) Math.floor(bounds.outWidth * scale));
       int targetHeight = Math.max(1, (int) Math.floor(bounds.outHeight * scale));
-      output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888);
+      // RGB_565（每像素 2 字节）相比 ARGB_8888（4 字节）峰值内存减半；墨水屏为灰阶无可见差异，
+      // 普通彩屏仅有轻微精度损失。Canvas.drawBitmap 兼容 565 作为 backing store。
+      output = Bitmap.createBitmap(targetWidth, targetHeight, OUTPUT_CONFIG);
       Canvas canvas = new Canvas(output);
       Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
 
@@ -302,7 +310,7 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
         throw new IllegalStateException("无法创建临时图片目录");
       }
       try (FileOutputStream stream = new FileOutputStream(destination)) {
-        if (!output.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+        if (!output.compress(OUTPUT_FORMAT, OUTPUT_QUALITY, stream)) {
           throw new IllegalStateException("图片写入失败");
         }
       }

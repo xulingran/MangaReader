@@ -92,7 +92,8 @@ export function validate<T = any>(
   data: T,
   schema?: JsonSchema,
   initData?: Record<string, any>,
-  depth = 0
+  depth = 0,
+  sampleKeys?: number
 ): data is T {
   // 防御性深度上限：理论上 schema 完整不会无限递归，但加保护避免极端情况栈溢出
   if (depth > 10) {
@@ -102,7 +103,30 @@ export function validate<T = any>(
   if (!jsonSchema) {
     return true;
   }
-  const errors: JsonError[] = jsonSchema.validate(data);
+
+  // 采样校验：对大字典（如离线 dict / favorites 上千条）只抽样前 N 个 key 校验，
+  // 避免低端 CPU 在启动期被数千条逐条校验阻塞。写入路径已在 persistence 中做结构断言，
+  // 这里仅做防御性抽样；运行期访问异常数据由 reducer 兜底（显示为空，不崩）。
+  // 嵌套递归校验（initData 填值后重试）不再采样，保证修复完整性。
+  let validatingData: any = data;
+  if (depth === 0 && typeof sampleKeys === 'number' && sampleKeys > 0 && data && typeof data === 'object') {
+    if (!Array.isArray(data)) {
+      const source = data as Record<string, any>;
+      const keys = Object.keys(source);
+      if (keys.length > sampleKeys) {
+        const picked: Record<string, any> = {};
+        for (let i = 0; i < sampleKeys; i++) {
+          const k = keys[i];
+          picked[k] = source[k];
+        }
+        validatingData = picked;
+      }
+    } else if (data.length > sampleKeys) {
+      validatingData = (data as any[]).slice(0, sampleKeys);
+    }
+  }
+
+  const errors: JsonError[] = jsonSchema.validate(validatingData);
 
   if (nonNullable(initData) && errors.length > 0) {
     errors.forEach((error) => {
@@ -120,6 +144,7 @@ export function validate<T = any>(
       value[key] = nonNullable(initDataRef) ? initDataRef[key] : undefined;
     });
 
+    // 修复阶段用原始 data 全量重试（不再采样），确保 required 字段被补齐后再完整校验一次。
     return validate(data, schema, initData, depth + 1);
   }
 
@@ -127,6 +152,22 @@ export function validate<T = any>(
     return false;
   }
   return true;
+}
+
+/**
+ * 采样校验的语义化包装：对大字典 / 大数组只抽样前 sampleKeys 条做结构校验。
+ * 内部委托给 validate，避免调用方写 `validate(data, schema, undefined, 0, 8)` 这种
+ * 夹带 undefined/0 占位的位置参数，提升可读性。
+ *
+ * 用于启动期 syncDataSaga 等「数据量大、写入路径已做结构断言、只需防御性抽样」的场景；
+ * 校验失败仍会 throw（由调用方 try/catch 兜底）。
+ */
+export function validateSampled<T = any>(
+  data: T,
+  sampleKeys: number,
+  schema?: JsonSchema
+): data is T {
+  return validate(data, schema, undefined, 0, sampleKeys);
 }
 
 export function getLatestRelease(

@@ -47,6 +47,14 @@ const NativeScrambleImage = ({
   prevStateRef.current = prevState;
   indexRef.current = index;
   onReleaseRef.current = onRelease;
+  // 几何尺寸（窗口/insets）防抖变化时不应触发「下载+解密」整条重跑——
+  // 那会让旋转屏/键盘弹起等场景重解码整章扰乱图。改用 ref 持有最新值，effect 内读取。
+  // 注意：旋转屏后已 setState 的 multipleFitWidth/multipleFitHeight/landscapeHeight/
+  // portraitHeight 仍停留在加载时的旧值（effect 不重跑）。这与原图 ComicImage.handleLoad
+  // 既有特性一致（onLoad 不重触发），Reader 的 defaultPortraitHeight/defaultLandscapeHeight
+  // 会作为兜底；用「不重解码」换 IO 是电子墨水场景的有意取舍。
+  const dimsRef = useRef({ windowWidth, windowHeight, top, left, right, bottom });
+  dimsRef.current = { windowWidth, windowHeight, top, left, right, bottom };
 
   const style = useFillStyle(
     layoutMode,
@@ -91,7 +99,8 @@ const NativeScrambleImage = ({
         throw new Error('扰乱图片下载失败');
       }
       currentRequestId = nanoid();
-      const outputPath = `${IMAGE_PROCESSOR_OUTPUT_DIR}/${nanoid()}.png`;
+      // 原生侧现已输出 JPEG（RGB_565 + q85），后缀同步为 .jpg，避免 Fresco 按文件头误判。
+      const outputPath = `${IMAGE_PROCESSOR_OUTPUT_DIR}/${nanoid()}.jpg`;
       const result = await ImageProcessor.unscramble(
         sourcePath,
         outputPath,
@@ -108,19 +117,20 @@ const NativeScrambleImage = ({
       release();
       tempPath.current = result.path;
       const { width, height } = result;
+      const dims = dimsRef.current;
       const { dWidth, dHeight } = aspectFit(
         { width, height },
         {
-          width: (windowWidth - left - right) / 2,
-          height: windowHeight - top - bottom,
+          width: (dims.windowWidth - dims.left - dims.right) / 2,
+          height: dims.windowHeight - dims.top - dims.bottom,
         }
       );
       const nextState: ImageState = {
         dataUrl: `file://${result.path}`,
         multipleFitWidth: dWidth,
         multipleFitHeight: dHeight,
-        landscapeHeight: (height / width) * Math.max(windowWidth, windowHeight),
-        portraitHeight: (height / width) * Math.min(windowWidth, windowHeight),
+        landscapeHeight: (height / width) * Math.max(dims.windowWidth, dims.windowHeight),
+        portraitHeight: (height / width) * Math.min(dims.windowWidth, dims.windowHeight),
         loadStatus: AsyncStatus.Fulfilled,
       };
       setState(nextState);
@@ -140,7 +150,8 @@ const NativeScrambleImage = ({
       }
       release();
     };
-  }, [bottom, headers, left, release, retry, right, top, uri, windowHeight, windowWidth]);
+    // 几何尺寸经 dimsRef 读取，不进 deps —— 防止旋转屏/insets 防抖变化触发整章重解码。
+  }, [headers, release, retry, uri]);
 
   if (state.loadStatus === AsyncStatus.Rejected) {
     return (
