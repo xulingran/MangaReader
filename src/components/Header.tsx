@@ -49,7 +49,7 @@ const Header = ({ navigation, options, route, showUpdateIndicator = false }: Hea
             <VectorIcon name="arrow-back" size="2xl" onPress={handleBack} />
           ) : (
             <Box>
-              <VectorIcon name="home" size="2xl" onPress={handleAbout} />
+              <VectorIcon name="home" size="2xl" label="设置" onPress={handleAbout} />
               {showUpdateIndicator && (
                 <Box
                   position="absolute"

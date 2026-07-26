@@ -1,4 +1,4 @@
-import { ErrorMessage, LayoutMode, MangaStatus, ThemeMode } from './enum';
+import { ErrorMessage, IconLabel, LayoutMode, MangaStatus, ThemeMode } from './enum';
 import { Draft, Draft07, JsonError, JsonSchema } from 'json-schema-library';
 import { ImageState } from '~/components/ComicImage';
 import { Buffer } from 'buffer';
@@ -60,6 +60,9 @@ export function migrateSetting(raw: any): RootState['setting'] {
   delete setting.animated;
   if (!('themeMode' in setting)) {
     setting.themeMode = ThemeMode.System;
+  }
+  if (!('iconLabel' in setting)) {
+    setting.iconLabel = IconLabel.Disabled;
   }
   if ('hearing' in setting) {
     if (!('pageKeys' in setting)) {

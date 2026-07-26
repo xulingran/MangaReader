@@ -1,6 +1,13 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
+        "IconLabel": {
+            "enum": [
+                0,
+                1
+            ],
+            "type": "number"
+        },
         "LayoutMode": {
             "description": "enum layoutmode of Reader component",
             "enum": [
@@ -63,6 +70,10 @@
             "$ref": "#/definitions/ReaderDirection",
             "description": "漫画阅读方向"
         },
+        "iconLabel": {
+            "$ref": "#/definitions/IconLabel",
+            "description": "图标按钮下方是否显示说明文字"
+        },
         "mode": {
             "$ref": "#/definitions/LayoutMode",
             "description": "布局模式"
@@ -94,6 +105,7 @@
     "required": [
         "androidDownloadPath",
         "direction",
+        "iconLabel",
         "mode",
         "pageKeys",
         "seat",

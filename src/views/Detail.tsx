@@ -281,6 +281,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
             <VectorIcon
               name="replay"
               size="md"
+              label="刷新"
               accessibilityLabel="刷新漫画详情"
               onPress={handleReload}
             />
@@ -450,6 +451,7 @@ export const HeartAndBrowser = () => {
         <VectorIcon
           source="materialCommunityIcons"
           name="window-close"
+          label="退出"
           accessibilityLabel="退出章节多选"
           onPress={handleClose}
         />
@@ -463,6 +465,7 @@ export const HeartAndBrowser = () => {
                 ? 'checkbox-marked-outline'
                 : 'checkbox-intermediate'
             }
+            label="全选"
             accessibilityLabel="全选或取消全选章节"
             accessibilityState={{
               checked:
@@ -478,12 +481,14 @@ export const HeartAndBrowser = () => {
         <VectorIcon
           source="materialCommunityIcons"
           name="download-box-outline"
+          label="下载"
           accessibilityLabel="下载所选章节"
           onPress={handleDownload}
         />
         <VectorIcon
           source="materialCommunityIcons"
           name="file-export-outline"
+          label="导出"
           accessibilityLabel="导出所选章节"
           onPress={handleExport}
         />
@@ -498,6 +503,7 @@ export const HeartAndBrowser = () => {
           <VectorIcon
             name={enableBatch ? 'lock-open' : 'lock-outline'}
             color={enableBatch ? palette.text : palette.disabled}
+            label="自动更新"
             accessibilityLabel={enableBatch ? '停止自动更新此漫画' : '自动更新此漫画'}
             accessibilityState={{ checked: enableBatch }}
             onPress={toggleQueue}
@@ -507,6 +513,7 @@ export const HeartAndBrowser = () => {
           source="materialCommunityIcons"
           name={isActived ? 'heart' : 'heart-outline'}
           color={palette.text}
+          label="收藏"
           accessibilityLabel={isActived ? '取消收藏' : '收藏漫画'}
           accessibilityState={{ checked: isActived }}
           onPress={toggleFavorite}
@@ -514,17 +521,20 @@ export const HeartAndBrowser = () => {
         <VectorIcon
           source="octicons"
           name={sequence === Sequence.Asc ? 'sort-asc' : 'sort-desc'}
+          label="排序"
           accessibilityLabel="切换章节排序"
           onPress={handleSwapSequence}
         />
         <VectorIcon
           source="materialCommunityIcons"
           name="download-box-outline"
+          label="下载"
           accessibilityLabel="打开下载管理"
           onPress={handleOpenDownloadManager}
         />
         <VectorIcon
           name="open-in-browser"
+          label="浏览器"
           accessibilityLabel="在浏览器中打开漫画"
           onPress={onBrowserConfirmOpen}
         />

@@ -205,6 +205,7 @@ const ReaderToolbar = ({
               size="lg"
               source="materialCommunityIcons"
               color={color}
+              label="布局"
               accessibilityLabel="切换阅读布局"
               onPress={handleModeToggle}
             />
@@ -213,6 +214,7 @@ const ReaderToolbar = ({
                 name={inverted ? 'west' : 'east'}
                 size="lg"
                 color={color}
+                label="方向"
                 accessibilityLabel={inverted ? '改为从左向右阅读' : '改为从右向左阅读'}
                 onPress={handleDirectionToggle}
               />
@@ -227,6 +229,7 @@ const ReaderToolbar = ({
                 size="lg"
                 source="materialCommunityIcons"
                 color={color}
+                label="双页"
                 accessibilityLabel="切换双页起始位置"
                 onPress={handleSeatToggle}
               />
@@ -236,6 +239,7 @@ const ReaderToolbar = ({
               size="lg"
               source="materialCommunityIcons"
               color={color}
+              label="实体按键"
               accessibilityLabel={pageKeys === PageKeys.Enable ? '关闭实体键翻页' : '开启实体键翻页'}
               accessibilityState={{ checked: pageKeys === PageKeys.Enable }}
               onPress={handlePageKeysToggle}
@@ -245,6 +249,7 @@ const ReaderToolbar = ({
               size="lg"
               source="materialCommunityIcons"
               color={color}
+              label="定时"
               accessibilityLabel={timer === Timer.Enable ? '关闭定时翻页' : '开启定时翻页'}
               accessibilityHint="长按设置翻页间隔"
               accessibilityState={{ checked: timer === Timer.Enable }}

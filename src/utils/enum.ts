@@ -124,6 +124,11 @@ export enum Timer {
   Disabled,
 }
 
+export enum IconLabel {
+  Enable,
+  Disabled,
+}
+
 export enum SafeArea {
   All,
   None,

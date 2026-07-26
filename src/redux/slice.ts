@@ -8,6 +8,7 @@ import {
   MultipleSeat,
   PageKeys,
   Timer,
+  IconLabel,
 } from '~/utils';
 import { createSlice, combineReducers, nanoid, PayloadAction } from '@reduxjs/toolkit';
 import { Plugin, defaultPlugin, defaultPluginList } from '~/plugins';
@@ -41,6 +42,7 @@ export const initialState: RootState = {
     sequence: Sequence.Desc,
     seat: MultipleSeat.AToB,
     pageKeys: PageKeys.Enable,
+    iconLabel: IconLabel.Disabled,
     timer: Timer.Disabled,
     timerGap: 5000,
     androidDownloadPath: DEFAULT_ANDROID_DOWNLOAD_PATH,
@@ -226,6 +228,9 @@ const settingSlice = createSlice({
     },
     setPageKeys(state, action: PayloadAction<PageKeys>) {
       state.pageKeys = action.payload;
+    },
+    setIconLabel(state, action: PayloadAction<IconLabel>) {
+      state.iconLabel = action.payload;
     },
     setTimer(state, action: PayloadAction<Timer>) {
       state.timer = action.payload;

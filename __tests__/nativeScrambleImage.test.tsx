@@ -22,6 +22,12 @@ jest.mock('native-base', () =>
   })
 );
 
+// NativeScrambleImage 经 ErrorWithRetry 渲染 VectorIcon（订阅 setting.iconLabel），固定为关闭
+const mockIconLabelState = { setting: { iconLabel: 1 } } as unknown as RootState;
+jest.mock('~/redux', () => ({
+  useAppSelector: <T,>(selector: (state: RootState) => T) => selector(mockIconLabelState),
+}));
+
 jest.mock('~/hooks', () => {
   // 让尺寸可被测试动态修改，模拟旋转屏 / insets 变化
   let frameState = { width: 800, height: 1200, orientation: 'portrait' };

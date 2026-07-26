@@ -14,8 +14,9 @@
 - **横向翻页**：横向/双页模式 FlashList 固定 `scrollEnabled={false}`，内容不跟随手指；翻页滑动由 `src/components/Controller.tsx` 的 swipe Pan 检测（与缩放 Pan 互斥，scale>1 时禁用），松手上报位移，`Reader` 按 `inverted` 归一化后经 `src/utils/reader.ts` 的 `resolveDragTargetIndex` 决策目标页（最多一页、无惯性），再 `scrollToIndex(animated: false)` 瞬时切页；阈值比例 `DRAG_PAGE_THRESHOLD_RATIO = 0.2`
 - **实体键翻页**：原生模块 `android/.../eink/EInkKeyModule.java` 仅在阅读页（`setReaderActive(true)`）拦截 VOLUME_UP/PAGE_UP/DPAD_LEFT（上一页）与 VOLUME_DOWN/PAGE_DOWN/DPAD_RIGHT（下一页），按键抬起时发一次 `pageKey` 事件；JS 侧 `src/utils/einkKey.ts` + `src/hooks/usePageKeys.ts`，设置项为 `setting.pageKeys`（旧 `hearing` 迁移而来）
 - **按压反馈**：可交互元素按压时瞬时黑白反色、松开恢复（无渐变/透明度动画）；Button 由 `src/utils/theme.ts` 各 variant 的 `_pressed` 覆盖，图标按钮由 `src/components/VectorIcon.tsx` 统一处理，裸 `Pressable` 用 `src/utils/theme/hooks.ts` 的 `usePressedState` 同步翻转底色与文字/图标（token：`pressedBg`/`pressedText`，常态反色的元素按下回落 `bg`/`text`）；封面与漫画图不反色
+- **图标说明文字**：设置项 `setting.iconLabel`（默认关闭，About 页「图标说明文字」开关）开启后，`VectorIcon` 在图标下方渲染一行说明文字；文案优先取调用方的 `label` prop（简短文案，如「搜索」「排序」「实体按键」），缺省回退 `accessibilityLabel`；说明文字在按压反色区块之外，不跟随 pressed 反色；关闭时渲染路径与开启前完全一致
 - **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
-- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode` 时补为跟随系统，首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
+- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode`/`iconLabel` 时补默认值（跟随系统/关闭说明文字），首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
 - **阅读器尺寸冻结**：呼出菜单会显示状态栏，safe area frame/insets 随之变化，若响应会整页重布局（漫画页"缩小"），低端设备开销大；`Reader` / `Controller` / `ComicImage` / `NativeScrambleImage` 改用 `src/hooks/useStaticSafeArea.ts` 的 `useStaticSafeAreaFrame` / `useStaticSafeAreaInsets` 在挂载时冻结尺寸，屏幕方向变化经 `Reader` 的 `key={orientation}` remount 刷新
 
 ## 技术栈

@@ -87,6 +87,7 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
           <VectorIcon
             source="materialCommunityIcons"
             name="window-close"
+            label="退出"
             accessibilityLabel="退出多选"
             onPress={handleCancel}
           />
@@ -99,12 +100,14 @@ const Home = ({ navigation: { navigate, setOptions } }: StackHomeProps) => {
                 ? 'checkbox-marked-outline'
                 : 'checkbox-intermediate'
             }
+            label="全选"
             accessibilityLabel="全选或取消全选漫画"
             accessibilityState={{ checked }}
             onPress={handleSelectAll}
           />
           <VectorIcon
             name="delete-forever"
+            label="删除"
             disabled={selectedManga.length <= 0}
             accessibilityLabel="删除所选漫画"
             onPress={onOpen}
@@ -177,12 +180,18 @@ const SearchAndAbout = () => {
 
   return (
     <HStack flexShrink={0}>
-      <VectorIcon name="search" accessibilityLabel="搜索漫画" onPress={handleSearch} />
-      <VectorIcon name="settings" accessibilityLabel="管理漫画来源" onPress={handlePlugin} />
+      <VectorIcon name="search" label="搜索" accessibilityLabel="搜索漫画" onPress={handleSearch} />
+      <VectorIcon
+        name="settings"
+        label="来源"
+        accessibilityLabel="管理漫画来源"
+        onPress={handlePlugin}
+      />
       <View position="relative">
         <VectorIcon
           isDisabled={isUpdating}
           name="autorenew"
+          label="更新"
           accessibilityLabel="更新收藏漫画"
           accessibilityState={{ disabled: isUpdating, busy: isUpdating }}
           onPress={handleUpdate}

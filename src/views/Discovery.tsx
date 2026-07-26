@@ -146,6 +146,7 @@ export const PluginSelect = () => {
               name="settings"
               size="lg"
               color={palette.subText}
+              label="筛选"
               accessibilityLabel="设置发现页筛选条件"
               onPress={handleSetting}
             />

@@ -13,7 +13,7 @@ import {
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { Linking } from 'react-native';
 import { CacheManager } from '@georstat/react-native-image-cache';
-import { AsyncStatus, ThemeMode } from '~/utils';
+import { AsyncStatus, IconLabel, ThemeMode } from '~/utils';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SpinLoading from '~/components/SpinLoading';
@@ -21,9 +21,11 @@ import PathModal from '~/components/PathModal';
 import Overlay from '~/components/Overlay';
 import { useResolvedThemeMode, useThemePalette } from '~/utils/theme/hooks';
 import ThemeModeSelector from '~/components/ThemeModeSelector';
+import IconLabelSelector from '~/components/IconLabelSelector';
 
 const { backup, restore, clearCache, loadLatestRelease, setAndroidDownloadPath, setThemeMode } =
   action;
+const { setIconLabel } = action;
 
 // 清除完成后让「清除中…」状态多停留一拍，避免按钮文案闪现、用户感知不到操作已结束
 const CLEARING_FEEDBACK_MS = 500;
@@ -45,6 +47,7 @@ const About = () => {
   const restoreStatus = useAppSelector((state) => state.datasync.restoreStatus);
   const androidDownloadPath = useAppSelector((state) => state.setting.androidDownloadPath);
   const themeMode = useAppSelector((state) => state.setting.themeMode);
+  const iconLabel = useAppSelector((state) => state.setting.iconLabel);
   const resolvedThemeMode = useResolvedThemeMode();
   const palette = useThemePalette();
 
@@ -111,6 +114,14 @@ const About = () => {
       dispatch(setThemeMode(mode));
     }
   };
+  const handleIconLabelChange = (value: IconLabel) => {
+    if (value !== iconLabel) {
+      toast.show({
+        title: value === IconLabel.Enable ? '已开启图标说明文字' : '已关闭图标说明文字',
+      });
+      dispatch(setIconLabel(value));
+    }
+  };
 
   return (
     <View flex={1} bg={palette.bg}>
@@ -165,6 +176,8 @@ const About = () => {
             resolvedMode={resolvedThemeMode}
             onChange={handleThemeModeChange}
           />
+
+          <IconLabelSelector value={iconLabel} onChange={handleIconLabelChange} />
 
           <Button
             isDisabled={backupStatus === AsyncStatus.Pending}

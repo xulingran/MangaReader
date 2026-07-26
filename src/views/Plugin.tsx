@@ -77,6 +77,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
                 name="keyboard-arrow-up"
                 size="lg"
                 disabled={index === 0}
+                label="上移"
                 accessibilityLabel="上移来源"
                 accessibilityState={{ disabled: index === 0 }}
                 onPress={() => move(index, -1)}
@@ -85,6 +86,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
                 name="keyboard-arrow-down"
                 size="lg"
                 disabled={index === list.length - 1}
+                label="下移"
                 accessibilityLabel="下移来源"
                 accessibilityState={{ disabled: index === list.length - 1 }}
                 onPress={() => move(index, 1)}
@@ -93,6 +95,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
             <VectorIcon
               name={item.disabled ? 'check-box-outline-blank' : 'check-box'}
               size="lg"
+              label="启用"
               accessibilityLabel={item.disabled ? '启用来源' : '停用来源'}
               accessibilityState={{ checked: !item.disabled }}
               onPress={() => dispatch(disablePlugin(item.value))}
@@ -101,6 +104,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               <VectorIcon
                 name="login"
                 size="lg"
+                label="登录"
                 accessibilityLabel="账号密码登录"
                 onPress={() => setLoginSource(item.value)}
               />
@@ -109,6 +113,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               <VectorIcon
                 name="vpn-key"
                 size="lg"
+                label="密钥"
                 accessibilityLabel="配置 API Key"
                 onPress={() => setApiKeyVisible(true)}
               />
@@ -117,6 +122,7 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               <VectorIcon
                 name="bookmarks"
                 size="lg"
+                label="收藏夹"
                 accessibilityLabel="查看在线收藏夹"
                 onPress={() => navigate('OnlineFavorites', { source: item.value })}
               />

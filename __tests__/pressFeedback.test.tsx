@@ -22,6 +22,12 @@ jest.mock('react-native-vector-icons/MaterialCommunityIcons', () => 'MaterialCom
 jest.mock('react-native-vector-icons/Octicons', () => 'Octicons');
 jest.mock('react-native-vector-icons/Ionicons', () => 'Ionicons');
 
+// VectorIcon 经 useAppSelector 订阅 setting.iconLabel；此处固定为关闭，走纯图标渲染路径
+const mockIconLabelState = { setting: { iconLabel: 1 } } as unknown as RootState;
+jest.mock('~/redux', () => ({
+  useAppSelector: <T,>(selector: (state: RootState) => T) => selector(mockIconLabelState),
+}));
+
 const palette = getThemePalette(Appearance.getColorScheme() === 'dark' ? 'dark' : 'light');
 
 const chapters = [

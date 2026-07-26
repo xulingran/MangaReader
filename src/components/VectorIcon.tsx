@@ -1,10 +1,12 @@
 import React, { memo, useMemo } from 'react';
-import { Icon, IconButton, IIconButtonProps } from 'native-base';
+import { Icon, IconButton, IIconButtonProps, Text, VStack } from 'native-base';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Octicons from 'react-native-vector-icons/Octicons';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
+import { IconLabel } from '~/utils/enum';
+import { useAppSelector } from '~/redux';
 
 export const sourceMap = {
   materialIcons: MaterialIcons,
@@ -15,6 +17,8 @@ export const sourceMap = {
 
 export interface VectorIconProps extends IIconButtonProps {
   source?: keyof typeof sourceMap;
+  /** 图标下方的简短说明文字（设置开启时显示），缺省回退 accessibilityLabel */
+  label?: string;
 }
 
 const accessibilityLabels: Record<string, string> = {
@@ -45,16 +49,20 @@ const VectorIcon = ({
   disabled,
   accessibilityLabel,
   accessibilityState,
+  label,
   ...props
 }: VectorIconProps) => {
   const disabledState = Boolean(isDisabled || disabled);
   const palette = useThemePalette();
   const [pressed, bind] = usePressedState();
+  const showLabel = useAppSelector((state) => state.setting.iconLabel) === IconLabel.Enable;
   const iconColor = disabledState
     ? palette.disabled
     : pressed
     ? palette.selectedText
     : color || palette.text;
+  // 说明文字在按压反色区块（IconButton 圆形底色）之外，不跟随 pressed 反色，避免白底白字
+  const labelColor = disabledState ? palette.disabled : color || palette.text;
   // 合并后的 a11y state 与 icon 元素都做 memo：父组件传入内联 accessibilityState 对象时
   // 引用每次都变，但内容相同；这里按字段依赖重建，避免无谓的 IconButton 重渲染。
   const mergedA11yState = useMemo(
@@ -65,7 +73,7 @@ const VectorIcon = ({
     () => <Icon as={sourceMap[source]} name={name} size={size} color={iconColor} />,
     [source, name, size, iconColor]
   );
-  return (
+  const button = (
     <IconButton
       p={2}
       accessibilityRole="button"
@@ -80,6 +88,17 @@ const VectorIcon = ({
       isDisabled={disabledState}
       {...props}
     />
+  );
+  if (!showLabel) {
+    return button;
+  }
+  return (
+    <VStack alignItems="center" space={0}>
+      {button}
+      <Text fontSize="xs" lineHeight={14} numberOfLines={1} color={labelColor}>
+        {label || accessibilityLabel || accessibilityLabels[name] || name}
+      </Text>
+    </VStack>
   );
 };
 
@@ -99,6 +118,7 @@ function areVectorIconPropsEqual(prev: VectorIconProps, next: VectorIconProps) {
   if (prev.disabled !== next.disabled) return false;
   if (prev.accessibilityLabel !== next.accessibilityLabel) return false;
   if (prev.accessibilityHint !== next.accessibilityHint) return false;
+  if (prev.label !== next.label) return false;
   if (!shallowEqualRecord(prev.accessibilityState, next.accessibilityState)) return false;
   // 通用兜底：VectorIconProps 无字符串索引签名，用 cast 访问其余任意透传 prop。
   const prevRest = prev as unknown as Record<string, unknown>;
@@ -125,6 +145,7 @@ const KNOWN_PROPS = new Set([
   'accessibilityLabel',
   'accessibilityHint',
   'accessibilityState',
+  'label',
 ]);
 
 function shallowEqualRecord(a: unknown, b: unknown): boolean {

@@ -8,6 +8,7 @@ import {
   MultipleSeat,
   PageKeys,
   Timer,
+  IconLabel,
   TaskType,
 } from '~/utils';
 import { Plugin } from '~/plugins';
@@ -128,6 +129,8 @@ declare global {
       sequence: Sequence;
       /** 是否监听实体翻页键 */
       pageKeys: PageKeys;
+      /** 图标按钮下方是否显示说明文字 */
+      iconLabel: IconLabel;
       /** 定时翻页 */
       timer: Timer;
       timerGap: number;
