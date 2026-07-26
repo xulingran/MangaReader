@@ -3,7 +3,12 @@ import { action, useAppDispatch } from '~/redux';
 import { Plugin } from '~/plugins';
 import { WebView } from 'react-native-webview';
 import { Center, Text, useToast } from 'native-base';
-import { SecureToken } from '~/utils/secureToken';
+import {
+  SecureToken,
+  credentialExtraField,
+  pluginCredentialKey,
+  type SecureCredentialKey,
+} from '~/utils/secureToken';
 import { useThemePalette } from '~/utils/theme/hooks';
 
 const { setCredential } = action;
@@ -21,12 +26,19 @@ export const isAllowedWebviewUrl = (initialUrl: string, candidateUrl: string): b
   }
 };
 
-export const parseBikaTokenMessage = (
+/**
+ * 解析 WebView postMessage 的凭据消息。消息必须是「单个凭据字段 + nonce」两个键，
+ * nonce 匹配且凭据为非空字符串才接受；不支持的来源一律拒绝。
+ */
+export const parseCredentialMessage = (
   source: Plugin | undefined,
   value: string,
   expectedNonce: string
-) => {
-  if (source !== Plugin.BIKA || value.length > 8192) {
+): { key: SecureCredentialKey; token: string } | undefined => {
+  const key = source ? pluginCredentialKey(source) : undefined;
+  const field = key ? credentialExtraField[key] : undefined;
+  // nh 走手动配置 API Key，不从 WebView 提取凭据
+  if (!key || !field || key === 'nh' || value.length > 8192) {
     return undefined;
   }
   try {
@@ -35,9 +47,10 @@ export const parseBikaTokenMessage = (
       return undefined;
     }
     const entries = Object.entries(data);
-    const { bikaToken: token, nonce } = data as { bikaToken?: unknown; nonce?: unknown };
+    const { nonce } = data as { nonce?: unknown };
+    const token = (data as Record<string, unknown>)[field];
     return entries.length === 2 && nonce === expectedNonce && typeof token === 'string' && token.trim()
-      ? token.trim()
+      ? { key, token: token.trim() }
       : undefined;
   } catch {
     return undefined;
@@ -50,7 +63,7 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
   const { uri, source, userAgent, injectedJavascript } = route.params || {};
   const palette = useThemePalette();
   const [sessionNonce] = useState(() =>
-    source === Plugin.BIKA && injectedJavascript ? SecureToken.createSessionNonce() : ''
+    injectedJavascript ? SecureToken.createSessionNonce() : ''
   );
   const credentialAcceptedRef = useRef(false);
   const titleRef = useRef('');
@@ -88,18 +101,19 @@ const Webview = ({ navigation, route }: StackWebviewProps) => {
         if (
           !credentialAcceptedRef.current &&
           injectedJavascript &&
+          source &&
           isAllowedWebviewUrl(uri, event.nativeEvent.url)
         ) {
-          const token = parseBikaTokenMessage(source, event.nativeEvent.data, sessionNonce);
-          if (token) {
+          const credential = parseCredentialMessage(source, event.nativeEvent.data, sessionNonce);
+          if (credential) {
             credentialAcceptedRef.current = true;
             try {
-              await SecureToken.setBikaToken(token);
-              dispatch(setCredential({ source: Plugin.BIKA }));
+              await SecureToken.setCredential(credential.key, credential.token);
+              dispatch(setCredential({ source }));
             } catch (error) {
               credentialAcceptedRef.current = false;
               toast.show({
-                title: error instanceof Error ? error.message : '安全保存 Bika Token 失败',
+                title: error instanceof Error ? error.message : '安全保存登录凭据失败',
               });
             }
           }

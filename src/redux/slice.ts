@@ -64,6 +64,12 @@ export const initialState: RootState = {
     loadStatus: AsyncStatus.Default,
     list: [],
   },
+  onlineFavorites: {
+    page: 1,
+    isEnd: false,
+    loadStatus: AsyncStatus.Default,
+    list: [],
+  },
   discovery: {
     filter: {},
     page: 1,
@@ -249,6 +255,7 @@ const pluginSlice = createSlice({
       state.source = action.payload;
     },
     setCredential(_state, _action: PayloadAction<{ source: Plugin }>) {},
+    saveCredential(_state, _action: PayloadAction<{ source: Plugin; credential: string }>) {},
     loginPlugin(
       _state,
       _action: PayloadAction<{ source: Plugin; username: string; password: string }>
@@ -394,6 +401,38 @@ const discoverySlice = createSlice({
       state.filter = {};
       state.loadStatus = AsyncStatus.Default;
     });
+  },
+});
+
+const onlineFavoritesSlice = createSlice({
+  name: 'onlineFavorites',
+  initialState: initialState.onlineFavorites,
+  reducers: {
+    loadOnlineFavorites(state, action: PayloadAction<{ isReset?: boolean; source: Plugin }>) {
+      const { source, isReset = false } = action.payload;
+      // 切换来源时丢弃上一个来源的列表，避免串源
+      if (isReset || state.source !== source) {
+        state.page = 1;
+        state.list = [];
+        state.isEnd = false;
+        state.source = source;
+      }
+
+      state.loadStatus = AsyncStatus.Pending;
+    },
+    loadOnlineFavoritesCompletion(state, action: FetchResponseAction<IncreaseManga[]>) {
+      const { error, data = [] } = action.payload;
+      if (error) {
+        state.loadStatus = AsyncStatus.Rejected;
+        return;
+      }
+
+      const list = Array.from(new Set(state.list.concat(data.map((item) => item.hash))));
+      state.page += 1;
+      state.loadStatus = AsyncStatus.Fulfilled;
+      state.isEnd = list.length === state.list.length;
+      state.list = list;
+    },
   },
 });
 
@@ -742,6 +781,20 @@ const dictSlice = createSlice({
           };
         });
       })
+      .addCase(onlineFavoritesAction.loadOnlineFavoritesCompletion, (state, action) => {
+        const { error, data } = action.payload;
+        if (error) {
+          return;
+        }
+
+        data.forEach((item) => {
+          state.manga[item.hash] = {
+            ...defaultIncreaseManga,
+            ...state.manga[item.hash],
+            ...item,
+          };
+        });
+      })
       .addCase(chapterAction.loadChapterCompletion, (state, action) => {
         const { error, data } = action.payload;
         if (error) {
@@ -764,6 +817,7 @@ const pluginAction = pluginSlice.actions;
 const batchAction = batchSlice.actions;
 const searchAction = searchSlice.actions;
 const discoveryAction = discoverySlice.actions;
+const onlineFavoritesAction = onlineFavoritesSlice.actions;
 const favoritesAction = favoritesSlice.actions;
 const mangaAction = mangaSlice.actions;
 const chapterAction = chapterSlice.actions;
@@ -778,6 +832,7 @@ const pluginReducer = pluginSlice.reducer;
 const batchReducer = batchSlice.reducer;
 const searchReducer = searchSlice.reducer;
 const discoveryReducer = discoverySlice.reducer;
+const onlineFavoritesReducer = onlineFavoritesSlice.reducer;
 const favoritesReducer = favoritesSlice.reducer;
 const mangaReducer = mangaSlice.reducer;
 const chapterReducer = chapterSlice.reducer;
@@ -793,6 +848,7 @@ export const action = {
   ...batchAction,
   ...searchAction,
   ...discoveryAction,
+  ...onlineFavoritesAction,
   ...favoritesAction,
   ...mangaAction,
   ...chapterAction,
@@ -808,6 +864,7 @@ export const reducer = combineReducers<RootState>({
   batch: batchReducer,
   search: searchReducer,
   discovery: discoveryReducer,
+  onlineFavorites: onlineFavoritesReducer,
   favorites: favoritesReducer,
   manga: mangaReducer,
   chapter: chapterReducer,

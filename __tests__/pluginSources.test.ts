@@ -1,4 +1,4 @@
-import { expect, test } from '@jest/globals';
+import { afterAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { Plugin, PluginMap } from '~/plugins';
 import HComic from '~/plugins/hcomic';
 import Bika from '~/plugins/bika';
@@ -7,6 +7,8 @@ import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
 import MBZ from '~/plugins/mbz';
 import { MangaStatus, ErrorMessage } from '~/utils';
+import { SecureToken } from '~/utils/secureToken';
+import CryptoJS from 'crypto-js';
 
 const hcomicItem = {
   _id: 'mongo-1',
@@ -364,4 +366,238 @@ test('漫画bz 详情页缺失 MANGABZ_COMIC_MID 脚本时抛错', () => {
   const detail = MBZ.handleMangaInfo(htmlWithScript, '123456bz') as { manga: IncreaseManga };
   expect(detail.manga.mangaId).toBe('123456bz');
   expect(detail.manga.title).toBe('漫画bz 测试');
+});
+
+test('Bika 在线收藏夹请求带签名与排序并复用列表解析', () => {
+  Bika.syncExtraData({ bikaToken: 'token-for-test' });
+  const request = Bika.prepareFavoritesFetch?.(2);
+  expect(request?.url).toBe('https://picaapi.picacomic.com/users/favourite');
+  expect(request?.body).toEqual({ page: 2, s: 'dd' });
+  expect(request?.headers?.get('authorization')).toBe('token-for-test');
+  expect(request?.headers?.get('signature')).toMatch(/^[a-f0-9]{64}$/);
+
+  const favorites = Bika.handleFavorites?.({
+    code: 200,
+    data: {
+      comics: {
+        docs: [
+          {
+            _id: 'comic-1',
+            title: '哔咔收藏漫画',
+            author: '作者甲,作者乙',
+            categories: ['全彩'],
+            thumb: { fileServer: 'https://storage1.picacomic.com', path: 'tobe/comic-1/cover.jpg' },
+          },
+        ],
+        page: 1,
+        pages: 1,
+      },
+    },
+  }) as { favorites: IncreaseManga[] };
+  expect(favorites.favorites[0]).toMatchObject({
+    mangaId: 'comic-1',
+    title: '哔咔收藏漫画',
+    author: ['作者甲', '作者乙'],
+    bookCover: 'https://storage1.picacomic.com/static/tobe/comic-1/cover.jpg',
+  });
+
+  const unauthorized = Bika.handleFavorites?.({ code: 401 }) as { error: Error };
+  expect(unauthorized.error.message).toBe(ErrorMessage.AuthFailBIKA);
+  Bika.syncExtraData({});
+});
+
+test('NHentai 在线收藏夹需要 API Key 并解析官方响应', () => {
+  NH.syncExtraData({});
+  expect(() => NH.prepareFavoritesFetch?.(1)).toThrow(ErrorMessage.MissingApiKeyNH);
+
+  NH.syncExtraData({ nhApiKey: ' api-key-for-test ' });
+  const request = NH.prepareFavoritesFetch?.(3);
+  expect(request?.url).toBe('https://nhentai.net/api/v2/favorites');
+  expect(request?.body).toEqual({ page: 3 });
+  expect(request?.headers?.get('Authorization')).toBe('Key api-key-for-test');
+  expect(request?.authErrorMessage).toBe(ErrorMessage.AuthFailNH);
+
+  const favorites = NH.handleFavorites?.({
+    result: [
+      {
+        id: 665425,
+        media_id: '4060527',
+        japanese_title: 'NH 收藏漫画',
+        thumbnail: 'galleries/4060527/thumb.jpg.webp',
+        num_pages: 2,
+      },
+    ],
+    num_pages: 1,
+  }) as { favorites: IncreaseManga[] };
+  expect(favorites.favorites[0]).toMatchObject({
+    mangaId: '665425',
+    title: 'NH 收藏漫画',
+    bookCover: 'https://h-comic.link/api/nh/4060527',
+  });
+
+  expect(() => NH.handleFavorites?.({})).toThrow(ErrorMessage.WrongPageStructure);
+  NH.syncExtraData({});
+  expect(() => NH.prepareFavoritesFetch?.(1)).toThrow(ErrorMessage.MissingApiKeyNH);
+});
+
+test('HComic 在线收藏夹需要登录凭据并解析 docs 结构', () => {
+  HComic.syncExtraData({});
+  expect(() => HComic.prepareFavoritesFetch?.(1)).toThrow(ErrorMessage.MissingTokenHCOMIC);
+
+  HComic.syncExtraData({ hcomicToken: ' token-for-test ' });
+  const request = HComic.prepareFavoritesFetch?.(2);
+  expect(request?.url).toBe('https://api.h-comic.com/api/favourites');
+  expect(request?.body).toEqual({ page: 2, limit: 20 });
+  expect(request?.headers?.get('Authorization')).toBe('Bearer token-for-test');
+  expect(request?.headers?.get('Origin')).toBe('https://h-comic.com');
+  expect(request?.authErrorMessage).toBe(ErrorMessage.AuthFailHCOMIC);
+
+  const favorites = HComic.handleFavorites?.({
+    docs: [{ comic: hcomicItem }, { comic: null }, {}],
+    totalDocs: 1,
+    totalPages: 1,
+  }) as { favorites: IncreaseManga[] };
+  expect(favorites.favorites).toHaveLength(1);
+  expect(favorites.favorites[0]).toMatchObject({
+    mangaId: '123',
+    title: 'HComic 测试漫画',
+    bookCover: 'https://h-comic.link/api/mms/456',
+  });
+
+  expect(() => HComic.handleFavorites?.({})).toThrow(ErrorMessage.WrongPageStructure);
+  HComic.syncExtraData({});
+  expect(() => HComic.prepareFavoritesFetch?.(1)).toThrow(ErrorMessage.MissingTokenHCOMIC);
+});
+
+describe('HComic Auth0 PKCE 账号密码登录', () => {
+  const originalFetch = global.fetch;
+
+  const mockResponse = (init: {
+    status?: number;
+    url?: string;
+    headers?: Record<string, string>;
+    text?: string;
+    json?: unknown;
+  }) =>
+    ({
+      status: init.status ?? 200,
+      url: init.url ?? '',
+      headers: new Headers(init.headers),
+      text: () => Promise.resolve(init.text ?? ''),
+      json: () => Promise.resolve(init.json ?? {}),
+    } as unknown as Response);
+
+  const mockFetch = jest.fn<typeof fetch>();
+  const loginPageUrl =
+    'https://h-comic.auth0.com/u/login?state=internal-state&client=06o2Ynemb0DbDy8RBImlEGbyta1gT7mS';
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    global.fetch = mockFetch as unknown as typeof fetch;
+    // jest 环境 Platform.OS 非 android，stub 掉原生 SecureRandom 桥
+    jest.spyOn(SecureToken, 'createSessionNonce').mockReturnValue('secure-test-nonce');
+  });
+  afterAll(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  test('完整 PKCE 流程换回 access_token', async () => {
+    mockFetch
+      // 1. GET /authorize → 自动跟随到登录页
+      .mockResolvedValueOnce(
+        mockResponse({
+          url: loginPageUrl,
+          text: '<form><input type="hidden" name="state" value="form-state-1" /></form>',
+        })
+      )
+      // 2. POST 登录表单 → 302（OkHttp 不跟随 POST 重定向）
+      .mockResolvedValueOnce(
+        mockResponse({
+          status: 302,
+          url: loginPageUrl,
+          headers: { location: '/authorize/resume?state=internal-state' },
+        })
+      )
+      // 3. GET 回调链 → 自动跟到 h-comic.com，授权码在最终 URL 上
+      .mockResolvedValueOnce(
+        mockResponse({ url: 'https://h-comic.com/?code=auth-code-1&state=oauth-state' })
+      )
+      // 4. POST /oauth/token
+      .mockResolvedValueOnce(mockResponse({ json: { access_token: 'hcomic-access-token' } }));
+
+    const token = await HComic.performLogin?.('test@example.com', 'secret');
+    expect(token).toBe('hcomic-access-token');
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+
+    // authorize 请求携带 PKCE 参数
+    const [authorizeUrl] = mockFetch.mock.calls[0] as [string];
+    expect(authorizeUrl).toContain('https://h-comic.auth0.com/authorize?');
+    expect(authorizeUrl).toContain('code_challenge=');
+    expect(authorizeUrl).toContain('code_challenge_method=S256');
+    expect(authorizeUrl).toContain(encodeURIComponent('https://h-comic.com'));
+
+    // 登录表单提交到登录页 URL，带 form state 与账密
+    const [loginUrl, loginInit] = mockFetch.mock.calls[1] as [string, { body: string }];
+    expect(loginUrl).toBe(loginPageUrl);
+    expect(loginInit.body).toContain('state=form-state-1');
+    expect(loginInit.body).toContain('username=test%40example.com');
+    expect(loginInit.body).toContain('password=secret');
+
+    // code_verifier 与 code_challenge 配对（S256）
+    const [, tokenInit] = mockFetch.mock.calls[3] as [string, { body: string }];
+    const tokenBody = JSON.parse(tokenInit.body);
+    expect(tokenBody.code).toBe('auth-code-1');
+    expect(tokenBody.grant_type).toBe('authorization_code');
+    const challenge = /code_challenge=([^&]+)/.exec(authorizeUrl)?.[1] || '';
+    expect(
+      CryptoJS.SHA256(tokenBody.code_verifier)
+        .toString(CryptoJS.enc.Base64)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/[=]+$/, '')
+    ).toBe(decodeURIComponent(challenge));
+  });
+
+  test('密码错误时 Auth0 返回 200 错误页', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        mockResponse({
+          url: loginPageUrl,
+          text: '<input type="hidden" name="state" value="form-state-2" />',
+        })
+      )
+      .mockResolvedValueOnce(
+        mockResponse({
+          status: 200,
+          url: loginPageUrl,
+          text: '<div><span class="ulp-error-message">Wrong email or password</span></div>',
+        })
+      );
+
+    await expect(HComic.performLogin?.('test@example.com', 'bad')).rejects.toThrow(
+      'Wrong email or password'
+    );
+  });
+
+  test('登录被拒重定向回 Auth0 登录页时报账号密码错误', async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        mockResponse({
+          url: loginPageUrl,
+          text: '<input value="form-state-3" type="hidden" name="state" />',
+        })
+      )
+      .mockResolvedValueOnce(
+        mockResponse({
+          status: 302,
+          url: loginPageUrl,
+          headers: { location: 'https://h-comic.auth0.com/u/login?state=internal-state' },
+        })
+      );
+
+    await expect(HComic.performLogin?.('test@example.com', 'bad')).rejects.toThrow(
+      '登录失败：账号或密码错误'
+    );
+  });
 });

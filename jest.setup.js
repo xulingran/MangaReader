@@ -21,9 +21,9 @@ jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock
 const { NativeModules } = require('react-native');
 NativeModules.SecureTokenModule = {
   createSessionNonce: jest.fn(() => 'secure-test-nonce'),
-  setBikaToken: jest.fn(() => Promise.resolve()),
-  getBikaToken: jest.fn(() => Promise.resolve(null)),
-  clearBikaToken: jest.fn(() => Promise.resolve()),
+  setCredential: jest.fn(() => Promise.resolve()),
+  getCredential: jest.fn(() => Promise.resolve(null)),
+  clearCredential: jest.fn(() => Promise.resolve()),
 };
 NativeModules.ImageProcessorModule = {
   unscramble: jest.fn(() =>

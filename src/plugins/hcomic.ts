@@ -1,7 +1,10 @@
 import Base, { Plugin } from './base';
 import { MangaStatus, ErrorMessage } from '~/utils';
+import { SecureToken } from '~/utils/secureToken';
 import { Buffer } from 'buffer';
+import CryptoJS from 'crypto-js';
 import dayjs from 'dayjs';
+import queryString from 'query-string';
 
 interface HComicTag {
   type?: string;
@@ -38,6 +41,37 @@ const payloadPatterns = [
   /data:\s*\[null,\s*(\{[\s\S]*?\})\s*\],/,
   /data:\s*\[null,\s*(\{[\s\S]*?\})\s*\](?:\s|$)/,
 ];
+
+// Auth0 配置（Authorization Code + PKCE），与 h-comic.com 网页端一致，并非本项目自己的密钥
+const AUTH0_DOMAIN = 'h-comic.auth0.com';
+const AUTH0_CLIENT_ID = '06o2Ynemb0DbDy8RBImlEGbyta1gT7mS';
+const AUTH0_AUDIENCE = 'https://h-comic.auth0.com/api/v2/';
+const AUTH0_SCOPE = 'openid profile email offline_access';
+const AUTH0_REDIRECT_URI = 'https://h-comic.com';
+
+const toBase64Url = (input: CryptoJS.lib.WordArray): string =>
+  input.toString(CryptoJS.enc.Base64).replace(/\+/g, '-').replace(/\//g, '_').replace(/[=]+$/, '');
+
+/** 从 Auth0 登录页 HTML 表单中提取 state 隐藏字段的值（兼容 name/value 两种属性顺序） */
+function extractFormState(html: string): string {
+  const patterns = [
+    /<input[^>]+name\s*=\s*["']state["'][^>]+value\s*=\s*["']([^"']+)["']/i,
+    /<input[^>]+value\s*=\s*["']([^"']+)["'][^>]+name\s*=\s*["']state["']/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(html);
+    if (match) {
+      return match[1];
+    }
+  }
+  return '';
+}
+
+/** 从 Auth0 错误页 HTML 中提取可读错误信息 */
+function extractAuth0Error(html: string): string {
+  const match = /<[^>]+class\s*=\s*["'][^"']*(?:error|alert)[^"']*["'][^>]*>([^<]+)/i.exec(html);
+  return match?.[1]?.trim() || '';
+}
 
 function quoteUnquotedObjectKeys(source: string): string {
   let result = '';
@@ -120,6 +154,8 @@ function extractPayload(text: string | null): HComicPayload {
 }
 
 class HComic extends Base {
+  private authToken = '';
+
   constructor() {
     const userAgent =
       'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36';
@@ -128,7 +164,7 @@ class HComic extends Base {
       id: Plugin.HCOMIC,
       name: 'HComic',
       shortName: 'HComic',
-      description: '部分页面需要代理',
+      description: '部分页面需要代理；查看在线收藏夹需点右侧图标账号密码登录，或在 WebView 登录',
       href: 'https://h-comic.com/',
       userAgent,
       defaultHeaders: {
@@ -136,8 +172,165 @@ class HComic extends Base {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         Referer: 'https://h-comic.com/',
       },
+      // 登录态是 Auth0 access_token：优先从 Auth0 SPA SDK 的 localStorage 缓存读取，
+      // 兜底读 auth0_token cookie；拿到后 postMessage 回 JS 侧存入 Keystore
+      injectedJavaScript: `(function() {
+        try {
+          var token = '';
+          for (var i = 0; i < window.localStorage.length; i++) {
+            var key = window.localStorage.key(i);
+            if (key && key.indexOf('@@auth0spajs@@') === 0) {
+              var parsed = null;
+              try { parsed = JSON.parse(window.localStorage.getItem(key)); } catch (_) {}
+              var candidate = parsed && parsed.body && parsed.body.access_token;
+              if (typeof candidate === 'string' && candidate) { token = candidate; break; }
+            }
+          }
+          if (!token) {
+            var match = document.cookie.match(/(?:^|;\\s*)auth0_token=([^;]+)/);
+            if (match) { token = decodeURIComponent(match[1]); }
+          }
+          if (token) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              hcomicToken: token,
+              nonce: window.__MANGA_READER_NONCE__
+            }));
+          }
+        } catch (_) {}
+      })(); true;`,
     });
   }
+
+  syncExtraData = (data: Record<string, unknown>) => {
+    const token = data.hcomicToken;
+    if (typeof token === 'string' && token.trim()) {
+      this.authToken = token.trim();
+      return '获取 HComic 登录凭据成功';
+    }
+    this.authToken = '';
+  };
+
+  /**
+   * Auth0 Authorization Code + PKCE 账号密码登录（Auth0 客户端未开启 ROPG 密码授权，
+   * 只能模拟浏览器走 PKCE 流程）。RN fetch 自动管理 Cookie 并跟随 GET 重定向：
+   * GET /authorize 直接落在登录页；POST 登录表单的 302 不会被 OkHttp 跟随（POST 重定向
+   * 仅 GET/HEAD 才跟随），可以从 Location 头继续；回调 GET 链自动跟到 h-comic.com，
+   * 授权码出现在最终 response.url 上。
+   */
+  performLogin: NonNullable<Base['performLogin']> = async (username, password) => {
+    const auth0Origin = `https://${AUTH0_DOMAIN}`;
+    const loginHeaders = {
+      'User-Agent': this.userAgent || '',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+
+    // 1. PKCE 参数。CryptoJS 的 WordArray.random 在 Hermes 下没有加密随机源会直接抛错，
+    // 改用原生 SecureRandom 桥（输出 base64url，字符集本身就是合法的 PKCE verifier）
+    const codeVerifier = SecureToken.createSessionNonce();
+    const codeChallenge = toBase64Url(CryptoJS.SHA256(codeVerifier));
+    const oauthState = SecureToken.createSessionNonce();
+
+    // 2. GET /authorize（自动跟随重定向到登录页，同时建立 Auth0 会话 Cookie）
+    const authorizeUrl = `${auth0Origin}/authorize?${queryString.stringify({
+      response_type: 'code',
+      client_id: AUTH0_CLIENT_ID,
+      redirect_uri: AUTH0_REDIRECT_URI,
+      audience: AUTH0_AUDIENCE,
+      scope: AUTH0_SCOPE,
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+      state: oauthState,
+    })}`;
+    const loginPageResp = await fetch(authorizeUrl, { headers: loginHeaders });
+    if (loginPageResp.status >= 400) {
+      throw new Error(`Auth0 授权页请求失败（HTTP ${loginPageResp.status}）`);
+    }
+    const loginPageUrl = loginPageResp.url || authorizeUrl;
+    const formState = extractFormState(await loginPageResp.text());
+    if (!formState) {
+      throw new Error('无法从 Auth0 登录页提取表单 state，请尝试使用 WebView 登录');
+    }
+
+    // 3. 单步登录：POST 用户名+密码到登录页 URL（Auth0 新版 Universal Login 单步表单）
+    const loginResp = await fetch(loginPageUrl, {
+      method: 'POST',
+      headers: {
+        ...loginHeaders,
+        Origin: auth0Origin,
+        Referer: loginPageUrl,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: queryString.stringify({ state: formState, username, password, action: 'default' }),
+    });
+
+    // 4. 从回调重定向中捕获授权码
+    let callbackUrl = '';
+    const location = loginResp.headers.get('location') || '';
+    if (location) {
+      const absolute = location.startsWith('/') ? auth0Origin + location : location;
+      // 重定向回 Auth0 登录页 = 登录被拒
+      if (
+        absolute.includes('auth0.com') &&
+        (absolute.includes('/u/login') || absolute.includes('error='))
+      ) {
+        const errorCode = /[?&#]error=([^&]+)/.exec(absolute)?.[1];
+        throw new Error(
+          errorCode
+            ? `登录失败：${decodeURIComponent(errorCode)}`
+            : '登录失败：账号或密码错误'
+        );
+      }
+      const callbackResp = await fetch(absolute, { headers: loginHeaders });
+      callbackUrl = callbackResp.url || absolute;
+    } else {
+      if (loginResp.status >= 400) {
+        throw new Error(`登录请求失败（HTTP ${loginResp.status}）`);
+      }
+      // 密码错误时 Auth0 返回 200 + 错误页；若整个重定向链被跟随，resp.url 上直接带 code
+      callbackUrl = loginResp.url || '';
+      if (!/[?&#]code=/.test(callbackUrl)) {
+        const detail = extractAuth0Error(await loginResp.text());
+        throw new Error(detail ? `登录失败：${detail}` : '登录失败：账号或密码错误');
+      }
+    }
+
+    const authCode = /[?&#]code=([^&]+)/.exec(callbackUrl)?.[1];
+    if (!authCode) {
+      const errorCode = /[?&#]error=([^&]+)/.exec(callbackUrl)?.[1];
+      throw new Error(
+        errorCode
+          ? `登录失败：${decodeURIComponent(errorCode)}`
+          : '登录回调异常：未收到授权码，请尝试使用 WebView 登录'
+      );
+    }
+
+    // 5. POST /oauth/token：授权码 + code_verifier 换 access_token
+    const tokenResp = await fetch(`${auth0Origin}/oauth/token`, {
+      method: 'POST',
+      headers: {
+        'User-Agent': this.userAgent || '',
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_id: AUTH0_CLIENT_ID,
+        code: authCode,
+        code_verifier: codeVerifier,
+        redirect_uri: AUTH0_REDIRECT_URI,
+      }),
+    });
+    const result: { access_token?: string; error?: string; error_description?: string } =
+      await tokenResp.json().catch(() => ({}));
+    if (tokenResp.status >= 400) {
+      const detail = result.error_description || result.error || '';
+      throw new Error(`Token 交换失败（HTTP ${tokenResp.status}）${detail ? `：${detail}` : ''}`);
+    }
+    if (!result.access_token) {
+      throw new Error(result.error_description || result.error || ErrorMessage.MissingTokenHCOMIC);
+    }
+    return result.access_token;
+  };
 
   private getMangaId(item: HComicItem): string {
     return String(item.id || item._id || '');
@@ -245,6 +438,26 @@ class HComic extends Base {
     timeout: 20000,
   });
 
+  // 在线收藏夹：JSON API + Auth0 Bearer token（WebView 登录后由 syncExtraData 注入）
+  prepareFavoritesFetch: NonNullable<Base['prepareFavoritesFetch']> = (page) => {
+    if (!this.authToken) {
+      throw new Error(ErrorMessage.MissingTokenHCOMIC);
+    }
+    return {
+      url: 'https://api.h-comic.com/api/favourites',
+      body: { page, limit: 20 },
+      headers: new Headers({
+        'User-Agent': this.defaultHeaders['User-Agent'],
+        Accept: 'application/json',
+        Authorization: `Bearer ${this.authToken}`,
+        Origin: 'https://h-comic.com',
+        Referer: 'https://h-comic.com/',
+      }),
+      timeout: 20000,
+      authErrorMessage: ErrorMessage.AuthFailHCOMIC,
+    };
+  };
+
   prepareChapterFetch: Base['prepareChapterFetch'] = (
     mangaId,
     _chapterId,
@@ -264,6 +477,20 @@ class HComic extends Base {
   handleSearch: Base['handleSearch'] = (text: string | null) => ({
     search: (extractPayload(text).comics || []).map((item) => this.toManga(item)),
   });
+
+  handleFavorites: NonNullable<Base['handleFavorites']> = (response: {
+    docs?: { comic?: HComicItem | null }[];
+  }) => {
+    if (!response || !Array.isArray(response.docs)) {
+      throw new Error(`HComic ${ErrorMessage.WrongPageStructure}`);
+    }
+    return {
+      favorites: response.docs
+        .map((doc) => doc?.comic)
+        .filter((comic): comic is HComicItem => Boolean(comic && this.getMangaId(comic)))
+        .map((comic) => this.toManga(comic)),
+    };
+  };
 
   handleMangaInfo: Base['handleMangaInfo'] = (text: string | null, mangaId) => {
     const item = extractPayload(text).comic;

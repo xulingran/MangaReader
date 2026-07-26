@@ -200,6 +200,37 @@ abstract class Base {
   ): { error: Error; token?: undefined } | { error?: undefined; token: string };
 
   /**
+   * @description optional: multi-step account login (e.g. Auth0 PKCE), returns token.
+   *   Plugins with single-request login use prepareLoginFetch/handleLogin instead.
+   * @public
+   * @param {string} _username
+   * @param {string} _password
+   * @return {*}  {Promise<string>}
+   * @memberof Base
+   */
+  public performLogin?(_username: string, _password: string): Promise<string>;
+
+  /**
+   * @description optional: build online favorites request, plugins without online favorites leave it undefined
+   * @public
+   * @param {number} _page
+   * @return {*}  {FetchData}
+   * @memberof Base
+   */
+  public prepareFavoritesFetch?(_page: number): FetchData;
+
+  /**
+   * @description optional: parse online favorites response into manga list
+   * @public
+   * @param {*} _response
+   * @return {*}  {({ error: Error; favorites?: undefined } | { error?: undefined; favorites: IncreaseManga[] })}
+   * @memberof Base
+   */
+  public handleFavorites?(
+    _response: any
+  ): { error: Error; favorites?: undefined } | { error?: undefined; favorites: IncreaseManga[] };
+
+  /**
    * @description check response is hit by cloudflare protect
    * @public
    * @param {cheerio.Root} $

@@ -62,7 +62,7 @@ src/
 ├── redux/             # slice.ts（单一 rootSlice + initialState）、saga.ts（全部副作用，
 │                      # 约 1200 行：抓取、持久化、批量更新、下载/导出任务、备份恢复）、store.ts
 ├── schema/            # 由 TS 类型生成的 JSON Schema，运行时校验持久化/备份数据
-├── views/             # 8 个页面：Home（书架）、Discovery、Search、Detail、Chapter（阅读器）、
+├── views/             # 9 个页面：Home（书架）、Discovery、Search、OnlineFavorites（在线收藏夹）、Detail、Chapter（阅读器）、
 │                      # Plugin、Webview、About
 ├── components/        # 共享组件（Reader、Controller、ComicImage、Bookshelf、Overlay 等）
 ├── hooks/             # 自定义 hooks（usePageKeys、useInterval、usePrevNext 等）
@@ -83,7 +83,12 @@ patches/               # patch-package 补丁
 - 子类需实现 5 个 `prepare*Fetch` 方法（返回 `FetchData` 描述请求）和 5 个 `handle*` 方法（把响应解析成统一数据结构）：discovery（发现页）、search、mangaInfo、chapterList、chapter
 - 漫画/章节的唯一标识是 hash：`combineHash(plugin, mangaId, chapterId?)`，格式为 `插件ID&mangaId&chapterId`，用 `splitHash` 解码
 - 新增加插件：新建文件继承 `Base` → 在 `Plugin` 枚举中登记 → 在 `src/plugins/index.ts` 的 `PluginMap` 中注册
-- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态；Bika 支持账号密码登录（Plugin 页登录按钮 → `loginPlugin` saga → 签名 POST `auth/sign-in`）或 WebView 获取，Token 仅存入 Android Keystore（`SecureTokenModule`），不进入 Redux/备份，账号密码不持久化
+- 部分插件需要代理、webview 过 Cloudflare（`checkCloudFlare` 辅助方法）或登录态；Bika 支持账号密码登录（Plugin 页登录按钮 → `loginPlugin` saga → 签名 POST `auth/sign-in`）或 WebView 获取，Token 仅存入 Android Keystore（`SecureTokenModule`），不进入 Redux/备份，账号密码不持久化\r
+- **在线收藏夹**：`Base` 的可选钩子 `prepareFavoritesFetch?` / `handleFavorites?`（不支持的源保持 undefined），BIKA / HCOMIC / NH 三个源已实现；Plugin 页收藏夹图标 → `OnlineFavorites` 页（复用 Search 页模式：hash 列表存 `onlineFavorites` slice、实体进 `dict.manga`、切源自动重置），`loadOnlineFavoritesSaga` 与 `loadSearchSaga` 同构\r
+- **凭据存储**：`SecureTokenModule` 按 key（`bika`/`hcomic`/`nh` 白名单）加密存储，`src/utils/secureToken.ts` 的 `pluginCredentialKey` / `credentialExtraField` 维护 插件→key→extra 字段 映射；注入统一走 `syncExtraData`（bika=`bikaToken`、hcomic=`hcomicToken`、nh=`nhApiKey`），冷启动/迁移由 saga 的 `restorePluginCredentials` 恢复\r
+  - Bika：账号密码登录或 WebView 提取 localStorage token\r
+  - HComic：账号密码登录（`performLogin`：Auth0 Authorization Code + PKCE 模拟浏览器登录，利用 RN fetch 自动管理 Cookie、POST 302 不跟随读 Location、GET 链自动跟到回调 URL 取授权码），或 WebView 登录后由插件 `injectedJavaScript` 提取 Auth0 token（localStorage `@@auth0spajs@@` 缓存或 `auth0_token` cookie）；收藏夹走 `api.h-comic.com` Bearer JSON API\r
+  - NH：Plugin 页手动配置 API Key（nhentai 账户设置页生成，`saveCredential` saga），收藏夹走官方 `api/v2/favorites` + `Authorization: Key` 头
 - `batchDelay` 控制批量更新时的请求间隔，避免触发源站风控
 
 ## 状态与 Schema

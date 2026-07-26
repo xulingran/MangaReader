@@ -12,7 +12,7 @@ import {
 import { action, initialState, reducer } from '~/redux/slice';
 import { normalizeTaskForRestart } from '~/redux/task';
 import { AsyncStatus, TaskType } from '~/utils';
-import { isAllowedWebviewUrl, parseBikaTokenMessage } from '~/views/Webview';
+import { isAllowedWebviewUrl, parseCredentialMessage } from '~/views/Webview';
 
 const cloneInitialState = (): RootState => JSON.parse(JSON.stringify(initialState));
 
@@ -59,15 +59,28 @@ describe('凭据与 WebView 边界', () => {
     expect(assertJsonSizeWithinLimit(value, 1024)).toBe(Buffer.byteLength(JSON.stringify(value)));
   });
 
-  it('只接受 Bika 的单 Token 消息并限制同源导航', () => {
+  it('只接受对应来源的单凭据消息并限制同源导航', () => {
     expect(
-      parseBikaTokenMessage(Plugin.BIKA, '{"bikaToken":" token ","nonce":"session"}', 'session')
-    ).toBe('token');
+      parseCredentialMessage(Plugin.BIKA, '{"bikaToken":" token ","nonce":"session"}', 'session')
+    ).toEqual({ key: 'bika', token: 'token' });
     expect(
-      parseBikaTokenMessage(Plugin.MBZ, '{"bikaToken":"token","nonce":"session"}', 'session')
+      parseCredentialMessage(
+        Plugin.HCOMIC,
+        '{"hcomicToken":" token ","nonce":"session"}',
+        'session'
+      )
+    ).toEqual({ key: 'hcomic', token: 'token' });
+    expect(
+      parseCredentialMessage(Plugin.HCOMIC, '{"bikaToken":"token","nonce":"session"}', 'session')
     ).toBeUndefined();
     expect(
-      parseBikaTokenMessage(Plugin.BIKA, '{"bikaToken":"token","nonce":"wrong"}', 'session')
+      parseCredentialMessage(Plugin.NH, '{"nhApiKey":"token","nonce":"session"}', 'session')
+    ).toBeUndefined();
+    expect(
+      parseCredentialMessage(Plugin.MBZ, '{"bikaToken":"token","nonce":"session"}', 'session')
+    ).toBeUndefined();
+    expect(
+      parseCredentialMessage(Plugin.BIKA, '{"bikaToken":"token","nonce":"wrong"}', 'session')
     ).toBeUndefined();
     expect(
       isAllowedWebviewUrl('https://manhuabika.com/plogin/', 'https://manhuabika.com/home')
@@ -295,5 +308,52 @@ describe('来源与文件名健壮性', () => {
   it('导出文件名剔除路径穿越和 Windows 保留字符', () => {
     expect(sanitizeFileName('../AUX:<漫画>?*')).toBe('.._AUX__漫画___');
     expect(sanitizeFileName('CON')).toBe('unknown');
+  });
+});
+
+describe('在线收藏夹', () => {
+  it('按来源重置列表、分页去重并合并进 dict', () => {
+    let state = cloneInitialState();
+    state = reducer(state, action.loadOnlineFavorites({ source: Plugin.BIKA, isReset: true }));
+    expect(state.onlineFavorites.loadStatus).toBe(AsyncStatus.Pending);
+
+    state = reducer(
+      state,
+      action.loadOnlineFavoritesCompletion({ data: [{ hash: 'BIKA&1' } as IncreaseManga] })
+    );
+    expect(state.onlineFavorites.list).toEqual(['BIKA&1']);
+    expect(state.onlineFavorites.page).toBe(2);
+    expect(state.onlineFavorites.isEnd).toBe(false);
+
+    // 返回重复数据 → 没有新增 → isEnd
+    state = reducer(
+      state,
+      action.loadOnlineFavoritesCompletion({ data: [{ hash: 'BIKA&1' } as IncreaseManga] })
+    );
+    expect(state.onlineFavorites.isEnd).toBe(true);
+
+    // 切换来源自动重置，避免串源
+    state = reducer(state, action.loadOnlineFavorites({ source: Plugin.NH }));
+    expect(state.onlineFavorites.list).toEqual([]);
+    expect(state.onlineFavorites.page).toBe(1);
+    expect(state.onlineFavorites.isEnd).toBe(false);
+    expect(state.onlineFavorites.source).toBe(Plugin.NH);
+
+    // completion 同时写入 dict.manga
+    state = reducer(
+      state,
+      action.loadOnlineFavoritesCompletion({
+        data: [{ hash: 'NH&9', title: '收藏漫画' } as IncreaseManga],
+      })
+    );
+    expect(state.dict.manga['NH&9']?.title).toBe('收藏漫画');
+
+    // 错误 completion 不污染列表
+    state = reducer(
+      state,
+      action.loadOnlineFavoritesCompletion({ error: new Error('boom') })
+    );
+    expect(state.onlineFavorites.loadStatus).toBe(AsyncStatus.Rejected);
+    expect(state.onlineFavorites.list).toEqual(['NH&9']);
   });
 });

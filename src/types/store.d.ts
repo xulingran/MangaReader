@@ -170,6 +170,14 @@ declare global {
       loadStatus: AsyncStatus;
       list: string[];
     };
+    onlineFavorites: {
+      /** 当前列表所属来源；切换来源时 slice 自动重置列表 */
+      source?: Plugin;
+      page: number;
+      isEnd: boolean;
+      loadStatus: AsyncStatus;
+      list: string[];
+    };
     manga: {
       loadByHash: Record<string, { status: AsyncStatus; actionId: string }>;
     };

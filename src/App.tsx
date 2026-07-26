@@ -17,6 +17,7 @@ import Header from '~/components/Header';
 import { cleanupTemporaryImages } from '~/utils/imageProcessor';
 import Home from '~/views/Home';
 import Search from '~/views/Search';
+import OnlineFavorites from '~/views/OnlineFavorites';
 import Discovery from '~/views/Discovery';
 import Detail from '~/views/Detail';
 import Chapter from '~/views/Chapter';
@@ -67,6 +68,7 @@ const NavigationScreen = ({ ready = false }: NavigationScreenProps) => {
           component={Discovery}
         />
         <Screen name="Search" options={{ headerRight: PluginSelect }} component={Search} />
+        <Screen name="OnlineFavorites" options={{ title: '在线收藏夹' }} component={OnlineFavorites} />
         <Screen
           name="Detail"
           options={{ title: 'loading...', headerRight: HeartAndBrowser }}

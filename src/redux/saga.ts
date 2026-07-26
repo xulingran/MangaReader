@@ -55,7 +55,7 @@ import {
   writeSnapshotTasks,
   type PersistedSnapshot,
 } from './persistence';
-import { SecureToken } from '~/utils/secureToken';
+import { SecureToken, credentialExtraField, pluginCredentialKey, secureCredentialKeys } from '~/utils/secureToken';
 import { Buffer } from 'buffer';
 import { normalizeTaskForRestart } from './task';
 
@@ -299,6 +299,7 @@ const {
   // plugin
   setSource,
   setCredential,
+  saveCredential,
   loginPlugin,
   sortPlugin,
   disablePlugin,
@@ -315,6 +316,9 @@ const {
   // discovery
   loadDiscovery,
   loadDiscoveryCompletion,
+  // onlineFavorites
+  loadOnlineFavorites,
+  loadOnlineFavoritesCompletion,
   // favorites
   addFavorites,
   removeFavorites,
@@ -416,6 +420,18 @@ export function syncPluginExtraData(extra: Record<string, unknown>): void {
   PluginMap.forEach((plugin) => plugin.syncExtraData(extra));
 }
 
+/** 从 Keystore 读取全部插件凭据并同步到插件（冷启动/存储迁移后的恢复挂载点） */
+function* restorePluginCredentials() {
+  const extra: Record<string, unknown> = {};
+  for (const key of secureCredentialKeys) {
+    const credential: string | null = yield call(SecureToken.getCredential, key);
+    if (credential && credential.trim()) {
+      extra[credentialExtraField[key]] = credential.trim();
+    }
+  }
+  syncPluginExtraData(extra);
+}
+
 function migratePluginDict(dict: RootState['dict']): RootState['dict'] {
   return {
     manga: filterPluginRecord(dict.manga),
@@ -478,22 +494,56 @@ function* pluginSyncDataSaga() {
     setCredential.type,
     function* ({ payload: { source } }: ReturnType<typeof setCredential>) {
       const plugin = PluginMap.get(source);
+      const key = pluginCredentialKey(source);
 
-      if (!plugin || source !== Plugin.BIKA) {
+      if (!plugin || !key) {
         yield put(toastMessage(ErrorMessage.PluginMissing));
         return;
       }
-      const token: string | null = yield call(SecureToken.getBikaToken);
-      const normalizedToken = token?.trim() || '';
-      if (!normalizedToken || normalizedToken.length > 8192) {
-        yield put(toastMessage('Bika Token 格式无效'));
+      const credential: string | null = yield call(SecureToken.getCredential, key);
+      const normalized = credential?.trim() || '';
+      if (!normalized || normalized.length > 8192) {
+        yield put(toastMessage('登录凭据格式无效'));
         return;
       }
 
-      const message = plugin.syncExtraData({ bikaToken: normalizedToken });
+      const message = plugin.syncExtraData({ [credentialExtraField[key]]: normalized });
       if (typeof message === 'string') {
         yield put(toastMessage(message));
       }
+    }
+  );
+}
+
+/** 手动输入凭据（如 nhentai API Key）：校验后写入 Keystore 并同步到插件 */
+function* saveCredentialSaga() {
+  yield takeLeadingSuspense(
+    saveCredential.type,
+    function* ({ payload: { source, credential } }: ReturnType<typeof saveCredential>) {
+      const plugin = PluginMap.get(source);
+      const key = pluginCredentialKey(source);
+
+      if (!plugin || !key) {
+        yield put(toastMessage(ErrorMessage.PluginMissing));
+        return;
+      }
+      const normalized = credential.trim();
+      if (!normalized || normalized.length > 8192) {
+        yield put(toastMessage('登录凭据格式无效'));
+        return;
+      }
+
+      try {
+        yield call(SecureToken.setCredential, key, normalized);
+      } catch (error) {
+        yield put(
+          toastMessage(error instanceof Error ? error.message : '安全保存登录凭据失败')
+        );
+        return;
+      }
+
+      const message = plugin.syncExtraData({ [credentialExtraField[key]]: normalized });
+      yield put(toastMessage(typeof message === 'string' ? message : '凭据保存成功'));
     }
   );
 }
@@ -503,8 +553,9 @@ function* loginPluginSaga() {
     loginPlugin.type,
     function* ({ payload: { source, username, password } }: ReturnType<typeof loginPlugin>) {
       const plugin = PluginMap.get(source);
+      const hasSingleStepLogin = Boolean(plugin?.prepareLoginFetch && plugin?.handleLogin);
 
-      if (!plugin || !plugin.prepareLoginFetch || !plugin.handleLogin) {
+      if (!plugin || (!plugin.performLogin && !hasSingleStepLogin)) {
         yield put(toastMessage(ErrorMessage.PluginMissing));
         return;
       }
@@ -515,45 +566,59 @@ function* loginPluginSaga() {
         return;
       }
 
-      const { error: prepareError, request } = tryPrepare(() =>
-        (plugin.prepareLoginFetch as NonNullable<typeof plugin.prepareLoginFetch>)(
-          account,
-          password
-        )
-      );
-      if (prepareError || !request) {
-        yield put(toastMessage((prepareError || new Error(ErrorMessage.Unknown)).message));
-        return;
-      }
-
-      const { error: fetchError, data } = yield call(fetchData, request);
-      if (fetchError) {
-        yield put(toastMessage(fetchError.message));
-        return;
-      }
-
-      const { error: loginError, token } = (
-        plugin.handleLogin as NonNullable<typeof plugin.handleLogin>
-      )(data);
-      if (loginError || !token) {
-        yield put(toastMessage((loginError || new Error(ErrorMessage.Unknown)).message));
-        return;
-      }
-
-      if (source === Plugin.BIKA) {
+      let token = '';
+      if (plugin.performLogin) {
+        // 多步登录流程（如 HComic 的 Auth0 PKCE），由插件内部自行完成全部请求
         try {
-          yield call(SecureToken.setBikaToken, token);
+          token = (yield call(plugin.performLogin, account, password)) as string;
         } catch (error) {
           yield put(
-            toastMessage(
-              error instanceof Error ? error.message : '安全保存 Bika Token 失败'
-            )
+            toastMessage(error instanceof Error ? error.message : ErrorMessage.Unknown)
+          );
+          return;
+        }
+      } else {
+        const { error: prepareError, request } = tryPrepare(() =>
+          (plugin.prepareLoginFetch as NonNullable<typeof plugin.prepareLoginFetch>)(
+            account,
+            password
+          )
+        );
+        if (prepareError || !request) {
+          yield put(toastMessage((prepareError || new Error(ErrorMessage.Unknown)).message));
+          return;
+        }
+
+        const { error: fetchError, data } = yield call(fetchData, request);
+        if (fetchError) {
+          yield put(toastMessage(fetchError.message));
+          return;
+        }
+
+        const { error: loginError, token: parsedToken } = (
+          plugin.handleLogin as NonNullable<typeof plugin.handleLogin>
+        )(data);
+        if (loginError || !parsedToken) {
+          yield put(toastMessage((loginError || new Error(ErrorMessage.Unknown)).message));
+          return;
+        }
+        token = parsedToken;
+      }
+
+      const credentialKey = pluginCredentialKey(source);
+      if (credentialKey) {
+        try {
+          yield call(SecureToken.setCredential, credentialKey, token);
+        } catch (error) {
+          yield put(
+            toastMessage(error instanceof Error ? error.message : '安全保存登录凭据失败')
           );
           return;
         }
       }
 
-      const message = plugin.syncExtraData({ bikaToken: token });
+      const extraField = credentialKey ? credentialExtraField[credentialKey] : 'bikaToken';
+      const message = plugin.syncExtraData({ [extraField]: token });
       yield put(toastMessage(typeof message === 'string' ? message : '登录成功'));
     }
   );
@@ -591,8 +656,7 @@ function* loadFromSnapshotSaga(snapshot: PersistedSnapshot) {
     const migratedState = ((state: RootState) => state)(yield select());
     yield call(persistFullState, migratedState);
   }
-  const bikaToken: string | null = yield call(SecureToken.getBikaToken);
-  syncPluginExtraData(bikaToken ? { bikaToken } : {});
+  yield call(restorePluginCredentials);
   yield call(garbageCollectStorage);
 }
 
@@ -695,7 +759,7 @@ function* migrateLegacyStorageSaga() {
     const rawPlugin: LegacyPluginState = JSON.parse(pluginData);
     const legacyToken = getLegacyBikaToken(rawPlugin);
     if (legacyToken) {
-      yield call(SecureToken.setBikaToken, legacyToken);
+      yield call(SecureToken.setCredential, 'bika', legacyToken);
     }
     const plugin = migratePluginState(rawPlugin);
     if (validate(plugin, pluginSchema)) {
@@ -716,8 +780,7 @@ function* migrateLegacyStorageSaga() {
     }
   }
 
-  const bikaToken: string | null = yield call(SecureToken.getBikaToken);
-  syncPluginExtraData(bikaToken ? { bikaToken } : {});
+  yield call(restorePluginCredentials);
 
   const migratedState = ((state: RootState) => state)(yield select());
   // 旧版多 key 布局无论是否发生字段迁移，都一次性提交为 generation 快照。
@@ -1162,7 +1225,9 @@ function* clearCacheSaga() {
 
     let credentialError: Error | undefined;
     try {
-      yield call(SecureToken.clearBikaToken);
+      for (const key of secureCredentialKeys) {
+        yield call(SecureToken.clearCredential, key);
+      }
     } catch (error) {
       credentialError = new Error(
         '清空安全凭据失败：' + (error instanceof Error ? error.message : ErrorMessage.Unknown)
@@ -1358,6 +1423,48 @@ function* loadSearchSaga() {
       );
 
       yield put(loadSearchCompletion({ error: fetchError || pluginError, data: search }));
+    }
+  );
+}
+
+function* loadOnlineFavoritesSaga() {
+  yield takeLatestSuspense(
+    loadOnlineFavorites.type,
+    function* ({ payload: { source } }: ReturnType<typeof loadOnlineFavorites>) {
+      const plugin = PluginMap.get(source);
+      const { page, isEnd } = ((state: RootState) => state.onlineFavorites)(yield select());
+
+      if (!plugin || !plugin.prepareFavoritesFetch || !plugin.handleFavorites) {
+        yield put(
+          loadOnlineFavoritesCompletion({ error: new Error(ErrorMessage.PluginMissing) })
+        );
+        return;
+      }
+      if (isEnd) {
+        yield put(loadOnlineFavoritesCompletion({ error: new Error(ErrorMessage.NoMore) }));
+        return;
+      }
+
+      const { error: prepareError, request } = tryPrepare(() =>
+        (plugin.prepareFavoritesFetch as NonNullable<typeof plugin.prepareFavoritesFetch>)(page)
+      );
+      if (prepareError || !request) {
+        yield put(
+          loadOnlineFavoritesCompletion({
+            error: prepareError || new Error(ErrorMessage.Unknown),
+          })
+        );
+        return;
+      }
+      const { error: fetchError, data } = yield call(fetchData, request);
+      const { error: pluginError, favorites } = trycatch(
+        () => (plugin.handleFavorites as NonNullable<typeof plugin.handleFavorites>)(data),
+        '漫画数据解析错误：'
+      );
+
+      yield put(
+        loadOnlineFavoritesCompletion({ error: fetchError || pluginError, data: favorites })
+      );
     }
   );
 }
@@ -2160,6 +2267,7 @@ export default function* rootSaga() {
 
     fork(launchSaga),
     fork(pluginSyncDataSaga),
+    fork(saveCredentialSaga),
     fork(loginPluginSaga),
     fork(syncDataSaga),
     fork(backupSaga),
@@ -2174,6 +2282,7 @@ export default function* rootSaga() {
     fork(batchUpdateSaga),
     fork(loadDiscoverySaga),
     fork(loadSearchSaga),
+    fork(loadOnlineFavoritesSaga),
     fork(loadMangaSaga),
     fork(loadMangaInfoSaga),
     fork(loadChapterListSaga),

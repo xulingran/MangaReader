@@ -6,6 +6,7 @@ declare global {
     Home: undefined;
     Discovery: undefined;
     Search: { keyword: string; source: Plugin };
+    OnlineFavorites: { source: Plugin };
     Detail: { mangaHash: string; enabledMultiple?: boolean; selected?: string[] };
     Chapter: { mangaHash: string; chapterHash: string; page: number };
     Plugin: undefined;
@@ -15,6 +16,7 @@ declare global {
   type StackHomeProps = NativeStackScreenProps<RootStackParamList, 'Home'>;
   type StackDiscoveryProps = NativeStackScreenProps<RootStackParamList, 'Discovery'>;
   type StackSearchProps = NativeStackScreenProps<RootStackParamList, 'Search'>;
+  type StackOnlineFavoritesProps = NativeStackScreenProps<RootStackParamList, 'OnlineFavorites'>;
   type StackDetailProps = NativeStackScreenProps<RootStackParamList, 'Detail'>;
   type StackChapterProps = NativeStackScreenProps<RootStackParamList, 'Chapter'>;
   type StackPluginProps = NativeStackScreenProps<RootStackParamList, 'Plugin'>;

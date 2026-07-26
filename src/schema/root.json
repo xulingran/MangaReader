@@ -481,6 +481,46 @@
             ],
             "type": "object"
         },
+        "onlineFavorites": {
+            "properties": {
+                "isEnd": {
+                    "type": "boolean"
+                },
+                "list": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "loadStatus": {
+                    "$ref": "#/definitions/AsyncStatus"
+                },
+                "page": {
+                    "type": "number"
+                },
+                "source": {
+                    "description": "当前列表所属来源；切换来源时 slice 自动重置列表",
+                    "enum": [
+                        "BIKA",
+                        "BZM",
+                        "HCOMIC",
+                        "MBZ",
+                        "MHGM",
+                        "MOEIMG",
+                        "NH",
+                        "RM5"
+                    ],
+                    "type": "string"
+                }
+            },
+            "required": [
+                "isEnd",
+                "list",
+                "loadStatus",
+                "page"
+            ],
+            "type": "object"
+        },
         "plugin": {
             "properties": {
                 "list": {
@@ -686,6 +726,7 @@
         "discovery",
         "favorites",
         "manga",
+        "onlineFavorites",
         "plugin",
         "release",
         "search",

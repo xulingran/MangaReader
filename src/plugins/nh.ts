@@ -52,6 +52,7 @@ const languageOptions = [
 
 class NHentai extends Base {
   private readonly imageHeaders: Record<string, string>;
+  private apiKey = '';
 
   constructor() {
     const userAgent = 'Mozilla/5.0 (Linux; Android 13; rv:120.0) Gecko/120.0 Firefox/120.0';
@@ -60,7 +61,8 @@ class NHentai extends Base {
       id: Plugin.NH,
       name: 'nhentai',
       shortName: 'NH',
-      description: '需要代理，支持按热度和中文筛选',
+      description:
+        '需要代理，支持按热度和中文筛选；查看在线收藏夹需点右侧图标配置 API Key（nhentai 账户设置页生成）',
       href: 'https://nhentai.net/',
       userAgent,
       defaultHeaders: {
@@ -155,6 +157,15 @@ class NHentai extends Base {
     };
   }
 
+  syncExtraData = (data: Record<string, unknown>) => {
+    const apiKey = data.nhApiKey;
+    if (typeof apiKey === 'string' && apiKey.trim()) {
+      this.apiKey = apiKey.trim();
+      return 'nhentai API Key 配置成功';
+    }
+    this.apiKey = '';
+  };
+
   prepareDiscoveryFetch: Base['prepareDiscoveryFetch'] = (page, { sort, language }) =>
     this.prepareListing(page, '', sort, language);
 
@@ -166,6 +177,23 @@ class NHentai extends Base {
     headers: new Headers(this.defaultHeaders),
     timeout: 20000,
   });
+
+  // 在线收藏夹：官方 API 仅接受 `Authorization: Key <apiKey>` 认证
+  prepareFavoritesFetch: NonNullable<Base['prepareFavoritesFetch']> = (page) => {
+    if (!this.apiKey) {
+      throw new Error(ErrorMessage.MissingApiKeyNH);
+    }
+    return {
+      url: 'https://nhentai.net/api/v2/favorites',
+      body: { page },
+      headers: new Headers({
+        ...this.defaultHeaders,
+        Authorization: `Key ${this.apiKey}`,
+      }),
+      timeout: 20000,
+      authErrorMessage: ErrorMessage.AuthFailNH,
+    };
+  };
 
 
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId) => ({
@@ -181,6 +209,13 @@ class NHentai extends Base {
   handleSearch: Base['handleSearch'] = (response: NhListResponse) => ({
     search: (response.result || []).map((item) => this.listItemToManga(item)),
   });
+
+  handleFavorites: NonNullable<Base['handleFavorites']> = (response: NhListResponse) => {
+    if (!response || !Array.isArray(response.result)) {
+      throw new Error(`NHentai ${ErrorMessage.WrongPageStructure}`);
+    }
+    return { favorites: response.result.map((item) => this.listItemToManga(item)) };
+  };
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: NhDetailResponse, mangaId) => {
     if (!response.id) {

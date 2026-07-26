@@ -266,6 +266,10 @@ class Bika extends Base {
   prepareChapterListFetch: Base['prepareChapterListFetch'] = (mangaId, page) =>
     this.getRequest(`comics/${mangaId}/eps`, { page });
 
+  // 在线收藏夹：s=dd 新收藏在前，与发现页排序参数一致
+  prepareFavoritesFetch: NonNullable<Base['prepareFavoritesFetch']> = (page) =>
+    this.getRequest('users/favourite', { page, s: 'dd' });
+
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, page) =>
     this.getRequest(`comics/${mangaId}/order/${chapterId}/pages`, { page });
 
@@ -307,6 +311,14 @@ class Bika extends Base {
       return result;
     }
     return { search: result.list };
+  };
+
+  handleFavorites: NonNullable<Base['handleFavorites']> = (response: BikaListResponse) => {
+    const result = this.parseList(response);
+    if ('error' in result) {
+      return result;
+    }
+    return { favorites: result.list };
   };
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: BikaDetailResponse, mangaId) => {
