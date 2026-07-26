@@ -10,7 +10,7 @@ import {
   ImageProcessor,
   unlinkTemporaryImage,
 } from '~/utils/imageProcessor';
-import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useStaticSafeAreaFrame, useStaticSafeAreaInsets } from '~/hooks';
 import { useLatestRef } from '~/hooks/useLatestRef';
 import ErrorWithRetry from './ErrorWithRetry';
 import {
@@ -35,8 +35,8 @@ const NativeScrambleImage = ({
   onChange,
   onRelease,
 }: ImageProps) => {
-  const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
+  const { top, left, right, bottom } = useStaticSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight, orientation } = useStaticSafeAreaFrame();
   const [state, setState] = useState(prevState);
   const [retry, setRetry] = useState(0);
   const tempPath = useRef<string | null>(null);
@@ -45,12 +45,10 @@ const NativeScrambleImage = ({
   const prevStateRef = useLatestRef(prevState);
   const indexRef = useLatestRef(index);
   const onReleaseRef = useLatestRef(onRelease);
-  // 几何尺寸（窗口/insets）防抖变化时不应触发「下载+解密」整条重跑——
-  // 那会让旋转屏/键盘弹起等场景重解码整章扰乱图。改用 ref 持有最新值，effect 内读取。
-  // 注意：旋转屏后已 setState 的 multipleFitWidth/multipleFitHeight/landscapeHeight/
-  // portraitHeight 仍停留在加载时的旧值（effect 不重跑）。这与原图 ComicImage.handleLoad
-  // 既有特性一致（onLoad 不重触发），Reader 的 defaultPortraitHeight/defaultLandscapeHeight
-  // 会作为兜底；用「不重解码」换 IO 是电子墨水场景的有意取舍。
+  // 几何尺寸（窗口/insets）挂载时已冻结（useStaticSafeArea*，见该 hook 注释），
+  // ref 持有仅为让加载 effect 只依赖真实输入，不触发「下载+解密」整条重跑。
+  // 旋转屏会经 Reader 的 key={orientation} 整体 remount，组件随之按新尺寸重新加载；
+  // 用「不原地重解码」换 IO 是电子墨水场景的有意取舍。
   const dimsRef = useLatestRef({ windowWidth, windowHeight, top, left, right, bottom });
 
   const style = useFillStyle(
@@ -148,7 +146,7 @@ const NativeScrambleImage = ({
       }
       release();
     };
-    // 几何尺寸经 dimsRef 读取，不进 deps —— 防止旋转屏/insets 防抖变化触发整章重解码。
+    // 几何尺寸经 dimsRef 读取，不进 deps —— 防止尺寸变化触发整章重解码。
     // （ref 对象引用稳定，列入 deps 仅为满足 eslint，不会触发重跑）
   }, [headers, release, retry, uri, dimsRef, prevStateRef]);
 

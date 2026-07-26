@@ -19,7 +19,7 @@ import {
 } from '~/utils';
 import { FlashList, ListRenderItemInfo, ViewToken } from '@shopify/flash-list';
 import { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { useDebouncedSafeAreaFrame } from '~/hooks';
+import { useStaticSafeAreaFrame } from '~/hooks';
 import { useLatestRef } from '~/hooks/useLatestRef';
 import { useFocusEffect } from '@react-navigation/native';
 import { Box, Flex } from 'native-base';
@@ -136,7 +136,7 @@ const Reader = ({
   onScrollEndDrag,
   cache,
 }: ReaderProps) => {
-  const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
+  const { width: windowWidth, height: windowHeight, orientation } = useStaticSafeAreaFrame();
   const multipleData = useTakeTwo(data, seat);
   // 同一个 ref 在三种布局间复用：横向/纵向是单图项，双页是图项数组。
   // FlashList 的泛型只影响 renderItem 的类型推断，scrollToIndex 与泛型无关，

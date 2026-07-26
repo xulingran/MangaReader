@@ -1,6 +1,6 @@
 import React, { ReactNode, memo, useCallback, useMemo, useState } from 'react';
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated';
-import { useDebouncedSafeAreaInsets, useDebouncedSafeAreaFrame } from '~/hooks';
+import { useStaticSafeAreaInsets, useStaticSafeAreaFrame } from '~/hooks';
 import { useLatestRef } from '~/hooks/useLatestRef';
 import { emptyFn, PositionX, SafeArea } from '~/utils';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
@@ -55,8 +55,8 @@ const Controller = ({
   onSwipeStart,
   onSwipe,
 }: ControllerProps) => {
-  const insets = useDebouncedSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
+  const insets = useStaticSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useStaticSafeAreaFrame();
   const oneThirdWidth = windowWidth / 3;
 
   const width = useSharedValue(windowWidth);
@@ -403,7 +403,7 @@ const Controller = ({
 };
 
 export const LongPressController = ({ children, onLongPress }: LongPressControllerProps) => {
-  const { width: windowWidth } = useDebouncedSafeAreaFrame();
+  const { width: windowWidth } = useStaticSafeAreaFrame();
   const oneThirdWidth = windowWidth / 3;
 
   const longPress = useMemo(

@@ -7,4 +7,5 @@ export * from './useSplitWidth';
 export * from './useDebouncedSafeAreaInsets';
 export * from './usePageKeys';
 export * from './useDebouncedSafeAreaFrame';
+export * from './useStaticSafeArea';
 export * from './useInterval';

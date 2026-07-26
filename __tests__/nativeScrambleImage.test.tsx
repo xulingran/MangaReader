@@ -6,7 +6,7 @@ import { FileSystem } from 'react-native-file-access';
 import { AsyncStatus } from '~/utils';
 import NativeScrambleImage from '~/components/NativeScrambleImage';
 
-// 引用 mock 出来的尺寸 setter，模拟防抖后尺寸变化（旋转屏 / insets 变化）
+// 引用 mock 出来的尺寸 setter，模拟尺寸变化（旋转屏 / insets 变化）
 const hooksMock = require('~/hooks') as {
   __setFrame: (next: { width: number; height: number; orientation: string }) => void;
   __setInsets: (next: { top: number; right: number; bottom: number; left: number }) => void;
@@ -23,7 +23,7 @@ jest.mock('native-base', () =>
 );
 
 jest.mock('~/hooks', () => {
-  // 让尺寸可被测试动态修改，模拟旋转屏 / insets 防抖变化
+  // 让尺寸可被测试动态修改，模拟旋转屏 / insets 变化
   let frameState = { width: 800, height: 1200, orientation: 'portrait' };
   let insetsState = { top: 0, right: 0, bottom: 0, left: 0 };
   return {
@@ -35,6 +35,10 @@ jest.mock('~/hooks', () => {
     },
     useDebouncedSafeAreaInsets: () => insetsState,
     useDebouncedSafeAreaFrame: () => frameState,
+    // 组件实际使用的冻结钩子：mock 不做冻结，直接返回动态 state，
+    // 以便测试模拟旋转屏 / insets 变化时 effect deps 收敛的行为
+    useStaticSafeAreaInsets: () => insetsState,
+    useStaticSafeAreaFrame: () => frameState,
   };
 });
 
@@ -115,7 +119,7 @@ describe('NativeScrambleImage', () => {
     act(() => tree!.unmount());
   });
 
-  it('尺寸/insets 防抖变化不触发重新下载与解密（effect deps 收敛）', async () => {
+  it('尺寸/insets 变化不触发重新下载与解密（effect deps 收敛）', async () => {
     // ImageProcessor.unscramble 的调用次数应保持为 1，即使 frame/insets 改变
     const { ImageProcessor } = require('~/utils/imageProcessor');
     const unscrambleSpy = ImageProcessor.unscramble as jest.Mock;
@@ -138,7 +142,7 @@ describe('NativeScrambleImage', () => {
 
     // 模拟旋转屏：frame 改变（宽高互换）
     hooksMock.__setFrame({ width: 1200, height: 800, orientation: 'landscape' });
-    // 模拟 insets 防抖后变化
+    // 模拟 insets 变化
     hooksMock.__setInsets({ top: 24, right: 0, bottom: 48, left: 0 });
 
     await act(async () => {

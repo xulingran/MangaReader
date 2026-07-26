@@ -4,7 +4,7 @@ import { Box, Center } from 'native-base';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { useFocusEffect } from '@react-navigation/native';
 import { aspectFit, AsyncStatus, LayoutMode } from '~/utils';
-import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useStaticSafeAreaFrame, useStaticSafeAreaInsets } from '~/hooks';
 import ErrorWithRetry from './ErrorWithRetry';
 import NativeScrambleImage from './NativeScrambleImage';
 import StaticCachedImage from './StaticCachedImage';
@@ -53,8 +53,8 @@ const DefaultImage = ({
   defaultLandscapeHeight,
   onChange,
 }: ImageProps) => {
-  const { top, left, right, bottom } = useDebouncedSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight, orientation } = useDebouncedSafeAreaFrame();
+  const { top, left, right, bottom } = useStaticSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight, orientation } = useStaticSafeAreaFrame();
   const [imageState, setImageState] = useState(prevState);
   const [reloadVersion, setReloadVersion] = useState(0);
   const uriRef = useRef(uri);
