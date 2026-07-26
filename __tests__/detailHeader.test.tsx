@@ -30,20 +30,16 @@ jest.mock('~/redux', () => {
 });
 
 jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const { View: MockView } = require('react-native');
-  const MockComponent = (props: object) => mockReact.createElement(MockView, props);
-  const MockButton = MockComponent as unknown as { Group: typeof MockComponent };
-  MockButton.Group = MockComponent;
-  return {
-    extendTheme: (theme: object) => theme,
-    HStack: MockComponent,
-    View: MockComponent,
-    Text: MockComponent,
-    Button: MockButton,
-    Toast: { show: jest.fn() },
-    useDisclose: () => ({ isOpen: false, onOpen: jest.fn(), onClose: jest.fn() }),
-  };
+  const mock = require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['HStack', 'View', 'Text', 'Button'],
+    extra: {
+      extendTheme: (theme: object) => theme,
+      Toast: { show: jest.fn() },
+      useDisclose: () => ({ isOpen: false, onOpen: jest.fn(), onClose: jest.fn() }),
+    },
+  });
+  mock.Button.Group = mock.Button;
+  return mock;
 });
 
 jest.mock('~/components/VectorIcon', () => ({

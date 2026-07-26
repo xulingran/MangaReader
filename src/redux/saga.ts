@@ -10,7 +10,10 @@ import {
   takeLeading,
   delay,
   race,
+  actionChannel,
+  flush as flushChannel,
 } from 'redux-saga/effects';
+import type { Channel } from 'redux-saga';
 import {
   storageKey,
   fetchData,
@@ -29,7 +32,7 @@ import {
   TemplateKey,
 } from '~/utils';
 import { PermissionsAndroid, Platform } from 'react-native';
-import { splitHash, combineHash, Plugin, PluginMap } from '~/plugins';
+import { splitHash, combineHash, isRegisteredHash, Plugin, PluginMap } from '~/plugins';
 import { nanoid, Action, PayloadAction } from '@reduxjs/toolkit';
 import { action, initialState } from './slice';
 import { Dirs, FileSystem } from 'react-native-file-access';
@@ -350,15 +353,9 @@ const {
   saveManga,
 } = action;
 
-function isRegisteredHash(hash: unknown): hash is string {
-  if (typeof hash !== 'string') {
-    return false;
-  }
-  const [source] = splitHash(hash);
-  return PluginMap.has(source);
-}
-
 function filterPluginRecord<T>(record: Record<string, T>): Record<string, T> {
+  // isRegisteredHash 已从 ~/plugins 引入：安全过滤已删除插件遗留的脏数据
+  // （splitHash 遇到非法 plugin 段会抛错，这里需要返回 false 而非抛错）。
   return Object.fromEntries(Object.entries(record).filter(([hash]) => isRegisteredHash(hash)));
 }
 
@@ -562,169 +559,181 @@ function* loginPluginSaga() {
   );
 }
 
+/**
+ * 从 generation 快照加载：迁移已删除插件数据、迁移 setting/task、采样校验后一次性还原。
+ * 快照命中即直接返回，不再走旧版多 key 布局。
+ */
+function* loadFromSnapshotSaga(snapshot: PersistedSnapshot) {
+  const original = JSON.stringify(snapshot);
+  migrateDeletedPluginData(snapshot);
+  snapshot.setting = migrateSetting(snapshot.setting);
+  snapshot.task = normalizeTaskForRestart(snapshot.task);
+  // dict / favorites 在大库下可达上千条，全量 Draft07 校验会显著阻塞低端设备启动。
+  // 这里采样前 8 条做结构防御；plugin/setting/task 条目少且结构关键，保持全量校验。
+  // syncDataSaga 整段在 try/catch 内，采样漏过的脏数据走 catch 兜底；运行期 reducer
+  // 也会对单条访问做容错（异常条目显示为空，不崩）。
+  if (
+    !validateSampled(snapshot.favorites, 8, favoritesSchema) ||
+    !validateSampled(snapshot.dict, 8, dictSchema) ||
+    !validate(snapshot.plugin, pluginSchema) ||
+    !validate(snapshot.setting, settingSchema, initialState.setting) ||
+    !validate(snapshot.task, taskSchema)
+  ) {
+    throw new Error('本地快照数据格式错误');
+  }
+
+  yield put(syncFavorites(snapshot.favorites));
+  yield put(syncDict(snapshot.dict));
+  yield put(syncPlugin(snapshot.plugin));
+  yield put(syncSetting(snapshot.setting));
+  yield put(syncTask(snapshot.task));
+  if (original !== JSON.stringify(snapshot)) {
+    const migratedState = ((state: RootState) => state)(yield select());
+    yield call(persistFullState, migratedState);
+  }
+  const bikaToken: string | null = yield call(SecureToken.getBikaToken);
+  syncPluginExtraData(bikaToken ? { bikaToken } : {});
+  yield call(garbageCollectStorage);
+}
+
+/**
+ * 旧版多 key 布局迁移：逐段读 index→multiGet→迁移→校验→put。
+ * 各段（dict / task / favorites / plugin / setting）独立校验，任一段格式错误即抛错，
+ * 由 syncDataSaga 的统一 catch 兜底成同步失败提示。
+ */
+function* migrateLegacyStorageSaga() {
+  const [
+    [, mangaIndexData],
+    [, chapterIndexData],
+    [, taskIndexData],
+    [, jobIndexData],
+    [, favoritesData],
+    [, pluginData],
+    [, settingData],
+    [, dictData],
+  ]: KeyValuePair[] = yield call(Storage.multiGet, [
+    storageKey.mangaIndex,
+    storageKey.chapterIndex,
+    storageKey.taskIndex,
+    storageKey.jobIndex,
+    storageKey.favorites,
+    storageKey.plugin,
+    storageKey.setting,
+    storageKey.dict,
+  ]);
+  const task: RootState['task'] = {
+    list: [],
+    job: { max: initialState.task.job.max, list: [], thread: [] },
+  };
+
+  // dict：旧版可能拆成 manga/chapter 两个 index（!dictData），也可能是合并后的单 key
+  const dict: RootState['dict'] = { manga: {}, chapter: {}, lastWatch: {}, record: {} };
+  if (!dictData) {
+    if (mangaIndexData) {
+      const mangaIndex: string[] = JSON.parse(mangaIndexData);
+      const mangaPairs: KeyValuePair[] = yield call(Storage.multiGet, mangaIndex);
+      const mangaDict = pairsToDict(mangaPairs);
+      for (const key in mangaDict) {
+        dict.manga[key] = mangaDict[key].manga;
+        dict.lastWatch[key] = mangaDict[key].lastWatch;
+      }
+    }
+    if (chapterIndexData) {
+      const chapterIndex: string[] = JSON.parse(chapterIndexData);
+      const chapterPairs: KeyValuePair[] = yield call(Storage.multiGet, chapterIndex);
+      const chapterDict = pairsToDict(chapterPairs);
+      for (const key in chapterDict) {
+        dict.chapter[key] = chapterDict[key].chapter;
+        dict.record[key] = chapterDict[key].record;
+      }
+    }
+  } else {
+    Object.assign(dict, JSON.parse(dictData));
+  }
+  const migratedDict = migratePluginDict(dict);
+  if (validate(migratedDict, dictSchema)) {
+    yield put(syncDict(migratedDict));
+  } else {
+    throw new Error('同步字典数据失败：格式错误');
+  }
+
+  // task / job：从各自 index 重建列表
+  if (taskIndexData) {
+    const taskIndex: string[] = JSON.parse(taskIndexData);
+    const taskPairs: KeyValuePair[] = yield call(Storage.multiGet, taskIndex);
+    const taskDict = pairsToDict(taskPairs);
+    task.list = taskIndex.map((item) => taskDict[item]);
+  }
+  if (jobIndexData) {
+    const jobIndex: string[] = JSON.parse(jobIndexData);
+    const jobPairs: KeyValuePair[] = yield call(Storage.multiGet, jobIndex);
+    const jobDict = pairsToDict(jobPairs);
+    task.job.list = jobIndex.map((item) => jobDict[item]);
+  }
+  const migratedTask = normalizeTaskForRestart(migratePluginTask(task));
+  if (validate(migratedTask, taskSchema)) {
+    yield put(syncTask(migratedTask));
+  } else {
+    throw new Error('同步任务数据失败：格式错误');
+  }
+
+  // favorites：过滤已删除插件的脏条目
+  if (favoritesData) {
+    const rawFavorites: RootState['favorites'] = JSON.parse(favoritesData);
+    const favorites = rawFavorites.filter((item: RootState['favorites'][number]) =>
+      isRegisteredHash(item.mangaHash)
+    );
+    if (validate(favorites, favoritesSchema)) {
+      yield put(syncFavorites(favorites));
+    } else {
+      throw new Error('同步收藏数据失败：格式错误');
+    }
+  }
+
+  // plugin：迁移已删除插件、把旧版 extra.bikaToken 搬进 Keystore
+  if (pluginData) {
+    const rawPlugin: LegacyPluginState = JSON.parse(pluginData);
+    const legacyToken = getLegacyBikaToken(rawPlugin);
+    if (legacyToken) {
+      yield call(SecureToken.setBikaToken, legacyToken);
+    }
+    const plugin = migratePluginState(rawPlugin);
+    if (validate(plugin, pluginSchema)) {
+      yield put(syncPlugin(plugin));
+    } else {
+      throw new Error('同步插件数据失败：格式错误');
+    }
+  }
+
+  // setting：字段迁移 + 校验
+  if (settingData) {
+    const rawSetting = JSON.parse(settingData);
+    const setting = migrateSetting(rawSetting);
+    if (validate(setting, settingSchema, initialState.setting)) {
+      yield put(syncSetting(setting));
+    } else {
+      throw new Error('同步设置失败：格式错误');
+    }
+  }
+
+  const bikaToken: string | null = yield call(SecureToken.getBikaToken);
+  syncPluginExtraData(bikaToken ? { bikaToken } : {});
+
+  const migratedState = ((state: RootState) => state)(yield select());
+  // 旧版多 key 布局无论是否发生字段迁移，都一次性提交为 generation 快照。
+  yield call(persistFullState, migratedState);
+  yield call(garbageCollectStorage);
+}
+
 function* syncDataSaga() {
   yield takeLatestSuspense(syncData.type, function* () {
     try {
       const snapshot: PersistedSnapshot | undefined = yield call(readPersistedSnapshot);
       if (snapshot) {
-        const original = JSON.stringify(snapshot);
-        migrateDeletedPluginData(snapshot);
-        snapshot.setting = migrateSetting(snapshot.setting);
-        snapshot.task = normalizeTaskForRestart(snapshot.task);
-        // dict / favorites 在大库下可达上千条，全量 Draft07 校验会显著阻塞低端设备启动。
-        // 这里采样前 8 条做结构防御；plugin/setting/task 条目少且结构关键，保持全量校验。
-        // syncDataSaga 整段在 try/catch 内，采样漏过的脏数据走 catch 兜底；运行期 reducer
-        // 也会对单条访问做容错（异常条目显示为空，不崩）。
-        if (
-          !validateSampled(snapshot.favorites, 8, favoritesSchema) ||
-          !validateSampled(snapshot.dict, 8, dictSchema) ||
-          !validate(snapshot.plugin, pluginSchema) ||
-          !validate(snapshot.setting, settingSchema, initialState.setting) ||
-          !validate(snapshot.task, taskSchema)
-        ) {
-          throw new Error('本地快照数据格式错误');
-        }
-
-        yield put(syncFavorites(snapshot.favorites));
-        yield put(syncDict(snapshot.dict));
-        yield put(syncPlugin(snapshot.plugin));
-        yield put(syncSetting(snapshot.setting));
-        yield put(syncTask(snapshot.task));
-        if (original !== JSON.stringify(snapshot)) {
-          const migratedState = ((state: RootState) => state)(yield select());
-          yield call(persistFullState, migratedState);
-        }
-        const bikaToken: string | null = yield call(SecureToken.getBikaToken);
-        syncPluginExtraData(bikaToken ? { bikaToken } : {});
-        yield call(garbageCollectStorage);
-        yield put(syncDataCompletion({ error: undefined }));
-        return;
-      }
-
-      let legacyToken: string | undefined;
-      const [
-        [, mangaIndexData],
-        [, chapterIndexData],
-        [, taskIndexData],
-        [, jobIndexData],
-        [, favoritesData],
-        [, pluginData],
-        [, settingData],
-        [, dictData],
-      ]: KeyValuePair[] = yield call(Storage.multiGet, [
-        storageKey.mangaIndex,
-        storageKey.chapterIndex,
-        storageKey.taskIndex,
-        storageKey.jobIndex,
-        storageKey.favorites,
-        storageKey.plugin,
-        storageKey.setting,
-        storageKey.dict,
-      ]);
-      const task: RootState['task'] = {
-        list: [],
-        job: { max: initialState.task.job.max, list: [], thread: [] },
-      };
-
-      if (!dictData) {
-        const dict: RootState['dict'] = { manga: {}, chapter: {}, lastWatch: {}, record: {} };
-        if (mangaIndexData) {
-          const mangaIndex: string[] = JSON.parse(mangaIndexData);
-          const mangaPairs: KeyValuePair[] = yield call(Storage.multiGet, mangaIndex);
-          const mangaDict = pairsToDict(mangaPairs);
-          for (const key in mangaDict) {
-            dict.manga[key] = mangaDict[key].manga;
-            dict.lastWatch[key] = mangaDict[key].lastWatch;
-          }
-        }
-        if (chapterIndexData) {
-          const chapterIndex: string[] = JSON.parse(chapterIndexData);
-          const chapterPairs: KeyValuePair[] = yield call(Storage.multiGet, chapterIndex);
-          const chapterDict = pairsToDict(chapterPairs);
-          for (const key in chapterDict) {
-            dict.chapter[key] = chapterDict[key].chapter;
-            dict.record[key] = chapterDict[key].record;
-          }
-        }
-
-        const migratedDict = migratePluginDict(dict);
-        if (validate(migratedDict, dictSchema)) {
-          yield put(syncDict(migratedDict));
-        } else {
-          throw new Error('同步字典数据失败：格式错误');
-        }
+        yield call(loadFromSnapshotSaga, snapshot);
       } else {
-        const dict: RootState['dict'] = JSON.parse(dictData);
-        const migratedDict = migratePluginDict(dict);
-        if (validate(migratedDict, dictSchema)) {
-          yield put(syncDict(migratedDict));
-        } else {
-          throw new Error('同步字典数据失败：格式错误');
-        }
+        yield call(migrateLegacyStorageSaga);
       }
-
-      if (taskIndexData) {
-        const taskIndex: string[] = JSON.parse(taskIndexData);
-        const taskPairs: KeyValuePair[] = yield call(Storage.multiGet, taskIndex);
-        const taskDict = pairsToDict(taskPairs);
-        task.list = taskIndex.map((item) => taskDict[item]);
-      }
-      if (jobIndexData) {
-        const jobIndex: string[] = JSON.parse(jobIndexData);
-        const jobPairs: KeyValuePair[] = yield call(Storage.multiGet, jobIndex);
-        const jobDict = pairsToDict(jobPairs);
-        task.job.list = jobIndex.map((item) => jobDict[item]);
-      }
-      const migratedTask = normalizeTaskForRestart(migratePluginTask(task));
-      if (validate(migratedTask, taskSchema)) {
-        yield put(syncTask(migratedTask));
-      } else {
-        throw new Error('同步任务数据失败：格式错误');
-      }
-
-      if (favoritesData) {
-        const rawFavorites: RootState['favorites'] = JSON.parse(favoritesData);
-        const favorites = rawFavorites.filter((item: RootState['favorites'][number]) =>
-          isRegisteredHash(item.mangaHash)
-        );
-        if (validate(favorites, favoritesSchema)) {
-          yield put(syncFavorites(favorites));
-        } else {
-          throw new Error('同步收藏数据失败：格式错误');
-        }
-      }
-
-      if (pluginData) {
-        const rawPlugin: LegacyPluginState = JSON.parse(pluginData);
-        legacyToken = getLegacyBikaToken(rawPlugin);
-        if (legacyToken) {
-          yield call(SecureToken.setBikaToken, legacyToken);
-        }
-        const plugin = migratePluginState(rawPlugin);
-        if (validate(plugin, pluginSchema)) {
-          yield put(syncPlugin(plugin));
-        } else {
-          throw new Error('同步插件数据失败：格式错误');
-        }
-      }
-      if (settingData) {
-        const rawSetting = JSON.parse(settingData);
-        const setting = migrateSetting(rawSetting);
-        if (validate(setting, settingSchema, initialState.setting)) {
-          yield put(syncSetting(setting));
-        } else {
-          throw new Error('同步设置失败：格式错误');
-        }
-      }
-
-      const bikaToken: string | null = yield call(SecureToken.getBikaToken);
-      syncPluginExtraData(bikaToken ? { bikaToken } : {});
-
-      const migratedState = ((state: RootState) => state)(yield select());
-      // 旧版多 key 布局无论是否发生字段迁移，都一次性提交为 generation 快照。
-      yield call(persistFullState, migratedState);
-      yield call(garbageCollectStorage);
-
       yield put(syncDataCompletion({ error: undefined }));
     } catch (error) {
       yield put(
@@ -1198,9 +1207,17 @@ export function* batchUpdateWorker({ payload: defaultList }: ReturnType<typeof b
   const queue = [...batchList].map((hash) => ({ hash, retry: 0 }));
 
   const loadMangaEffect = function* ({ hash = '', retry = 0 }) {
-    const [source] = splitHash(hash);
+    // hash 可能来自已删除插件的遗留数据（splitHash 会抛错），先解析失败直接记为失败
+    let source: Plugin | undefined;
+    try {
+      [source] = splitHash(hash);
+    } catch {
+      yield put(inStack(hash));
+      yield put(outStack({ isSuccess: false, isTrend: false, hash, isRetry: false }));
+      return;
+    }
     const actionId = nanoid();
-    const plugin = PluginMap.get(source);
+    const plugin = source ? PluginMap.get(source) : undefined;
     const dict = ((state: RootState) => state.dict)(yield select());
 
     yield put(inStack(hash));
@@ -1415,6 +1432,15 @@ function* loadMangaInfoSaga() {
   yield takeEverySuspense(
     loadMangaInfo.type,
     function* ({ payload: { mangaHash, actionId } }: ReturnType<typeof loadMangaInfo>) {
+      // mangaHash 理论上由 combineHash 生成，但恢复/迁移期可能残留已删除插件的脏 hash。
+      // 用 isRegisteredHash 守卫（splitHash 会抛错），脏数据走 PluginMissing 路径而非被
+      // tryCatchWorker 吞成笼统的「未知错误~」。
+      if (!isRegisteredHash(mangaHash)) {
+        yield put(
+          loadMangaInfoCompletion({ error: new Error(ErrorMessage.PluginMissing), actionId })
+        );
+        return;
+      }
       const [source, mangaId] = splitHash(mangaHash);
       const plugin = PluginMap.get(source);
 
@@ -1455,6 +1481,17 @@ function* loadMangaInfoSaga() {
 export function* loadChapterListWorker({
   payload: { mangaHash, page, actionId },
 }: ReturnType<typeof loadChapterList>) {
+  // mangaHash 可能残留已删除插件的脏数据（见 loadMangaInfoSaga 同款守卫注释）。
+  if (!isRegisteredHash(mangaHash)) {
+    yield put(
+      loadChapterListCompletion({
+        error: new Error(ErrorMessage.PluginMissing),
+        data: { mangaHash, page, list: [] },
+        actionId,
+      })
+    );
+    return;
+  }
   const [source, mangaId] = splitHash(mangaHash);
   const plugin = PluginMap.get(source);
 
@@ -1568,6 +1605,16 @@ function* loadChapterSaga() {
   );
 }
 function* loadChapterWorker(chapterHash: string) {
+  // chapterHash 可能残留已删除插件的脏数据（见 loadMangaInfoSaga 同款守卫注释）。
+  if (!isRegisteredHash(chapterHash)) {
+    yield put(
+      loadChapterCompletion({
+        error: new Error(ErrorMessage.PluginMissing),
+        actionId: chapterHash,
+      })
+    );
+    return;
+  }
   const [source, mangaId, chapterId] = splitHash(chapterHash);
   const plugin = PluginMap.get(source);
 
@@ -1664,6 +1711,11 @@ function* replaceDownloadPath(
   options?: { hash?: string; timestamp?: number }
 ) {
   if (chapterHash) {
+    // chapterHash 可能残留已删除插件的脏数据：splitHash 会抛错，这里直接回退原始 path，
+    // 让调用方按未替换路径继续（脏 hash 对应的 manga/chapter 本就查不到）。
+    if (!isRegisteredHash(chapterHash)) {
+      return path;
+    }
     const [source, mangaId, chapterId] = splitHash(chapterHash);
     const mangaHash = combineHash(source, mangaId);
     const dict = ((state: RootState) => state.dict)(yield select());
@@ -1752,35 +1804,22 @@ function* checkAndroidPath(path: string) {
 }
 function* fileExport({
   path,
-  chapterHash,
   downloadPath,
   filename,
 }: {
   path: string;
-  chapterHash: string;
   downloadPath: string;
   filename?: string;
 }) {
-  if (Platform.OS === 'ios') {
-    const [pluginId, mangaId] = splitHash(chapterHash);
-    const mangaHash = combineHash(pluginId, mangaId);
-    const dict = ((state: RootState) => state.dict)(yield select());
-    const manga = dict.manga[mangaHash];
-    const chapter = dict.chapter[chapterHash];
-
-    yield call(CameraRoll.save, `file://${path}`, {
-      album: `${manga?.title}-${chapter?.title}`,
-    });
+  // 项目仅支持 Android（AGENTS.md），不再保留 iOS 分支。
+  const [, name, suffix] = path.match(/.*\/(.*)\.(.*)$/) || [];
+  if (Number(Platform.Version) >= 29) {
+    const album = sanitizeFileName(downloadPath.split(/[\\/]/).at(-1));
+    const targetName = sanitizeFileName(`${album}-${filename || name}.${suffix || 'jpg'}`);
+    yield call(FileSystem.cpExternal, path, targetName, 'images');
   } else {
-    const [, name, suffix] = path.match(/.*\/(.*)\.(.*)$/) || [];
-    if (Number(Platform.Version) >= 29) {
-      const album = sanitizeFileName(downloadPath.split(/[\\/]/).at(-1));
-      const targetName = sanitizeFileName(`${album}-${filename || name}.${suffix || 'jpg'}`);
-      yield call(FileSystem.cpExternal, path, targetName, 'images');
-    } else {
-      const targetName = sanitizeFileName(`${filename || name}.${suffix || 'jpg'}`);
-      yield call(FileSystem.cp, `file://${path}`, `${downloadPath}/${targetName}`);
-    }
+    const targetName = sanitizeFileName(`${filename || name}.${suffix || 'jpg'}`);
+    yield call(FileSystem.cp, `file://${path}`, `${downloadPath}/${targetName}`);
   }
 }
 function* thread() {
@@ -1819,12 +1858,13 @@ function* thread() {
           yield call(fileExport, {
             path: cachedPath,
             filename: String(index),
-            chapterHash,
             downloadPath: task.downloadPath,
           });
         }
         yield put(endJob({ taskId, jobId, status: AsyncStatus.Fulfilled }));
       } catch (e) {
+        // 保留错误原因便于排查，避免用户只见「失败」无任何线索
+        console.warn(`thread job failed: taskId=${taskId} jobId=${jobId}`, e);
         yield put(endJob({ taskId, jobId, status: AsyncStatus.Rejected }));
       }
     }
@@ -1860,48 +1900,64 @@ function* pushChapterTask({
   taskType: TaskType;
   actionId: string;
 }) {
-  const chapter: Chapter | undefined = yield call(preloadChapter, chapterHash);
-  const androidDownloadPath = ((state: RootState) => state.setting.androidDownloadPath)(
-    yield select()
-  );
-  if (!nonNullable(chapter)) {
-    yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
-    return;
-  }
+  // 整体 try/catch：该函数被 downloadAndExportChapterSaga fork，调用方用
+  // take(pushTask + actionId) 做握手。任何未捕获异常都会杀死父 worker，
+  // 导致握手永不完成、剩余章节静默丢弃。这里保证任何失败都 dispatch 带
+  // actionId 的 pushTask({error})，维持握手完备性。
+  try {
+    const chapter: Chapter | undefined = yield call(preloadChapter, chapterHash);
+    const androidDownloadPath = ((state: RootState) => state.setting.androidDownloadPath)(
+      yield select()
+    );
+    if (!nonNullable(chapter)) {
+      yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
+      return;
+    }
 
-  const { title, headers, images } = chapter;
-  if (images.length === 0) {
-    yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
-    return;
-  }
-  const taskId = nanoid();
-  const downloadPath: string = yield call(replaceDownloadPath, androidDownloadPath, chapterHash, {
-    hash: taskId,
-    timestamp: dayjs().valueOf(),
-  });
-  if (taskType === TaskType.Export) {
-    yield call(checkAndroidPermission);
-    yield call(checkAndroidPath, downloadPath);
-  }
+    const { title, headers, images } = chapter;
+    if (images.length === 0) {
+      yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
+      return;
+    }
+    const taskId = nanoid();
+    const downloadPath: string = yield call(
+      replaceDownloadPath,
+      androidDownloadPath,
+      chapterHash,
+      {
+        hash: taskId,
+        timestamp: dayjs().valueOf(),
+      }
+    );
+    if (taskType === TaskType.Export) {
+      yield call(checkAndroidPermission);
+      yield call(checkAndroidPath, downloadPath);
+    }
 
-  yield put(
-    pushTask({
-      actionId,
-      data: {
-        taskId,
-        chapterHash,
-        title,
-        type: taskType,
-        status: AsyncStatus.Default,
-        downloadPath,
-        headers,
-        queue: images.map((item, index) => ({ index, jobId: nanoid(), source: item.uri })),
-        pending: [],
-        success: [],
-        fail: [],
-      },
-    })
-  );
+    yield put(
+      pushTask({
+        actionId,
+        data: {
+          taskId,
+          chapterHash,
+          title,
+          type: taskType,
+          status: AsyncStatus.Default,
+          downloadPath,
+          headers,
+          queue: images.map((item, index) => ({ index, jobId: nanoid(), source: item.uri })),
+          pending: [],
+          success: [],
+          fail: [],
+        },
+      })
+    );
+  } catch (e) {
+    // preloadChapter / replaceDownloadPath / 权限检查等任意失败都兜底成握手错误。
+    // 原因可能是英文技术文本或很长，只进日志便于排查，toast 保持中文文案。
+    console.warn('pushChapterTask failed:', e);
+    yield put(pushTask({ error: new Error(ErrorMessage.PushTaskFail), actionId }));
+  }
 }
 function* downloadAndExportChapterSaga() {
   yield takeEverySuspense(
@@ -1955,29 +2011,63 @@ function* saveImageSaga() {
     }
   );
 }
-function* taskManagerSaga() {
-  yield takeLeadingSuspense([restartTask.type, pushTask.type, retryTask.type], function* () {
-    while (true) {
-      const max = ((state: RootState) => state.task.job.max)(yield select());
-      const queue = ((state: RootState) =>
-        state.task.job.list.filter((item) => item.status === AsyncStatus.Default))(yield select());
+export function* taskManagerSaga() {
+  // 用 actionChannel 缓冲触发动作：takeLeading 在管理器运行期间到达的
+  // pushTask/retryTask 会被静默丢弃，导致新任务闲置到下一次触发才被调度。
+  // channel 把这些动作存起来，循环每轮 take 一个触发并处理队列；处理完后
+  // flush 清空堆积的触发动作（其产物已在队列里被消费），保证不丢任务也不空转。
+  // redux-saga 的 actionChannel effect 不在描述符里暴露 channel 类型，
+  // 需手动断言（运行时确实返回一个可 take/flush 的 channel）。
+  const channel = (yield actionChannel([
+    restartTask.type,
+    pushTask.type,
+    retryTask.type,
+  ])) as Channel<Action<string>>;
+  while (true) {
+    yield take(channel);
+    try {
+      while (true) {
+        while (true) {
+          const max = ((state: RootState) => state.task.job.max)(yield select());
+          const queue = ((state: RootState) =>
+            state.task.job.list.filter((item) => item.status === AsyncStatus.Default))(
+            yield select()
+          );
 
-      if (queue.length <= 0) {
-        break;
-      }
+          if (queue.length <= 0) {
+            break;
+          }
 
-      for (let i = 0; i < max; i++) {
-        yield fork(thread);
-        if (i < max - 1) {
-          yield delay(0);
+          for (let i = 0; i < max; i++) {
+            yield fork(thread);
+            if (i < max - 1) {
+              yield delay(0);
+            }
+          }
+          for (let i = 0; i < max; i++) {
+            yield take(finishJob.type);
+          }
+        }
+        yield put(finishTask());
+        // 队列处理完成后清空本批堆积的触发动作：它们的产物（新 job）已在上面
+        // 的 while 循环里被消费，留着只会让下一轮空转一次再 break。
+        yield flushChannel(channel);
+        // 判空 break 到 flush 之间到达的触发动作已被丢弃，但其 job 已入队。
+        // 再查一次队列直接续跑，避免这批任务闲置到下一次触发才被调度。
+        const remaining = ((state: RootState) =>
+          state.task.job.list.filter((item) => item.status === AsyncStatus.Default))(
+          yield select()
+        );
+        if (remaining.length <= 0) {
+          break;
         }
       }
-      for (let i = 0; i < max; i++) {
-        yield take(finishJob.type);
-      }
+    } catch (error) {
+      // 与原 takeLeadingSuspense 的 tryCatchWorker 行为对齐：出错时提示并继续监听，
+      // 不让异常冒泡杀死 rootSaga 的 all effect 导致整个 saga 树停摆。
+      yield put(toastMessage(error instanceof Error ? error.message : ErrorMessage.Unknown));
     }
-    yield put(finishTask());
-  });
+  }
 }
 
 export function* catchErrorWorker({ type, payload }: PayloadAction<any>) {

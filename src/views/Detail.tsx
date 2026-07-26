@@ -196,10 +196,11 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
 
       const handlePress = () => {
         if (multiple) {
+          // 选中态统一从 extraData.checkList 读取，与 route params 的 selected 同源
           navigation.setParams({
             selected: isChecked
-              ? selected.filter((hash) => hash !== item.hash)
-              : [...selected, item.hash],
+              ? checkList.filter((hash: string) => hash !== item.hash)
+              : [...checkList, item.hash],
           });
         } else {
           handleChapter(item.hash);
@@ -227,7 +228,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
         />
       );
     },
-    [gap, handleChapter, navigation, onOpen, selected]
+    [gap, handleChapter, navigation, onOpen]
   );
 
   if (!nonNullable(data)) {
@@ -381,8 +382,8 @@ export const HeartAndBrowser = () => {
   const favorite = useAppSelector((state) =>
     state.favorites.find((item) => item.mangaHash === mangaHash)
   );
-  const dict = useAppSelector((state) => state.dict.manga);
-  const manga = useMemo(() => dict[mangaHash], [dict, mangaHash]);
+  // 只订阅当前漫画条目，后台批量更新其他漫画不触发 header 重渲染
+  const manga = useAppSelector((state) => state.dict.manga[mangaHash]);
   const palette = useThemePalette();
   const { isActived, enableBatch } = useMemo(
     () => ({ isActived: Boolean(favorite), enableBatch: favorite?.enableBatch || false }),
@@ -416,7 +417,7 @@ export const HeartAndBrowser = () => {
     dispatch(setPrehandleLogStatus(true));
   };
   const toggleFavorite = () => {
-    const status = dict[mangaHash]?.status || '';
+    const status = manga?.status || '';
     dispatch(
       isActived
         ? removeFavorites(mangaHash)
@@ -430,7 +431,7 @@ export const HeartAndBrowser = () => {
   } = useDisclose();
   const handleToBrowser = () => {
     onBrowserConfirmClose();
-    const href = dict[mangaHash]?.href || '';
+    const href = manga?.href || '';
     Linking.canOpenURL(href).then((supported) => {
       supported && Linking.openURL(href);
     });
@@ -698,51 +699,60 @@ const VisiblePrehandleDrawer = () => {
     }, [dispatch, openDrawer])
   );
 
-  const handleRemove = (taskId: string) => {
-    dispatch(removeTask(taskId));
-  };
-  const handleRetry = (taskId: string) => {
-    dispatch(retryTask([taskId]));
-  };
+  const handleRemove = useCallback(
+    (taskId: string) => {
+      dispatch(removeTask(taskId));
+    },
+    [dispatch]
+  );
+  const handleRetry = useCallback(
+    (taskId: string) => {
+      dispatch(retryTask([taskId]));
+    },
+    [dispatch]
+  );
 
-  const renderItem = ({ item, index }: ListRenderItemInfo<Task>) => {
-    const progress =
-      item.queue.length > 0 ? (item.success.length + item.fail.length) / item.queue.length : 1;
-    return (
-      <HStack
-        h="12"
-        pl={3}
-        pr={2}
-        space={1}
-        alignItems="center"
-        borderColor={palette.border}
-        borderBottomWidth={1}
-        borderTopWidth={index === 0 ? 1 : 0}
-      >
-        <Text
-          flex={1}
-          fontWeight="bold"
-          fontSize="md"
-          color={progress >= 1 ? palette.text : palette.subText}
-          numberOfLines={1}
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<Task>) => {
+      const progress =
+        item.queue.length > 0 ? (item.success.length + item.fail.length) / item.queue.length : 1;
+      return (
+        <HStack
+          h="12"
+          pl={3}
+          pr={2}
+          space={1}
+          alignItems="center"
+          borderColor={palette.border}
+          borderBottomWidth={1}
+          borderTopWidth={index === 0 ? 1 : 0}
         >
-          {item.title}
-        </Text>
-        {item.status === AsyncStatus.Pending && (
-          <Box ml={1}>
-            <SpinLoading size="sm" height={1} color={palette.subText} />
-          </Box>
-        )}
-        {item.status === AsyncStatus.Rejected && (
-          <RetryBadge
-            count={item.fail.length}
-            onRetry={() => handleRetry(item.taskId)}
-            onRemove={() => handleRemove(item.taskId)}
-          />
-        )}
-      </HStack>
-    );
-  };
+          <Text
+            flex={1}
+            fontWeight="bold"
+            fontSize="md"
+            color={progress >= 1 ? palette.text : palette.subText}
+            numberOfLines={1}
+          >
+            {item.title}
+          </Text>
+          {item.status === AsyncStatus.Pending && (
+            <Box ml={1}>
+              <SpinLoading size="sm" height={1} color={palette.subText} />
+            </Box>
+          )}
+          {item.status === AsyncStatus.Rejected && (
+            <RetryBadge
+              count={item.fail.length}
+              onRetry={() => handleRetry(item.taskId)}
+              onRemove={() => handleRemove(item.taskId)}
+            />
+          )}
+        </HStack>
+      );
+    },
+    [palette, handleRetry, handleRemove]
+  );
 
   return (
     <Drawer ref={drawerRef}>

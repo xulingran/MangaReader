@@ -5,14 +5,12 @@ import ContinueReadingButton, {
   getContinueReadingTarget,
 } from '~/components/ContinueReadingButton';
 
-jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const { Text, View } = require('react-native');
-  return {
-    Pressable: (props: object) => mockReact.createElement(View, props),
-    Text,
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['Pressable'],
+    text: 'react-native',
+  })
+);
 
 const chapters = [
   {

@@ -81,6 +81,7 @@ interface BikaLoginResponse {
 }
 
 const API_BASE_URL = 'https://picaapi.picacomic.com/';
+// 哔咔公开 API 的已知常量（来自其官方客户端，全网公开），并非本项目自己的密钥
 const API_KEY = 'C69BAF41DA5ABD1FFEDC6D2FEA56B';
 const SECRET_KEY = '~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn';
 const NONCE = '4ce7a7aa759b40f794d189a88b84aba8';
@@ -278,7 +279,7 @@ class Bika extends Base {
     }
     const token = response.data?.token?.trim();
     if (!token) {
-      return { error: new Error('哔咔登录响应缺少 Token') };
+      return { error: new Error(ErrorMessage.MissingTokenBIKA) };
     }
     return { token };
   };
@@ -314,7 +315,7 @@ class Bika extends Base {
     }
     const comic = response.data?.comic;
     if (!comic) {
-      return { error: new Error('Bika 详情数据缺失') };
+      return { error: new Error(`Bika ${ErrorMessage.MissingMangaInfo}`) };
     }
     const item = this.toManga({ ...comic, _id: mangaId });
     return {
@@ -331,7 +332,7 @@ class Bika extends Base {
     }
     const eps = response.data?.eps;
     if (!eps) {
-      return { error: new Error('Bika 章节数据缺失') };
+      return { error: new Error(`Bika ${ErrorMessage.MissingChapterInfo}`) };
     }
     const seen = new Set<number>();
     return {
@@ -364,7 +365,7 @@ class Bika extends Base {
     }
     const pages = response.data?.pages;
     if (!pages) {
-      return { error: new Error('Bika 图片数据缺失') };
+      return { error: new Error(`Bika ${ErrorMessage.MissingImageData}`) };
     }
     return {
       canLoadMore: Number(pages.page || 1) < Number(pages.pages || 1),

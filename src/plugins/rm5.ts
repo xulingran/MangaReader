@@ -268,8 +268,8 @@ class RouMan5 extends Base {
     };
   };
 
-  private mapLegacyList = (data: DiscoverySearchData): IncreaseManga[] =>
-    data.props.pageProps.books.map((item) => ({
+  private mapLegacyList(data: DiscoverySearchData): IncreaseManga[] {
+    return data.props.pageProps.books.map((item) => ({
       href: `${SITE_URL}/books/${item.id}`,
       hash: Base.combineHash(this.id, item.id),
       source: this.id,
@@ -283,8 +283,9 @@ class RouMan5 extends Base {
       author: [item.author],
       tag: item.tags,
     }));
+  }
 
-  private parseCurrentList = ($: cheerio.Root): IncreaseManga[] => {
+  private parseCurrentList($: cheerio.Root): IncreaseManga[] {
     const result: IncreaseManga[] = [];
     const seen = new Set<string>();
 
@@ -319,7 +320,7 @@ class RouMan5 extends Base {
     });
 
     return result;
-  };
+  }
 
   handleDiscovery: Base['handleDiscovery'] = (text: string | null) => {
     const $ = cheerio.load(text || '');
@@ -341,38 +342,45 @@ class RouMan5 extends Base {
     const $ = cheerio.load(text || '');
     const data = parseNextData<MangaData>($);
     if (data) {
-      const { id, name, tags, author, continued, updatedAt, activeResource } =
-        data.props.pageProps.book;
-
-      return {
-        manga: {
-          href: `${SITE_URL}/books/${id}`,
-          hash: Base.combineHash(this.id, id),
-          source: this.id,
-          sourceName: this.name,
-          mangaId: id,
-          title: name,
-          latest:
-            activeResource.chapters.length > 0
-              ? activeResource.chapters[activeResource.chapters.length - 1]
-              : undefined,
-          updateTime: formatDate(updatedAt),
-          author: [author],
-          tag: tags,
-          status: continued ? MangaStatus.Serial : MangaStatus.End,
-          chapters: activeResource.chapters
-            .map((title, index) => ({
-              hash: Base.combineHash(this.id, id, String(index)),
-              mangaId: id,
-              chapterId: String(index),
-              href: `${SITE_URL}/books/${id}/${index}`,
-              title,
-            }))
-            .reverse(),
-        },
-      };
+      return { manga: this.parseLegacyMangaInfo(data) };
     }
+    return { manga: this.parseCurrentMangaInfo($, mangaId) };
+  };
 
+  /** 旧版 __NEXT_DATA__ JSON 详情解析（站点未改版时的稳定路径） */
+  private parseLegacyMangaInfo(data: MangaData): IncreaseManga {
+    const { id, name, tags, author, continued, updatedAt, activeResource } =
+      data.props.pageProps.book;
+
+    return {
+      href: `${SITE_URL}/books/${id}`,
+      hash: Base.combineHash(this.id, id),
+      source: this.id,
+      sourceName: this.name,
+      mangaId: id,
+      title: name,
+      latest:
+        activeResource.chapters.length > 0
+          ? activeResource.chapters[activeResource.chapters.length - 1]
+          : undefined,
+      updateTime: formatDate(updatedAt),
+      author: [author],
+      tag: tags,
+      status: continued ? MangaStatus.Serial : MangaStatus.End,
+      chapters: activeResource.chapters
+        .map((title, index) => ({
+          hash: Base.combineHash(this.id, id, String(index)),
+          mangaId: id,
+          chapterId: String(index),
+          href: `${SITE_URL}/books/${id}/${index}`,
+          title,
+        }))
+        .reverse(),
+    };
+  }
+
+  /** 新版 DOM 详情解析（站点改版移除 __NEXT_DATA__ 后的兜底路径） */
+  private parseCurrentMangaInfo($: cheerio.Root, mangaId: string): IncreaseManga {
     const coverElement = $('img[alt$=" cover"]').first();
     const info = coverElement.parent().next();
     const title =
@@ -441,24 +449,22 @@ class RouMan5 extends Base {
       : MangaStatus.Unknown;
 
     return {
-      manga: {
-        href: `${SITE_URL}/books/${mangaId}`,
-        hash: Base.combineHash(this.id, mangaId),
-        source: this.id,
-        sourceName: this.name,
-        mangaId,
-        title,
-        bookCover: coverElement.attr('src'),
-        infoCover: coverElement.attr('src'),
-        latest: chapterList.at(-1)?.title,
-        updateTime: formatDate(dateText),
-        author: authorText ? [authorText] : [],
-        tag: tags,
-        status,
-        chapters: chapterList.reverse(),
-      },
+      href: `${SITE_URL}/books/${mangaId}`,
+      hash: Base.combineHash(this.id, mangaId),
+      source: this.id,
+      sourceName: this.name,
+      mangaId,
+      title,
+      bookCover: coverElement.attr('src'),
+      infoCover: coverElement.attr('src'),
+      latest: chapterList.at(-1)?.title,
+      updateTime: formatDate(dateText),
+      author: authorText ? [authorText] : [],
+      tag: tags,
+      status,
+      chapters: chapterList.reverse(),
     };
-  };
+  }
   handleChapter: Base['handleChapter'] = (
     res: string | ChapterImageData,
     mangaId: string,

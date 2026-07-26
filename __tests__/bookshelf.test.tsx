@@ -2,20 +2,14 @@ import { describe, expect, it, jest } from '@jest/globals';
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import Bookshelf, { BOOKSHELF_ROW_HEIGHT } from '~/components/Bookshelf';
+import { mockPalette } from './helpers/mockNativeBase';
 
-jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const { Text, View } = require('react-native');
-  const ViewComponent = (props: object) => mockReact.createElement(View, props);
-  return {
-    Box: ViewComponent,
-    HStack: ViewComponent,
-    VStack: ViewComponent,
-    Pressable: ViewComponent,
-    Icon: ViewComponent,
-    Text,
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['Box', 'HStack', 'VStack', 'Pressable', 'Icon'],
+    text: 'react-native',
+  })
+);
 
 jest.mock('@shopify/flash-list', () => {
   const mockReact = require('react');
@@ -45,20 +39,7 @@ jest.mock('~/hooks', () => ({
 jest.mock('~/utils/theme/hooks', () => ({
   useBackgroundColor: () => 'white',
   usePressedState: () => [false, {}],
-  useThemePalette: () => ({
-    bg: 'white',
-    text: 'black',
-    subText: 'gray.500',
-    card: 'gray.100',
-    border: 'black',
-    header: 'white',
-    placeholderTextColor: 'gray.500',
-    disabled: 'gray.400',
-    selectedBg: 'black',
-    selectedText: 'white',
-    pressedBg: 'gray.200',
-    imagePlaceholder: 'gray.100',
-  }),
+  useThemePalette: () => mockPalette,
 }));
 
 jest.mock('react-native-vector-icons/MaterialIcons', () => 'MaterialIcons');
@@ -78,17 +59,13 @@ describe('漫画列表封面', () => {
     });
 
     const cover = tree!.root.findByProps({ source: item.cover });
-    const coverFrame = tree!.root.find(
-      (node) =>
-        node.props.borderWidth === 1 &&
-        node.props.borderColor === 'black' &&
-        node.props.overflow === 'hidden'
-    );
+    const coverFrame = tree!.root.findByProps({ testID: 'bookshelf-cover' });
 
     expect(coverFrame.props.width).toBeUndefined();
     expect(coverFrame.props.height).toBeUndefined();
     expect(coverFrame.props.style).toMatchObject({ width: 64, height: 96 });
-    expect(coverFrame.props.style.height + 16).toBe(BOOKSHELF_ROW_HEIGHT);
+    // 行高 = 封面高 + 行内上下内边距（HStack py={2}，native-base space 2 = 8px）
+    expect(coverFrame.props.style.height + 2 * 8).toBe(BOOKSHELF_ROW_HEIGHT);
     expect(cover.props).toMatchObject({
       source: item.cover,
       resizeMode: 'contain',

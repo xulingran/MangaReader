@@ -1,4 +1,4 @@
-import { combineHash, splitHash } from '~/plugins';
+import { combineHash, isRegisteredHash, splitHash } from '~/plugins';
 import { storageKey } from '~/utils';
 import { Storage } from '~/utils/storage';
 import { nanoid } from '@reduxjs/toolkit';
@@ -148,6 +148,11 @@ export const buildProgressPairs = (
   });
 
   new Set(chapterHashes).forEach((chapterHash) => {
+    // chapterHash 可能来自已删除插件遗留的脏数据（state.dict 在恢复/迁移期可能含历史脏条目）。
+    // 用 isRegisteredHash 安全过滤（splitHash 会抛错），脏条目直接跳过不写盘。
+    if (!isRegisteredHash(chapterHash)) {
+      return;
+    }
     const [source, mangaId] = splitHash(chapterHash);
     if (!favorites.has(combineHash(source, mangaId))) {
       return;

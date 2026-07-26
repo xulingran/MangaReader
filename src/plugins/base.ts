@@ -39,34 +39,32 @@ export enum Options {
   Default = '$$DEFAULT$$',
 }
 
+const isPlugin = (value: string): value is Plugin =>
+  (Object.values(Plugin) as string[]).includes(value);
+
 abstract class Base {
   /**
    * @description score rate of plugin
-   * @type {number}
    * @memberof Base
    */
   readonly score: number;
   /**
    * @description key differences between plugins
-   * @type {Plugin}
    * @memberof Base
    */
   readonly id: Plugin;
   /**
    * @description full name, use for display
-   * @type {string}
    * @memberof Base
    */
   readonly name: string;
   /**
    * @description short name of plugin, like icon
-   * @type {string}
    * @memberof Base
    */
   readonly shortName: string;
   /**
    * @description description of the plugin
-   * @type {string}
    * @memberof Base
    */
   readonly description: string;
@@ -76,31 +74,23 @@ abstract class Base {
 
   /**
    * @description filter in Discovery and Search page
-   * @type {{ discovery: FilterItem[]; search: FilterItem[] }}
    * @memberof Base
    */
   readonly option: { discovery: FilterItem[]; search: FilterItem[] };
   /**
    * @description switch of display in plugins list
-   * @type {boolean}
    * @memberof Base
    */
   readonly disabled: boolean;
-  /**
-   * @type {number}
-   * @memberof Base
-   */
   batchDelay: number;
   /**
    * @description run js in webview
-   * @type {string}
    * @memberof Base
    */
   injectedJavaScript?: string;
 
   /**
    * @description Creates an instance of Base.
-   * @param {InitialData} init
    * @memberof Base
    */
   constructor(init: InitialData) {
@@ -143,11 +133,8 @@ abstract class Base {
 
   /**
    * @description encode and return hash
+   *   约定：mangaId / chapterId 不允许包含 '&'，否则 splitHash 无法正确解码
    * @static
-   * @param {Plugin} id
-   * @param {string} mangaId
-   * @param {string} [chapterId]
-   * @return {*}  {string}
    * @memberof Base
    */
   static combineHash(id: Plugin, mangaId: string, chapterId?: string): string {
@@ -161,13 +148,14 @@ abstract class Base {
   /**
    * @description decode and return params
    * @static
-   * @param {string} hash
-   * @return {*}  {[Plugin, string, string]}
    * @memberof Base
    */
   static splitHash(hash: string): [Plugin, string, string] {
     const [plugin, mangaId = '', chapterId = ''] = hash.split('&');
-    return [plugin as Plugin, mangaId, chapterId];
+    if (!isPlugin(plugin) || !mangaId) {
+      throw new Error(ErrorMessage.WrongDataType);
+    }
+    return [plugin, mangaId, chapterId];
   }
 
   /**

@@ -179,24 +179,33 @@ export function getLatestRelease(
     }
 
     const latest = data.find((item) => {
-      return compareVersion(item.tag_name, process.env.VERSION);
+      return isNewerVersion(item.tag_name, process.env.VERSION);
     });
 
     if (!latest) {
       return { release: undefined };
     }
 
-    const [, y, m, d] = latest.published_at.match(PATTERN_PUBLISH_TIME) || [];
+    const publishTimeMatch = latest.published_at.match(PATTERN_PUBLISH_TIME);
     const apk = (latest.assets as any[]).find(
       (item) => item.content_type === 'application/vnd.android.package-archive'
     );
+
+    // Release 可能没有 APK 资产（例如只发了源码包），没有可下载文件时按无新版本处理，
+    // 避免直接访问 apk.size 抛异常后被 catch 吞成误导性的「未知错误~」
+    if (!apk) {
+      return { release: undefined };
+    }
 
     return {
       release: {
         url: latest.html_url,
         version: latest.tag_name,
         changeLog: latest.body,
-        publishTime: `${y}-${m}-${d}`,
+        // published_at 解析失败时回退原始字符串，避免产出 undefined-undefined-undefined
+        publishTime: publishTimeMatch
+          ? `${publishTimeMatch[1]}-${publishTimeMatch[2]}-${publishTimeMatch[3]}`
+          : latest.published_at,
         file: {
           apk: { size: apk.size, downloadUrl: apk.browser_download_url },
         },
@@ -207,7 +216,7 @@ export function getLatestRelease(
   }
 }
 
-export function compareVersion(prev: string, current: string) {
+export function isNewerVersion(prev: string, current: string) {
   const [, A1 = 0, B1 = 0, C1 = 0] = prev.match(PATTERN_VERSION) || [];
   const [, A2 = 0, B2 = 0, C2 = 0] = current.match(PATTERN_VERSION) || [];
 
@@ -267,8 +276,8 @@ export function getRM5SplitCount(uri: string) {
   const decodedId = Buffer.from(encodedId, 'base64').toString('utf8') || encodedId;
 
   const buffer = Buffer.from(CryptoJS.MD5(decodedId).toString(), 'hex');
-  const nub = buffer[buffer.length - 1];
-  return (nub % 10) + 5;
+  const num = buffer[buffer.length - 1];
+  return (num % 10) + 5;
 }
 
 
@@ -298,7 +307,7 @@ export function getDefaultFillMedianHeight(
     };
   }
 
-  const mid = Math.min(Math.max(Math.floor(list.length / 2), 0), list.length);
+  const mid = Math.min(Math.max(Math.floor(list.length / 2), 0), list.length - 1);
   return {
     portrait: list[mid]?.portraitHeight || defaultHeight.portrait,
     landscape: list[mid]?.landscapeHeight || defaultHeight.landscape,

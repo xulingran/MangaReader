@@ -1,5 +1,5 @@
 import Base, { Options, Plugin } from './base';
-import { MangaStatus } from '~/utils';
+import { MangaStatus, ErrorMessage } from '~/utils';
 import dayjs from 'dayjs';
 
 interface NhTag {
@@ -184,10 +184,10 @@ class NHentai extends Base {
 
   handleMangaInfo: Base['handleMangaInfo'] = (response: NhDetailResponse, mangaId) => {
     if (!response.id) {
-      throw new Error('NHentai 详情数据缺失');
+      throw new Error(`NHentai ${ErrorMessage.MissingMangaInfo}`);
     }
     if (String(response.id) !== mangaId) {
-      throw new Error('NHentai 返回了错误的漫画数据');
+      throw new Error(`NHentai ${ErrorMessage.WrongMangaData}`);
     }
     const tags = response.tags || [];
     const title =
@@ -232,7 +232,7 @@ class NHentai extends Base {
 
   handleChapter: Base['handleChapter'] = (response: NhDetailResponse, mangaId, chapterId) => {
     if (!response.id || String(response.id) !== mangaId) {
-      throw new Error('NHentai 返回了错误的漫画数据');
+      throw new Error(`NHentai ${ErrorMessage.WrongMangaData}`);
     }
     const images = (response.pages || [])
       .map((page, index) =>
@@ -241,7 +241,7 @@ class NHentai extends Base {
       .filter(Boolean)
       .map((uri) => ({ uri }));
     if (images.length === 0) {
-      throw new Error('NHentai 图片数据缺失');
+      throw new Error(`NHentai ${ErrorMessage.MissingImageData}`);
     }
     return {
       canLoadMore: false,

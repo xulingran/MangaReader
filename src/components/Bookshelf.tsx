@@ -98,6 +98,7 @@ const BookshelfRow = memo(
           bg={inverted ? extra.selectedBg : extra.bg}
         >
           <Box
+            testID="bookshelf-cover"
             style={styles.cover}
             borderWidth={1}
             borderColor={inverted ? extra.selectedText : extra.border}

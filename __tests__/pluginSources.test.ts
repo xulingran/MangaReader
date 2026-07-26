@@ -5,6 +5,7 @@ import Bika from '~/plugins/bika';
 import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
+import MBZ from '~/plugins/mbz';
 import { MangaStatus, ErrorMessage } from '~/utils';
 
 const hcomicItem = {
@@ -118,7 +119,7 @@ test('MoeImg 解析列表、详情与阅读图片', () => {
       '294777',
       1
     )
-  ).toThrow('MoeImg 图片数据缺失');
+  ).toThrow('图片数据缺失');
 });
 
 test('NHentai 解析 API v2 列表和详情图片', () => {
@@ -336,4 +337,31 @@ test('肉漫屋还原拆分的 Flight 数据并识别图片扰乱标记', () => 
       needUnscramble: false,
     },
   ]);
+});
+
+test('漫画bz 详情页缺失 MANGABZ_COMIC_MID 脚本时抛错', () => {
+  // 旧版实现会把空 id 兜底成 'bz'，生成无效 mangaId；新版显式抛错避免脏数据进入 dict。
+  const htmlWithoutScript = `
+    <html><body>
+      <div class="detail-info"><p class="detail-info-title">无脚本详情</p></div>
+    </body></html>
+  `;
+  expect(() => MBZ.handleMangaInfo(htmlWithoutScript, 'whatever')).toThrow(
+    `漫画bz ${ErrorMessage.MissingMangaInfo}`
+  );
+
+  // 合法脚本存在时仍能正常解析出 mangaId（数字 id + 'bz' 后缀）
+  const htmlWithScript = `
+    <html><body>
+      <script>var MANGABZ_COMIC_MID=123456;</script>
+      <div class="detail-info">
+        <img class="detail-info-cover" src="https://mangabz.com/cover.webp">
+        <p class="detail-info-title">漫画bz 测试</p>
+        <div class="detail-info-tip"><span><a>作者甲</a></span><span>连载</span><span><a>标签</a></span></div>
+      </div>
+    </body></html>
+  `;
+  const detail = MBZ.handleMangaInfo(htmlWithScript, '123456bz') as { manga: IncreaseManga };
+  expect(detail.manga.mangaId).toBe('123456bz');
+  expect(detail.manga.title).toBe('漫画bz 测试');
 });

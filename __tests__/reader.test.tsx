@@ -19,7 +19,12 @@ import {
 
 const windowWidth = Dimensions.get('window').width;
 const threshold = windowWidth * DRAG_PAGE_THRESHOLD_RATIO;
-const mockStore = globalThis as any;
+const mockStore = {
+  __scrollToIndexCalls: [] as { index: number; animated: boolean }[],
+  __flashListProps: undefined as any,
+  __flashListRenderCount: 0,
+  __controllerProps: undefined as any,
+};
 const renderedReaders: renderer.ReactTestRenderer[] = [];
 
 const initialMetrics: Metrics = {

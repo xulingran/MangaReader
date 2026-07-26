@@ -1,4 +1,5 @@
 import queryString from 'query-string';
+import { ErrorMessage } from './enum';
 
 export const fetchData = ({
   url,
@@ -46,7 +47,7 @@ export const fetchData = ({
         const message =
           authErrorMessage && (response.status === 401 || response.status === 403)
             ? authErrorMessage
-            : `请求失败（HTTP ${response.status}）`;
+            : ErrorMessage.HttpRequestFail.replace('{status}', String(response.status));
         return {
           error: new Error(message),
           data: undefined,
@@ -61,12 +62,14 @@ export const fetchData = ({
     .catch((error: unknown) => ({
       error: new Error(
         controller.signal.aborted
-          ? '请求超时，请稍后重试'
+          ? ErrorMessage.RequestTimeout
           : error instanceof Error
-          ? `网络错误：${error.message}`
-          : '网络错误，请稍后重试'
+          ? `${ErrorMessage.WrongResponse}${error.message}`
+          : ErrorMessage.Unknown
       ),
       data: undefined,
     }))
-    .finally(() => clearTimeout(delay));
+    .finally(() => {
+      clearTimeout(delay);
+    });
 };

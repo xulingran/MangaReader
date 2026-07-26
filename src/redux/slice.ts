@@ -12,7 +12,7 @@ import {
 import { createSlice, combineReducers, nanoid, PayloadAction } from '@reduxjs/toolkit';
 import { Plugin, defaultPlugin, defaultPluginList } from '~/plugins';
 import { Dirs } from 'react-native-file-access';
-import { normalizeTaskForRestart } from './task';
+import { normalizeTaskForRestart, buildJob } from './task';
 
 /** 默认漫画导出目录；抽成常量避免展示组件直接依赖 initialState（放大 bootstrap 求值顺序的脆弱面） */
 export const DEFAULT_ANDROID_DOWNLOAD_PATH = Dirs.SDCardDir + '/DCIM/{{CHAPTER_NAME}}';
@@ -570,18 +570,7 @@ const missionSlice = createSlice({
       }
 
       state.list.push(task);
-      state.job.list.push(
-        ...task.queue.map((item) => ({
-          taskId: task.taskId,
-          jobId: item.jobId,
-          chapterHash: task.chapterHash,
-            type: task.type,
-            status: AsyncStatus.Default,
-            source: item.source,
-            index: item.index,
-          headers: task.headers,
-        }))
-      );
+      state.job.list.push(...task.queue.map((item) => buildJob(task, item)));
     },
     retryTask(state, action: PayloadAction<string[]>) {
       action.payload.forEach((taskId) => {
@@ -592,16 +581,7 @@ const missionSlice = createSlice({
           state.job.list.push(
             ...task.queue
               .filter((item) => task.fail.includes(item.jobId))
-              .map((item) => ({
-                taskId: task.taskId,
-                jobId: item.jobId,
-                chapterHash: task.chapterHash,
-                type: task.type,
-                status: AsyncStatus.Default,
-                source: item.source,
-                index: item.index,
-                headers: task.headers,
-              }))
+              .map((item) => buildJob(task, item))
           );
           task.fail = [];
           task.status = AsyncStatus.Default;

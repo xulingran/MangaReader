@@ -27,6 +27,8 @@ const randomHostname = (n = hostnames) => {
   return n[t].h;
 };
 
+// 模块加载时按权重随机选定一个图床 host，本次会话内固定不变，
+// 避免同一批图片请求分散到多个 host 触发源站风控
 const hostname = randomHostname(hostnames);
 
 const discoveryOptions = [
@@ -184,7 +186,8 @@ class ManHuaGuiMobile extends Base {
       const href = 'https://m.manhuagui.com' + a.attribs.href;
       const title = $a.find('h3').first().text();
       const statusLabel = $a.find('div.thumb i').first().text(); // 连载 or 完结
-      const cover = 'https:' + $a.find('div.thumb img').first().attr('data-src');
+      const coverSrc = $a.find('div.thumb img').first().attr('data-src');
+      const cover = coverSrc ? 'https:' + coverSrc : undefined;
       const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $a
         .find('dl')
         .toArray()
@@ -235,7 +238,8 @@ class ManHuaGuiMobile extends Base {
       const href = 'https://m.manhuagui.com' + a.attribs.href;
       const title = $a.find('h3').first().text();
       const statusLabel = $a.find('div.thumb i').first().text(); // 连载 or 完结
-      const cover = 'https:' + $a.find('div.thumb img').first().attr('data-src');
+      const coverSrc = $a.find('div.thumb img').first().attr('data-src');
+      const cover = coverSrc ? 'https:' + coverSrc : undefined;
       const [authorLabel, tagLabel, latestLabel, updateTimeLabel] = $a
         .find('dl')
         .toArray()
@@ -300,6 +304,9 @@ class ManHuaGuiMobile extends Base {
     );
     const scriptContent = scriptNode?.children?.[0]?.data || '';
     const [, mangaId] = scriptContent.match(PATTERN_MANGA_INFO) || [];
+    if (!mangaId) {
+      throw new Error(`漫画gui ${ErrorMessage.MissingMangaInfo}`);
+    }
     const statusLabel = $('div.book-detail div.thumb i').first().text(); // 连载 or 完结
 
     const [latest, updateTimeLabel = '', authorLabel = '', tagLabel = ''] = $('div.cont-list dl')
@@ -359,7 +366,8 @@ class ManHuaGuiMobile extends Base {
     manga.mangaId = mangaId;
     manga.hash = Base.combineHash(this.id, mangaId);
     manga.title = $('div.main-bar > h1').first().text();
-    manga.infoCover = 'https:' + $('div.thumb img').first().attr('src');
+    const infoCoverSrc = $('div.thumb img').first().attr('src');
+    manga.infoCover = infoCoverSrc ? 'https:' + infoCoverSrc : undefined;
     manga.latest = latest;
     manga.updateTime = updateTime;
     manga.author = (author || '').split(',').filter(Boolean);

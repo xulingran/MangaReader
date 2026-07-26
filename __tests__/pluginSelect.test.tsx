@@ -2,23 +2,20 @@ import { describe, expect, it, jest } from '@jest/globals';
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import { PluginSelect } from '~/views/Discovery';
+import { mockPalette } from './helpers/mockNativeBase';
 
-jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const Component = (props: object) => mockReact.createElement('NativeBaseComponent', props);
-  return {
-    View: Component,
-    Text: Component,
-    Input: Component,
-    Button: Component,
-    HStack: Component,
-    useDisclose: () => ({
-      isOpen: false,
-      onOpen: jest.fn(),
-      onClose: jest.fn(),
-    }),
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    hostComponents: ['View', 'Text', 'Input', 'Button', 'HStack'],
+    extra: {
+      useDisclose: () => ({
+        isOpen: false,
+        onOpen: jest.fn(),
+        onClose: jest.fn(),
+      }),
+    },
+  })
+);
 
 jest.mock('~/redux', () => ({
   action: {
@@ -55,20 +52,7 @@ jest.mock('~/utils/navigation', () => ({
 }));
 jest.mock('~/utils/theme/hooks', () => ({
   useBackgroundColor: () => 'white',
-  useThemePalette: () => ({
-    bg: 'white',
-    text: 'black',
-    subText: 'gray.500',
-    card: 'gray.100',
-    border: 'black',
-    header: 'white',
-    placeholderTextColor: 'gray.500',
-    disabled: 'gray.400',
-    selectedBg: 'black',
-    selectedText: 'white',
-    pressedBg: 'gray.200',
-    imagePlaceholder: 'gray.100',
-  }),
+  useThemePalette: () => mockPalette,
 }));
 
 describe('搜索栏来源选择器', () => {
@@ -79,10 +63,11 @@ describe('搜索栏来源选择器', () => {
       tree = renderer.create(<PluginSelect />);
     });
 
-    const button = tree!.root.find(
-      (node) => node.props.w === 12 && node.props.h === 12 && node.props.variant === 'ghost'
-    );
-    expect(button.props._text).toMatchObject({ color: 'black' });
+    // 来源选择按钮直接展示当前来源 label（fixture 中 bzm 的 label 为「漫画bz」），
+    // 用展示文案定位而非 w/h/variant 等样式 props
+    const button = tree!.root.find((node) => node.props.children === '漫画bz');
+    // 文字颜色取自亮色 tokens.text（#000000），与生产保持同源
+    expect(button.props._text).toMatchObject({ color: '#000000' });
 
     act(() => tree!.unmount());
   });

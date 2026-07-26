@@ -7,17 +7,15 @@ import VectorIcon from '~/components/VectorIcon';
 import { customTheme } from '~/utils/theme';
 import { getThemePalette } from '~/utils/theme/tokens';
 
-jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const { Text, View } = require('react-native');
-  return {
-    extendTheme: (config: unknown) => config,
-    Pressable: (props: object) => mockReact.createElement(View, props),
-    IconButton: (props: object) => mockReact.createElement(View, props),
-    Icon: (props: object) => mockReact.createElement(View, props),
-    Text,
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['Pressable', 'IconButton', 'Icon'],
+    text: 'react-native',
+    extra: {
+      extendTheme: (config: unknown) => config,
+    },
+  })
+);
 
 jest.mock('react-native-vector-icons/MaterialIcons', () => 'MaterialIcons');
 jest.mock('react-native-vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
@@ -36,30 +34,57 @@ const chapters = [
   },
 ] as ChapterItem[];
 
+const OPPOSITE: Record<string, string> = { black: 'white', white: 'black' };
+
+interface PressableVariant {
+  bg?: string;
+  borderColor?: string;
+  _text?: { color?: string };
+  _icon?: { color?: string };
+  _pressed?: {
+    bg?: string;
+    borderColor?: string;
+    _text?: { color?: string };
+    _icon?: { color?: string };
+  };
+  _dark?: PressableVariant;
+}
+
+/**
+ * 按压反馈关键不变量（不钉死具体色值）：
+ * - 按压底色 = 常态文字色，按压文字/图标色 = 常态文字/图标色的黑白互反
+ * - 有边框的 variant 按压时边框色保持不变
+ */
+const expectPressedInverts = (normal: PressableVariant, pressed: PressableVariant['_pressed']) => {
+  const normalText = normal._text?.color || '';
+  expect(Object.keys(OPPOSITE)).toContain(normalText);
+  expect(pressed?.bg).toBe(normalText);
+  expect(pressed?._text?.color).toBe(OPPOSITE[normalText]);
+  if (normal._icon?.color) {
+    expect(pressed?._icon?.color).toBe(OPPOSITE[normal._icon.color]);
+  }
+  if (normal.borderColor && pressed?.borderColor) {
+    expect(pressed.borderColor).toBe(normal.borderColor);
+  }
+};
+
 describe('墨水屏按压反色', () => {
-  it('Button 各 variant 按压态为瞬时黑白反色', () => {
-    const variants = (customTheme as any).components.Button.variants;
-    expect(variants.eink._pressed).toMatchObject({
-      bg: 'white',
-      borderColor: 'black',
-      _text: { color: 'black' },
-      _icon: { color: 'black' },
+  it('Button 各 variant 按压态为常态的瞬时黑白反色', () => {
+    const variants = (customTheme as any).components.Button.variants as Record<
+      string,
+      PressableVariant
+    >;
+
+    ['eink', 'outline', 'ghost', 'link'].forEach((name) => {
+      const variant = variants[name];
+      expect(variant?._pressed).toBeDefined();
+      expect(variant?._dark?._pressed).toBeDefined();
+
+      // 亮色：常态 → 按压互反
+      expectPressedInverts(variant, variant._pressed);
+      // 深色：_dark 覆盖后的常态 → _dark._pressed 互反
+      expectPressedInverts({ ...variant, ...variant._dark }, variant._dark?._pressed);
     });
-    expect(variants.eink._dark._pressed).toMatchObject({
-      bg: 'black',
-      borderColor: 'white',
-      _text: { color: 'white' },
-      _icon: { color: 'white' },
-    });
-    expect(variants.outline._pressed).toMatchObject({ bg: 'black', _text: { color: 'white' } });
-    expect(variants.outline._dark._pressed).toMatchObject({
-      bg: 'white',
-      _text: { color: 'black' },
-    });
-    expect(variants.ghost._pressed).toMatchObject({ bg: 'black', _text: { color: 'white' } });
-    expect(variants.ghost._dark._pressed).toMatchObject({ bg: 'white', _text: { color: 'black' } });
-    expect(variants.link._pressed).toMatchObject({ bg: 'black', _text: { color: 'white' } });
-    expect(variants.link._dark._pressed).toMatchObject({ bg: 'white', _text: { color: 'black' } });
   });
 
   it('反色按钮按压时回落正色，松开恢复', () => {

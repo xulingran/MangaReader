@@ -23,7 +23,8 @@
     "favorites-schema": "typescript-json-schema ./tsconfig.json FavoritesStateType -o ./src/schema/favorites.json --required",
     "lint": "eslint \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "coverage": "jest --coverage"
   },
   "dependencies": {
     "@georstat/react-native-image-cache": "^2.9.0",

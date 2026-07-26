@@ -1,5 +1,5 @@
 import Base, { Plugin } from './base';
-import { MangaStatus } from '~/utils';
+import { MangaStatus, ErrorMessage } from '~/utils';
 import { Buffer } from 'buffer';
 import dayjs from 'dayjs';
 
@@ -104,17 +104,17 @@ function quoteUnquotedObjectKeys(source: string): string {
 function extractPayload(text: string | null): HComicPayload {
   const source = text || '';
   if (Buffer.byteLength(source, 'utf8') > MAX_PAYLOAD_SIZE) {
-    throw new Error('HComic 响应内容过大');
+    throw new Error(`HComic ${ErrorMessage.ResponseTooLarge}`);
   }
 
   const match = payloadPatterns.map((pattern) => pattern.exec(source)).find(Boolean);
   if (!match) {
-    throw new Error('HComic 页面数据结构异常');
+    throw new Error(`HComic ${ErrorMessage.WrongPageStructure}`);
   }
 
   const envelope = JSON.parse(quoteUnquotedObjectKeys(match[1])) as { data?: HComicPayload };
   if (!envelope.data || typeof envelope.data !== 'object') {
-    throw new Error('HComic 页面缺少漫画数据');
+    throw new Error(`HComic ${ErrorMessage.MissingMangaInfo}`);
   }
   return envelope.data;
 }
@@ -156,7 +156,7 @@ class HComic extends Base {
   private getComicUrl(mangaId: string, reader = false): string {
     const id = mangaId.trim();
     if (!id) {
-      throw new Error('HComic 漫画 ID 缺失');
+      throw new Error(`HComic ${ErrorMessage.MissingMangaInfo}`);
     }
     // 标题 slug 并不唯一，同名漫画会被站点路由到旧记录；数字 ID 可稳定定位唯一条目。
     const path = `https://h-comic.com/comics/${encodeURIComponent(id)}`;
@@ -166,7 +166,7 @@ class HComic extends Base {
   private assertMangaId(item: HComicItem, mangaId: string): void {
     const responseId = this.getMangaId(item);
     if (!responseId || responseId !== mangaId) {
-      throw new Error('HComic 返回了错误的漫画数据');
+      throw new Error(`HComic ${ErrorMessage.WrongMangaData}`);
     }
   }
 
@@ -268,7 +268,7 @@ class HComic extends Base {
   handleMangaInfo: Base['handleMangaInfo'] = (text: string | null, mangaId) => {
     const item = extractPayload(text).comic;
     if (!item) {
-      throw new Error('HComic 详情数据缺失');
+      throw new Error(`HComic ${ErrorMessage.MissingMangaInfo}`);
     }
     this.assertMangaId(item, mangaId);
     const chapterId = '1';
@@ -293,7 +293,7 @@ class HComic extends Base {
   handleChapter: Base['handleChapter'] = (text: string | null, mangaId, chapterId) => {
     const item = extractPayload(text).comic;
     if (!item?.media_id) {
-      throw new Error('HComic 图片数据缺失');
+      throw new Error(`HComic ${ErrorMessage.MissingImageData}`);
     }
     this.assertMangaId(item, mangaId);
     const imagePrefix = `${this.getImagePrefix(item.comic_source)}/${String(item.media_id)}/pages`;

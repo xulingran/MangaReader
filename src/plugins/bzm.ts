@@ -159,8 +159,8 @@ class BaoziManga extends Base {
   prepareChapterFetch: Base['prepareChapterFetch'] = (mangaId, chapterId, page, extra) => {
     return {
       url:
-        typeof extra.hash === 'string'
-          ? `https://cn.dzmanga.com/comic/chapter/${mangaId}_${extra.hash}/${chapterId}_${page}.html`
+        typeof extra.sectionHash === 'string'
+          ? `https://cn.dzmanga.com/comic/chapter/${mangaId}_${extra.sectionHash}/${chapterId}_${page}.html`
           : `https://cn.dzmanga.com/comic/chapter/${mangaId}/${chapterId}_${page}.html`,
       headers: new Headers(this.defaultHeaders),
     };
@@ -247,6 +247,9 @@ class BaoziManga extends Base {
 
     const [, mangaId] =
       ($('meta[name=og:url]').attr('content') || '').match(PATTERN_MANGA_ID) || [];
+    if (!mangaId) {
+      throw new Error(ErrorMessage.MissingMangaInfo);
+    }
     const cover = $('.comics-detail .l-content amp-img').first().attr('src') || '';
     const title = $('.comics-detail .l-content .comics-detail__info .comics-detail__title')
       .first()
@@ -355,7 +358,9 @@ class BaoziManga extends Base {
         headers: this.defaultHeaders,
         images,
       },
-      nextExtra: { hash },
+      // sectionHash 与 prepareChapterFetch 的 extra.sectionHash 对齐：
+      // 多页章节分页 URL 形如 .../{mangaId}_{sectionHash}/{chapterId}_{page}.html
+      nextExtra: { sectionHash: hash },
     };
   };
 }

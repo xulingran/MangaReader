@@ -1,28 +1,17 @@
-import React, { useRef, useMemo, useState, useCallback, Fragment, useEffect } from 'react';
+import React, { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import {
   AsyncStatus,
   LayoutMode,
   ReaderDirection,
   PositionX,
   Orientation,
-  MultipleSeat,
   PageKeys,
   Timer,
   PageKeyDirection,
   getReaderPrefetchUris,
 } from '~/utils';
 import Cache from '~/utils/cache';
-import {
-  Box,
-  Text,
-  Flex,
-  Center,
-  HStack,
-  Pressable,
-  StatusBar,
-  useToast,
-  useDisclose,
-} from 'native-base';
+import { Box, Center, StatusBar, useToast, useDisclose } from 'native-base';
 import {
   usePrevNext,
   usePageKeys,
@@ -33,24 +22,20 @@ import {
 import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useFocusEffect } from '@react-navigation/native';
 import Reader, { ReaderRef } from '~/components/Reader';
+import ReaderToolbar from '~/components/ReaderToolbar';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
 import ErrorWithRetry from '~/components/ErrorWithRetry';
 import SpinLoading from '~/components/SpinLoading';
 import InputModal from '~/components/InputModal';
-import VectorIcon from '~/components/VectorIcon';
 import Empty from '~/components/Empty';
 import { CacheManager } from '@georstat/react-native-image-cache';
-import { usePressedState, useThemePalette } from '~/utils/theme/hooks';
+import { useThemePalette } from '~/utils/theme/hooks';
 
 const {
   loadChapter,
   viewChapter,
   viewPage,
   viewImage,
-  setMode,
-  setDirection,
-  setSeat,
-  setPageKeys,
   setTimer,
   setTimerGap,
   saveImage,
@@ -59,10 +44,19 @@ const {
 const EMPTY_CHAPTERS: ChapterItem[] = [];
 const lastPageToastId = 'LAST_PAGE_TOAST_ID';
 const ImageSelectOptions = [{ label: '保存图片', value: 'save' }];
-const layoutIconDict = {
-  [LayoutMode.Horizontal]: 'book-open-page-variant-outline',
-  [LayoutMode.Vertical]: 'filmstrip',
-  [LayoutMode.Multiple]: 'book-open-outline',
+// 跳页接近当前章末尾时提前把下一章挂进阅读链，避免翻到边界才开始加载
+const LOAD_MORE_REMAINING_PAGES = 5;
+const MIN_TIMER_GAP = 500;
+
+/** 点按/长按区域到翻页方向的映射：从右向左阅读（inverted）时左右翻转 */
+const resolveTapDirection = (
+  position: PositionX,
+  inverted: boolean
+): 'previous' | 'next' | undefined => {
+  if (position === PositionX.Mid) {
+    return undefined;
+  }
+  return (position === PositionX.Right) === inverted ? 'previous' : 'next';
 };
 
 const useChapterFlat = (hashList: string[], dict: RootState['dict']['chapter']) => {
@@ -101,7 +95,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const palette = useThemePalette();
   const bg = palette.bg;
   const color = palette.text;
-  const [pageBoxPressed, pageBoxBind] = usePressedState();
   const { isOpen, onOpen, onClose } = useDisclose();
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
   const onOpenRef = useLatest(onOpen);
@@ -196,21 +189,29 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       dispatch(viewPage({ mangaHash, page: current }));
     }, [current, dispatch, mangaHash])
   );
-  const init = useCallback(async () => {
-    setRender(false);
-    try {
-      await cache.initCacheMap();
-    } catch (error) {
-      console.warn('章节缓存初始化失败', error);
-    } finally {
-      setRender(true);
-    }
-  }, [cache]);
+  const init = useCallback(
+    async (isCancelled: () => boolean) => {
+      setRender(false);
+      try {
+        await cache.initCacheMap();
+      } catch (error) {
+        console.warn('章节缓存初始化失败', error);
+      } finally {
+        // blur 后 init 的 Promise 仍可能 resolve，此时不再回写状态
+        if (!isCancelled()) {
+          setRender(true);
+        }
+      }
+    },
+    [cache]
+  );
   useFocusEffect(
     useCallback(() => {
-      init();
+      let cancelled = false;
+      init(() => cancelled);
       return () => {
-        cache.storeCacheMap();
+        cancelled = true;
+        cache.storeCacheMap().catch(() => {});
         // 离开阅读页时主动清理过期缓存条目，避免 LRU 在下次阅读中途触发 IO 抖动；
         // 缓存上限已下调到 256MB，prune 让磁盘占用贴近真实阅读需求。
         CacheManager.pruneCache().catch(() => {});
@@ -229,6 +230,8 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     timer === Timer.Enable && timerSwitch && data.length > 0 && loadStatus !== AsyncStatus.Pending,
     timerGap
   );
+  // URI 数组 join 成字符串作为 effect key：数组引用每次 render 都变，join 后内容相同即稳定，
+  // 避免重复 prefetch
   const prefetchKey = useMemo(
     () => getReaderPrefetchUris(data, page).join('\u0000'),
     [data, page]
@@ -289,20 +292,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         }
         setShowExtra(!showExtra);
       }
-      if (inverted) {
-        if (position === PositionX.Right) {
-          callbackRef.current?.('previous');
-        }
-        if (position === PositionX.Left) {
-          callbackRef.current?.('next');
-        }
-      } else {
-        if (position === PositionX.Left) {
-          callbackRef.current?.('previous');
-        }
-        if (position === PositionX.Right) {
-          callbackRef.current?.('next');
-        }
+      const tapDirection = resolveTapDirection(position, inverted);
+      if (tapDirection) {
+        callbackRef.current?.(tapDirection);
       }
     },
     [callbackRef, inverted, onMenuCloseRef, showExtra]
@@ -313,20 +305,12 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
         sourceRef.current = source || '';
         onOpenRef.current();
       }
-      if (inverted) {
-        if (position === PositionX.Right) {
-          handlePrevChapter();
-        }
-        if (position === PositionX.Left) {
-          handleNextChapter();
-        }
-      } else {
-        if (position === PositionX.Left) {
-          handlePrevChapter();
-        }
-        if (position === PositionX.Right) {
-          handleNextChapter();
-        }
+      const tapDirection = resolveTapDirection(position, inverted);
+      if (tapDirection === 'previous') {
+        handlePrevChapter();
+      }
+      if (tapDirection === 'next') {
+        handleNextChapter();
       }
     },
     [handleNextChapter, handlePrevChapter, inverted, onOpenRef]
@@ -376,33 +360,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     }
   }, [dispatch, headers, toastRef]);
   const handleGoBack = useCallback(() => navigation.goBack(), [navigation]);
-  const handleSeatToggle = useCallback(() => {
-    if (seat === MultipleSeat.AToB) {
-      toast.show({ title: '双页漫画顺序: 从右向左' });
-      dispatch(setSeat(MultipleSeat.BToA));
-    } else {
-      toast.show({ title: '双页漫画顺序: 从左向右' });
-      dispatch(setSeat(MultipleSeat.AToB));
-    }
-  }, [dispatch, seat, toast]);
-  const handlePageKeysToggle = useCallback(() => {
-    if (pageKeys === PageKeys.Enable) {
-      toast.show({ title: '已关闭实体键翻页' });
-      dispatch(setPageKeys(PageKeys.Disabled));
-    } else {
-      toast.show({ title: '已开启实体键翻页' });
-      dispatch(setPageKeys(PageKeys.Enable));
-    }
-  }, [dispatch, pageKeys, toast]);
-  const handleTimerToggle = useCallback(() => {
-    if (timer === Timer.Enable) {
-      toast.show({ title: '已关闭定时翻页' });
-      dispatch(setTimer(Timer.Disabled));
-    } else {
-      toast.show({ title: `已开启定时翻页，间隔${(timerGap / 1000).toFixed(1)}s` });
-      dispatch(setTimer(Timer.Enable));
-    }
-  }, [dispatch, timer, timerGap, toast]);
   const handleOrientationToggle = useCallback(
     () =>
       navigation.setOptions({
@@ -415,44 +372,6 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     readerRef.current?.clearStateRef();
     dispatch(loadChapter({ chapterHash }));
   }, [chapterHash, dispatch]);
-  const handleDirectionToggle = useCallback(() => {
-    if (inverted) {
-      toast.show({ title: '阅读方向: 从左向右' });
-      dispatch(setDirection(ReaderDirection.Right));
-    } else {
-      toast.show({ title: '阅读方向: 从右向左' });
-      dispatch(setDirection(ReaderDirection.Left));
-    }
-  }, [dispatch, inverted, toast]);
-  const handleVertical = useCallback(() => {
-    toast.show({ title: '条漫模式' });
-    dispatch(setMode(LayoutMode.Vertical));
-  }, [dispatch, toast]);
-  const handleHorizontal = useCallback(() => {
-    toast.show({ title: '翻页模式' });
-    dispatch(setMode(LayoutMode.Horizontal));
-  }, [dispatch, toast]);
-  const handleMultiple = useCallback(() => {
-    toast.show({ title: '双页模式' });
-    dispatch(setMode(LayoutMode.Multiple));
-  }, [dispatch, toast]);
-  const handleModeToggle = useCallback(() => {
-    switch (mode) {
-      case LayoutMode.Horizontal: {
-        handleVertical();
-        break;
-      }
-      case LayoutMode.Vertical: {
-        handleMultiple();
-        break;
-      }
-      case LayoutMode.Multiple:
-      default: {
-        handleHorizontal();
-        break;
-      }
-    }
-  }, [handleHorizontal, handleMultiple, handleVertical, mode]);
   const handleTimerGapOpen = useCallback(() => {
     dispatch(setTimer(Timer.Disabled));
     onTimerGapOpen();
@@ -461,11 +380,11 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     (value: string) => {
       const gap = Number(value);
 
-      if (gap >= 500) {
+      if (gap >= MIN_TIMER_GAP) {
         dispatch(setTimerGap(gap));
         onTimerGapClose();
       } else {
-        toast.show({ title: '间隔不能低于500ms' });
+        toast.show({ title: `间隔不能低于${MIN_TIMER_GAP}ms` });
       }
     },
     [dispatch, onTimerGapClose, toast]
@@ -481,7 +400,7 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       const step = Math.min(newStep, Math.max(max, 1));
       const newPage = pre + Math.floor(step - 1);
       const multiplePage = multiplePre + Math.floor((step - 1) / 2);
-      if (step > max - 5) {
+      if (step > max - LOAD_MORE_REMAINING_PAGES) {
         handleLoadMore();
       }
       setPage(newPage);
@@ -567,175 +486,29 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       />
 
       {showExtra && (
-        <Fragment>
-          <Box
-            position="absolute"
-            top={0}
-            left={0}
-            right={0}
-            bg={bg}
-            borderBottomWidth={1}
-            borderColor={palette.border}
-            safeAreaTop
-            safeAreaLeft
-            safeAreaRight
-          >
-            <Flex position="relative" flexDirection="row" alignItems="center">
-              <VectorIcon
-                name="arrow-back"
-                size="2xl"
-                color={color}
-                accessibilityLabel="返回漫画详情"
-                onPress={handleGoBack}
-              />
-              <Text flexShrink={1} fontSize="md" fontWeight="bold" numberOfLines={1} color={color}>
-                {title}
-              </Text>
-              <VectorIcon
-                name="replay"
-                size="md"
-                color={color}
-                accessibilityLabel="重新加载章节"
-                onPress={handleReload}
-              />
-
-              <Box w={0} flexGrow={1} />
-
-              <VectorIcon
-                name={
-                  orientation === Orientation.Portrait
-                    ? 'stay-primary-portrait'
-                    : 'stay-primary-landscape'
-                }
-                size="lg"
-                color={color}
-                accessibilityLabel="切换屏幕方向"
-                onPress={handleOrientationToggle}
-              />
-              <VectorIcon
-                name="dots-horizontal"
-                size="lg"
-                source="materialCommunityIcons"
-                color={color}
-                accessibilityLabel={isMenuOpen ? '关闭阅读设置' : '打开阅读设置'}
-                accessibilityState={{ expanded: isMenuOpen }}
-                onPress={isMenuOpen ? onMenuClose : onMenuOpen}
-              />
-            </Flex>
-
-            {isMenuOpen && (
-              <HStack
-                borderTopWidth={1}
-                borderColor={palette.border}
-                justifyContent="space-around"
-                py={1}
-              >
-                <VectorIcon
-                  name={layoutIconDict[mode]}
-                  size="lg"
-                  source="materialCommunityIcons"
-                  color={color}
-                  accessibilityLabel="切换阅读布局"
-                  onPress={handleModeToggle}
-                />
-                {mode !== LayoutMode.Vertical && (
-                  <VectorIcon
-                    name={inverted ? 'west' : 'east'}
-                    size="lg"
-                    color={color}
-                    accessibilityLabel={inverted ? '改为从左向右阅读' : '改为从右向左阅读'}
-                    onPress={handleDirectionToggle}
-                  />
-                )}
-                {mode === LayoutMode.Multiple && (
-                  <VectorIcon
-                    name={
-                      seat === MultipleSeat.AToB
-                        ? 'format-letter-starts-with'
-                        : 'format-letter-ends-with'
-                    }
-                    size="lg"
-                    source="materialCommunityIcons"
-                    color={color}
-                    accessibilityLabel="切换双页起始位置"
-                    onPress={handleSeatToggle}
-                  />
-                )}
-                <VectorIcon
-                  name={pageKeys === PageKeys.Enable ? 'keyboard-outline' : 'keyboard-off-outline'}
-                  size="lg"
-                  source="materialCommunityIcons"
-                  color={color}
-                  accessibilityLabel={
-                    pageKeys === PageKeys.Enable ? '关闭实体键翻页' : '开启实体键翻页'
-                  }
-                  accessibilityState={{ checked: pageKeys === PageKeys.Enable }}
-                  onPress={handlePageKeysToggle}
-                />
-                <VectorIcon
-                  name={timer === Timer.Enable ? 'timer-outline' : 'timer-off-outline'}
-                  size="lg"
-                  source="materialCommunityIcons"
-                  color={color}
-                  accessibilityLabel={timer === Timer.Enable ? '关闭定时翻页' : '开启定时翻页'}
-                  accessibilityHint="长按设置翻页间隔"
-                  accessibilityState={{ checked: timer === Timer.Enable }}
-                  onPress={handleTimerToggle}
-                  onLongPress={handleTimerGapOpen}
-                />
-              </HStack>
-            )}
-          </Box>
-
-          <Flex
-            position="absolute"
-            left={0}
-            right={0}
-            bottom={0}
-            flexDirection="row"
-            alignItems="center"
-            justifyContent="space-between"
-            bg={bg}
-            borderTopWidth={1}
-            borderColor={palette.border}
-            safeAreaX
-            safeAreaBottom
-          >
-            <VectorIcon
-              name="skip-previous"
-              size="lg"
-              color={prev ? color : palette.disabled}
-              disabled={!prev}
-              accessibilityLabel="上一章"
-              accessibilityState={{ disabled: !prev }}
-              onPress={handlePrevChapter}
-            />
-            <Pressable
-              flex={1}
-              mx={2}
-              py={2}
-              borderWidth={1}
-              borderColor={palette.border}
-              alignItems="center"
-              bg={pageBoxPressed ? palette.selectedBg : 'transparent'}
-              {...pageBoxBind}
-              onPress={onJumpOpen}
-            >
-              <Text color={pageBoxPressed ? palette.selectedText : color} fontWeight="bold">
-                {current} / {max}
-              </Text>
-            </Pressable>
-            <VectorIcon
-              name="skip-next"
-              size="lg"
-              color={next ? color : palette.disabled}
-              disabled={!next}
-              accessibilityLabel="下一章"
-              accessibilityState={{ disabled: !next }}
-              onPress={handleNextChapter}
-            />
-          </Flex>
-        </Fragment>
+        <ReaderToolbar
+          title={title}
+          current={current}
+          max={max}
+          mode={mode}
+          inverted={inverted}
+          seat={seat}
+          pageKeys={pageKeys}
+          timer={timer}
+          timerGap={timerGap}
+          orientation={orientation}
+          prev={prev}
+          next={next}
+          isMenuOpen={isMenuOpen}
+          onMenuToggle={isMenuOpen ? onMenuClose : onMenuOpen}
+          onGoBack={handleGoBack}
+          onReload={handleReload}
+          onOrientationToggle={handleOrientationToggle}
+          onTimerGapOpen={handleTimerGapOpen}
+          onPrevChapter={handlePrevChapter}
+          onNextChapter={handleNextChapter}
+          onJumpOpen={onJumpOpen}
+        />
       )}
     </Box>
   );

@@ -6,12 +6,15 @@ import 'react-native-gesture-handler/jestSetup';
 // jest 环境缺少原生渲染器，react-redux 派发时会调用 unstable_batchedUpdates
 // 这里补一个同步执行的降级实现，避免 saga dispatch 崩溃
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const shim = require('react-native/Libraries/Renderer/shims/ReactNative');
   if (typeof shim.unstable_batchedUpdates !== 'function') {
     shim.unstable_batchedUpdates = (fn) => fn();
   }
-} catch (e) {}
+} catch (e) {
+  // RN 版本升级后该 shim 路径可能变化；记录下来便于排查，而不是静默吞掉
+  // eslint-disable-next-line no-console
+  console.warn('jest.setup: batchedUpdates shim 注入失败', e);
+}
 
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 

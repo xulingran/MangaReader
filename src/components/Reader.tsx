@@ -20,6 +20,7 @@ import {
 import { FlashList, ListRenderItemInfo, ViewToken } from '@shopify/flash-list';
 import { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useDebouncedSafeAreaFrame } from '~/hooks';
+import { useLatestRef } from '~/hooks/useLatestRef';
 import { useFocusEffect } from '@react-navigation/native';
 import { Box, Flex } from 'native-base';
 import Controller, { LongPressController } from '~/components/Controller';
@@ -164,8 +165,7 @@ const Reader = ({
   const defaultPortraitHeightRef = useRef(portraitHeight);
   const defaultLandscapeHeightRef = useRef(landscapeHeight);
 
-  const onPageChangeRef = useRef(onPageChange);
-  onPageChangeRef.current = onPageChange;
+  const onPageChangeRef = useLatestRef(onPageChange);
 
   const initialScrollIndex = useMemo(() => {
     if (layoutMode !== LayoutMode.Multiple) {
@@ -201,7 +201,7 @@ const Reader = ({
         onPageChangeRef.current(index);
       }
     },
-    [layoutMode, multipleData]
+    [layoutMode, multipleData, onPageChangeRef]
   );
 
   useImperativeHandle(ref, () => ({
@@ -288,7 +288,7 @@ const Reader = ({
       currentIndexRef.current = last.index ?? 0;
       onPageChangeRef.current && onPageChangeRef.current(last.index ?? 0);
     },
-    []
+    [onPageChangeRef]
   );
   const handleMultipleViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[]; changed: ViewToken[] }) => {
@@ -300,7 +300,7 @@ const Reader = ({
       currentIndexRef.current = last.index ?? 0;
       onPageChangeRef.current && onPageChangeRef.current(multiplePageOf(last.item));
     },
-    []
+    [onPageChangeRef]
   );
   const renderHorizontalItem = useCallback(
     ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
@@ -352,6 +352,17 @@ const Reader = ({
       onZoomStart,
     ]
   );
+  /** 纵向模式：根据已加载图片重算中位默认高度并写回 ref，供未加载项兜底 */
+  const updateDefaultHeights = useCallback(() => {
+    const defaultHeight = getDefaultFillMedianHeight(
+      verticalStateRef.current.filter(
+        (imageState): imageState is ImageState => imageState !== null
+      ),
+      { portrait: portraitHeight, landscape: landscapeHeight }
+    );
+    defaultPortraitHeightRef.current = defaultHeight.portrait;
+    defaultLandscapeHeightRef.current = defaultHeight.landscape;
+  }, [portraitHeight, landscapeHeight]);
   const renderVerticalItem = useCallback(
     ({ item, index }: ListRenderItemInfo<(typeof data)[0]>) => {
       const { uri, needUnscramble } = item;
@@ -396,15 +407,7 @@ const Reader = ({
                 cache.setImageState(uri, state);
                 verticalStateRef.current[idx] = state;
                 reportFulfilledImage(state, onImageLoad, uri, item.chapterHash, item.current);
-
-                const defaultHeight = getDefaultFillMedianHeight(
-                  verticalStateRef.current.filter(
-                    (imageState): imageState is ImageState => imageState !== null
-                  ),
-                  { portrait: portraitHeight, landscape: landscapeHeight }
-                );
-                defaultPortraitHeightRef.current = defaultHeight.portrait;
-                defaultLandscapeHeightRef.current = defaultHeight.landscape;
+                updateDefaultHeights();
               }}
             />
           </Controller>
@@ -416,14 +419,13 @@ const Reader = ({
       handleAccessibilityNext,
       handleAccessibilityPrevious,
       headers,
-      landscapeHeight,
       onImageLoad,
       onLongPress,
       onTap,
       onZoomEnd,
       onZoomStart,
       orientation,
-      portraitHeight,
+      updateDefaultHeights,
     ]
   );
   const renderMultipleItem = useCallback(

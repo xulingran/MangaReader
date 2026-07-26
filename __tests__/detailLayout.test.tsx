@@ -6,15 +6,12 @@ import type { Metrics } from 'react-native-safe-area-context';
 import Drawer, { DrawerRef } from '~/components/Drawer';
 import { splitWidth } from '~/hooks/useSplitWidth';
 
-jest.mock('native-base', () => {
-  const mockReact = require('react');
-  const { Text, View: MockView } = require('react-native');
-  return {
-    Box: (props: object) => mockReact.createElement(MockView, props),
-    Pressable: (props: object) => mockReact.createElement(MockView, props),
-    Text,
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['Box', 'Pressable'],
+    text: 'react-native',
+  })
+);
 
 jest.mock('~/hooks', () => ({
   useDebouncedSafeAreaFrame: () => ({ width: 632, height: 840 }),

@@ -11,7 +11,7 @@
 export const DRAG_PAGE_THRESHOLD_RATIO = 0.2;
 
 /**
- * 相邻页磁盘预取窗口：优先当前页两侧，再额外准备后两页。
+ * 相邻页磁盘预取窗口：优先当前页前后各一页（+1/-1），再额外准备下一页的后一页（+2）。
  * 只返回普通图片；扰乱图片仍由可见组件按需处理，避免离屏解码占用。
  */
 export const getReaderPrefetchUris = <

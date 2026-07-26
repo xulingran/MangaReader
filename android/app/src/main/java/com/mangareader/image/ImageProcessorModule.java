@@ -75,6 +75,34 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
     return BitmapRegionDecoder.newInstance(sourcePath, false);
   }
 
+  /** 单片在源图坐标系中的纵向几何。 */
+  private static final class SliceRect {
+    final int sourceY;
+    final int destinationY;
+    final int height;
+
+    SliceRect(int sourceY, int destinationY, int height) {
+      this.sourceY = sourceY;
+      this.destinationY = destinationY;
+      this.height = height;
+    }
+  }
+
+  /** 第 index 片的纵向几何：均分后的余数归入第一片（顶部），destinationY 为乱序前的目标位置。 */
+  private static SliceRect sliceRect(int index, int splitCount, int height) {
+    int baseHeight = height / splitCount;
+    int remainder = height % splitCount;
+    int sliceHeight = baseHeight;
+    int destinationY = baseHeight * index;
+    int sourceY = height - baseHeight * (index + 1) - remainder;
+    if (index == 0) {
+      sliceHeight += remainder;
+    } else {
+      destinationY += remainder;
+    }
+    return new SliceRect(sourceY, destinationY, sliceHeight);
+  }
+
   private static void drawSlices(
       Bitmap source,
       Canvas canvas,
@@ -85,27 +113,18 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
       throws InterruptedException {
     int width = source.getWidth();
     int height = source.getHeight();
-    int baseHeight = height / splitCount;
-    int remainder = height % splitCount;
     Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
 
     for (int index = 0; index < splitCount; index++) {
       task.throwIfCancelled();
-      int sliceHeight = baseHeight;
-      int destinationY = baseHeight * index;
-      int sourceY = height - baseHeight * (index + 1) - remainder;
-      if (index == 0) {
-        sliceHeight += remainder;
-      } else {
-        destinationY += remainder;
-      }
-      Rect sourceRect = new Rect(0, sourceY, width, sourceY + sliceHeight);
+      SliceRect slice = sliceRect(index, splitCount, height);
+      Rect sourceRect = new Rect(0, slice.sourceY, width, slice.sourceY + slice.height);
       RectF destinationRect =
           new RectF(
               0,
-              (float) destinationY * targetHeight / height,
+              (float) slice.destinationY * targetHeight / height,
               targetWidth,
-              (float) (destinationY + sliceHeight) * targetHeight / height);
+              (float) (slice.destinationY + slice.height) * targetHeight / height);
       canvas.drawBitmap(source, sourceRect, destinationRect, paint);
     }
   }
@@ -221,21 +240,15 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
 
   private static void process(ImageTask task) {
     Bitmap output = null;
-    Bitmap fullSource = null;
-    BitmapRegionDecoder decoder = null;
     String outputPath = null;
     boolean completed = false;
     try {
       task.throwIfCancelled();
-      String sourceValue = task.sourceValue;
-      String outputValue = task.outputValue;
-      int splitCount = task.splitCount;
-      double maxPixels = task.maxPixels;
-      if (splitCount < 2 || splitCount > 64 || maxPixels <= 0) {
+      if (task.splitCount < 2 || task.splitCount > 64 || task.maxPixels <= 0) {
         throw new IllegalArgumentException("扰乱图片参数无效");
       }
-      String sourcePath = normalizePath(sourceValue);
-      outputPath = normalizePath(outputValue);
+      String sourcePath = normalizePath(task.sourceValue);
+      outputPath = normalizePath(task.outputValue);
       BitmapFactory.Options bounds = new BitmapFactory.Options();
       bounds.inJustDecodeBounds = true;
       BitmapFactory.decodeFile(sourcePath, bounds);
@@ -244,15 +257,45 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
       }
 
       double scale =
-          Math.min(1.0, Math.sqrt(maxPixels / ((double) bounds.outWidth * bounds.outHeight)));
+          Math.min(1.0, Math.sqrt(task.maxPixels / ((double) bounds.outWidth * bounds.outHeight)));
       int targetWidth = Math.max(1, (int) Math.floor(bounds.outWidth * scale));
       int targetHeight = Math.max(1, (int) Math.floor(bounds.outHeight * scale));
       // RGB_565（每像素 2 字节）相比 ARGB_8888（4 字节）峰值内存减半；墨水屏为灰阶无可见差异，
       // 普通彩屏仅有轻微精度损失。Canvas.drawBitmap 兼容 565 作为 backing store。
       output = Bitmap.createBitmap(targetWidth, targetHeight, OUTPUT_CONFIG);
-      Canvas canvas = new Canvas(output);
-      Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
 
+      decodeIntoCanvas(task, sourcePath, bounds, targetWidth, targetHeight, new Canvas(output));
+      completed = writeResult(task, output, outputPath, targetWidth, targetHeight);
+    } catch (InterruptedException error) {
+      task.reject("IMAGE_PROCESSING_CANCELLED", "图片处理已取消", error);
+    } catch (Throwable error) {
+      task.reject("IMAGE_PROCESSING_FAILED", "扰乱图片处理失败", error);
+    } finally {
+      if (!completed && outputPath != null) {
+        // 写入中断时不保留无法使用的半成品。
+        new File(outputPath).delete();
+      }
+      if (output != null) {
+        output.recycle();
+      }
+    }
+  }
+
+  /**
+   * 按分片几何把源图逐片解码并绘制到 canvas：优先 BitmapRegionDecoder 区域解码，
+   * 创建失败时回退为整图解码 + drawSlices。
+   */
+  private static void decodeIntoCanvas(
+      ImageTask task,
+      String sourcePath,
+      BitmapFactory.Options bounds,
+      int targetWidth,
+      int targetHeight,
+      Canvas canvas)
+      throws InterruptedException {
+    Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    BitmapRegionDecoder decoder = null;
+    try {
       try {
         decoder = createRegionDecoder(sourcePath);
       } catch (Exception ignored) {
@@ -260,23 +303,16 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
       }
 
       if (decoder != null) {
-        int baseHeight = bounds.outHeight / splitCount;
-        int remainder = bounds.outHeight % splitCount;
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize =
-            ImageSampling.calculateSampleSize(bounds.outWidth, bounds.outHeight, maxPixels);
-        for (int index = 0; index < splitCount; index++) {
+            ImageSampling.calculateSampleSize(bounds.outWidth, bounds.outHeight, task.maxPixels);
+        for (int index = 0; index < task.splitCount; index++) {
           task.throwIfCancelled();
-          int sliceHeight = baseHeight;
-          int destinationY = baseHeight * index;
-          int sourceY = bounds.outHeight - baseHeight * (index + 1) - remainder;
-          if (index == 0) {
-            sliceHeight += remainder;
-          } else {
-            destinationY += remainder;
-          }
-          Bitmap region = decoder.decodeRegion(
-              new Rect(0, sourceY, bounds.outWidth, sourceY + sliceHeight), options);
+          SliceRect slice = sliceRect(index, task.splitCount, bounds.outHeight);
+          Bitmap region =
+              decoder.decodeRegion(
+                  new Rect(0, slice.sourceY, bounds.outWidth, slice.sourceY + slice.height),
+                  options);
           if (region == null) {
             throw new IllegalStateException("图片分片解码失败");
           }
@@ -284,9 +320,9 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
             RectF destination =
                 new RectF(
                     0,
-                    (float) destinationY * targetHeight / bounds.outHeight,
+                    (float) slice.destinationY * targetHeight / bounds.outHeight,
                     targetWidth,
-                    (float) (destinationY + sliceHeight) * targetHeight / bounds.outHeight);
+                    (float) (slice.destinationY + slice.height) * targetHeight / bounds.outHeight);
             canvas.drawBitmap(region, null, destination, paint);
           } finally {
             region.recycle();
@@ -295,52 +331,45 @@ public class ImageProcessorModule extends ReactContextBaseJavaModule {
       } else {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize =
-            ImageSampling.calculateSampleSize(bounds.outWidth, bounds.outHeight, maxPixels);
-        fullSource = BitmapFactory.decodeFile(sourcePath, options);
+            ImageSampling.calculateSampleSize(bounds.outWidth, bounds.outHeight, task.maxPixels);
+        Bitmap fullSource = BitmapFactory.decodeFile(sourcePath, options);
         if (fullSource == null) {
           throw new IllegalStateException("图片解码失败");
         }
-        drawSlices(fullSource, canvas, splitCount, targetWidth, targetHeight, task);
-      }
-
-      task.throwIfCancelled();
-      File destination = new File(outputPath);
-      File parent = destination.getParentFile();
-      if (parent != null && !parent.exists() && !parent.mkdirs()) {
-        throw new IllegalStateException("无法创建临时图片目录");
-      }
-      try (FileOutputStream stream = new FileOutputStream(destination)) {
-        if (!output.compress(OUTPUT_FORMAT, OUTPUT_QUALITY, stream)) {
-          throw new IllegalStateException("图片写入失败");
+        try {
+          drawSlices(fullSource, canvas, task.splitCount, targetWidth, targetHeight, task);
+        } finally {
+          fullSource.recycle();
         }
       }
-
-      WritableMap result = Arguments.createMap();
-      result.putString("path", outputPath);
-      result.putInt("width", targetWidth);
-      result.putInt("height", targetHeight);
-      task.throwIfCancelled();
-      completed = task.resolve(result);
-    } catch (InterruptedException error) {
-      task.reject("IMAGE_PROCESSING_CANCELLED", "图片处理已取消", error);
-    } catch (Throwable error) {
-      task.reject("IMAGE_PROCESSING_FAILED", "扰乱图片处理失败", error);
     } finally {
-      if (!completed) {
-        if (outputPath != null) {
-          // 写入中断时不保留无法使用的半成品。
-          new File(outputPath).delete();
-        }
-      }
       if (decoder != null) {
         decoder.recycle();
       }
-      if (fullSource != null) {
-        fullSource.recycle();
-      }
-      if (output != null) {
-        output.recycle();
+    }
+  }
+
+  /** 把输出 Bitmap 写入 outputPath 并以 {path, width, height} resolve；返回是否成功 settle。 */
+  private static boolean writeResult(
+      ImageTask task, Bitmap output, String outputPath, int targetWidth, int targetHeight)
+      throws IOException, InterruptedException {
+    task.throwIfCancelled();
+    File destination = new File(outputPath);
+    File parent = destination.getParentFile();
+    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+      throw new IllegalStateException("无法创建临时图片目录");
+    }
+    try (FileOutputStream stream = new FileOutputStream(destination)) {
+      if (!output.compress(OUTPUT_FORMAT, OUTPUT_QUALITY, stream)) {
+        throw new IllegalStateException("图片写入失败");
       }
     }
+
+    WritableMap result = Arguments.createMap();
+    result.putString("path", outputPath);
+    result.putInt("width", targetWidth);
+    result.putInt("height", targetHeight);
+    task.throwIfCancelled();
+    return task.resolve(result);
   }
 }

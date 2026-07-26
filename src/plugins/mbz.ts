@@ -117,16 +117,17 @@ class MangaBZ extends Base {
     const $ = cheerio.load(text || '');
     const list: IncreaseManga[] = [];
 
+    // 复用 root cheerio 实例，避免在循环内对每个节点重新 cheerio.load
     $('.mh-list .mh-item')
       .toArray()
       .forEach((div) => {
-        const $$ = cheerio.load(div);
+        const $div = $(div);
 
-        const cover = $$('img.mh-cover').attr('src');
-        const title = $$('.mh-item-detali .title a').first().text();
-        const href = $$('a').first().attr('href') || '';
-        const latest = $$('.chapter a').first().text();
-        const statusLabel = $$('.chapter span').first().text();
+        const cover = $div.find('img.mh-cover').attr('src');
+        const title = $div.find('.mh-item-detali .title a').first().text();
+        const href = $div.find('a').first().attr('href') || '';
+        const latest = $div.find('.chapter a').first().text();
+        const statusLabel = $div.find('.chapter span').first().text();
         const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
 
         let status = MangaStatus.Unknown;
@@ -158,16 +159,17 @@ class MangaBZ extends Base {
     const $ = cheerio.load(text || '');
     const list: IncreaseManga[] = [];
 
+    // 复用 root cheerio 实例，避免在循环内对每个节点重新 cheerio.load
     $('.mh-list .mh-item')
       .toArray()
       .forEach((div) => {
-        const $$ = cheerio.load(div);
+        const $div = $(div);
 
-        const cover = $$('img.mh-cover').attr('src');
-        const title = $$('.mh-item-detali .title a').first().text();
-        const href = $$('a').first().attr('href') || '';
-        const latest = $$('.chapter a').first().text();
-        const statusLabel = $$('.chapter span').first().text();
+        const cover = $div.find('img.mh-cover').attr('src');
+        const title = $div.find('.mh-item-detali .title a').first().text();
+        const href = $div.find('a').first().attr('href') || '';
+        const latest = $div.find('.chapter a').first().text();
+        const statusLabel = $div.find('.chapter span').first().text();
         const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
 
         let status = MangaStatus.Unknown;
@@ -203,7 +205,10 @@ class MangaBZ extends Base {
     );
     const scriptContent = scriptNode?.children?.[0]?.data || '';
     const [, id] = scriptContent.match(PATTERN_SCRIPT_MANGA_ID) || [];
-    const mangaId = (id || '') + 'bz';
+    if (!id) {
+      throw new Error(`漫画bz ${ErrorMessage.MissingMangaInfo}`);
+    }
+    const mangaId = id + 'bz';
     const cover = $('.detail-info img.detail-info-cover').first().attr('src');
     const title = $('.detail-info p.detail-info-title').first().text().trim();
     const author = (

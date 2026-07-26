@@ -11,6 +11,7 @@ import {
   unlinkTemporaryImage,
 } from '~/utils/imageProcessor';
 import { useDebouncedSafeAreaFrame, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useLatestRef } from '~/hooks/useLatestRef';
 import ErrorWithRetry from './ErrorWithRetry';
 import {
   EMPTY_HEADERS,
@@ -41,20 +42,16 @@ const NativeScrambleImage = ({
   const tempPath = useRef<string | null>(null);
   // 加载 effect 只依赖真实输入；prevState/index/onRelease 经 ref 读取最新值，
   // 避免它们的引用变化触发整条重载（删临时文件 + 重新解密）
-  const prevStateRef = useRef(prevState);
-  const indexRef = useRef(index);
-  const onReleaseRef = useRef(onRelease);
-  prevStateRef.current = prevState;
-  indexRef.current = index;
-  onReleaseRef.current = onRelease;
+  const prevStateRef = useLatestRef(prevState);
+  const indexRef = useLatestRef(index);
+  const onReleaseRef = useLatestRef(onRelease);
   // 几何尺寸（窗口/insets）防抖变化时不应触发「下载+解密」整条重跑——
   // 那会让旋转屏/键盘弹起等场景重解码整章扰乱图。改用 ref 持有最新值，effect 内读取。
   // 注意：旋转屏后已 setState 的 multipleFitWidth/multipleFitHeight/landscapeHeight/
   // portraitHeight 仍停留在加载时的旧值（effect 不重跑）。这与原图 ComicImage.handleLoad
   // 既有特性一致（onLoad 不重触发），Reader 的 defaultPortraitHeight/defaultLandscapeHeight
   // 会作为兜底；用「不重解码」换 IO 是电子墨水场景的有意取舍。
-  const dimsRef = useRef({ windowWidth, windowHeight, top, left, right, bottom });
-  dimsRef.current = { windowWidth, windowHeight, top, left, right, bottom };
+  const dimsRef = useLatestRef({ windowWidth, windowHeight, top, left, right, bottom });
 
   const style = useFillStyle(
     layoutMode,
@@ -72,7 +69,8 @@ const NativeScrambleImage = ({
         onReleaseRef.current?.(indexRef.current);
       }
     }
-  }, []);
+    // ref 对象引用稳定，进 deps 不会触发重建
+  }, [indexRef, onReleaseRef]);
 
   const handleImageError = useCallback(() => {
     release();
@@ -151,7 +149,8 @@ const NativeScrambleImage = ({
       release();
     };
     // 几何尺寸经 dimsRef 读取，不进 deps —— 防止旋转屏/insets 防抖变化触发整章重解码。
-  }, [headers, release, retry, uri]);
+    // （ref 对象引用稳定，列入 deps 仅为满足 eslint，不会触发重跑）
+  }, [headers, release, retry, uri, dimsRef, prevStateRef]);
 
   if (state.loadStatus === AsyncStatus.Rejected) {
     return (

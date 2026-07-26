@@ -9,7 +9,8 @@ export interface DrawerRef {
 }
 interface DrawerProps {
   ref?: Ref<DrawerRef>;
-  content?: number;
+  /** 面板内容宽度（不含右侧安全区） */
+  contentWidth?: number;
   children?: ReactNode;
 }
 
@@ -17,14 +18,13 @@ interface DrawerProps {
  * 电子墨水版静态抽屉：无滑入动画、无透明遮罩
  * 右侧固定宽度高对比面板，条件渲染瞬时开合
  */
-const Drawer = ({ ref, content = 300, children }: DrawerProps) => {
+const Drawer = ({ ref, contentWidth = 300, children }: DrawerProps) => {
   const { width: windowWidth, height: windowHeight } = useDebouncedSafeAreaFrame();
   const { right } = useDebouncedSafeAreaInsets();
   const [visible, setVisible] = useState(false);
   const palette = useThemePalette();
 
-  const contentWidth = content + right;
-  const panelWidth = Math.min(windowWidth * 0.55, contentWidth);
+  const panelWidth = Math.min(windowWidth * 0.55, contentWidth + right);
 
   useImperativeHandle(ref, () => ({
     open: () => setVisible(true),

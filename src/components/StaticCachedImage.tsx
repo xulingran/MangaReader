@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   ImageProps as NativeImageProps,
@@ -8,6 +8,7 @@ import {
   ImageStyle,
 } from 'react-native';
 import { CacheManager } from '@georstat/react-native-image-cache';
+import { useLatestRef } from '~/hooks/useLatestRef';
 
 interface StaticCachedImageProps extends Omit<NativeImageProps, 'source' | 'onError'> {
   source: string;
@@ -43,10 +44,8 @@ const StaticCachedImage = ({
   );
   const requestKey = `${source}\u0000${headersKey}\u0000${reloadKey ?? ''}`;
   const [resolved, setResolved] = useState<{ requestKey: string; uri: string }>();
-  const headersRef = useRef(headers);
-  const onErrorRef = useRef(onError);
-  headersRef.current = headers;
-  onErrorRef.current = onError;
+  const headersRef = useLatestRef(headers);
+  const onErrorRef = useLatestRef(onError);
   const localUri = resolved?.requestKey === requestKey ? resolved.uri : undefined;
 
   useEffect(() => {
@@ -87,7 +86,8 @@ const StaticCachedImage = ({
       active = false;
     };
     // requestKey 只在来源、请求头内容或显式重试变化时改变，避免父组件内联对象造成重复 I/O。
-  }, [source, requestKey, maxAge]);
+    // （ref 对象引用稳定，列入 deps 仅为满足 eslint，不会触发重跑）
+  }, [source, requestKey, maxAge, headersRef, onErrorRef]);
 
   if (!localUri) {
     return <View style={style} />;

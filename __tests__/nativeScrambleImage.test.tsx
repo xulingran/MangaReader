@@ -12,17 +12,15 @@ const hooksMock = require('~/hooks') as {
   __setInsets: (next: { top: number; right: number; bottom: number; left: number }) => void;
 };
 
-jest.mock('native-base', () => {
-  const { Text, View } = require('react-native');
-  return {
-    Box: View,
-    Center: View,
-    Icon: View,
-    IconButton: View,
-    Text,
-    extendTheme: (theme: unknown) => theme,
-  };
-});
+jest.mock('native-base', () =>
+  require('./helpers/mockNativeBase').createNativeBaseMock({
+    viewComponents: ['Box', 'Center', 'Icon', 'IconButton'],
+    text: 'react-native',
+    extra: {
+      extendTheme: (theme: unknown) => theme,
+    },
+  })
+);
 
 jest.mock('~/hooks', () => {
   // 让尺寸可被测试动态修改，模拟旋转屏 / insets 防抖变化

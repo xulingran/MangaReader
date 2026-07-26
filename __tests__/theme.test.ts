@@ -56,4 +56,21 @@ describe('主题解析与墨水屏色板', () => {
     expect(calls).toEqual(['native', 'appearance']);
     expect(setColorScheme).toHaveBeenCalledWith(null);
   });
+
+  it('缺少 Android 主题桥时回退 Appearance 且不抛错', async () => {
+    const themeModeModule = NativeModules.ThemeModeModule;
+    const setColorScheme = Appearance.setColorScheme as ReturnType<typeof jest.fn>;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      delete (NativeModules as Record<string, unknown>).ThemeModeModule;
+
+      await expect(syncNativeThemeMode(ThemeMode.Dark)).resolves.toBeUndefined();
+
+      expect(setColorScheme).toHaveBeenCalledWith('dark');
+      expect(warn).toHaveBeenCalledWith('缺少 Android 主题桥，已回退到 Appearance 设置主题');
+    } finally {
+      (NativeModules as Record<string, unknown>).ThemeModeModule = themeModeModule;
+      warn.mockRestore();
+    }
+  });
 });

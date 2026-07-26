@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   VOLUME_UP / PAGE_UP / DPAD_LEFT   -> previous
  *   VOLUME_DOWN / PAGE_DOWN / DPAD_RIGHT -> next
  * 事件名 "pageKey"，载荷 {direction: 'previous' | 'next'}。
- * 长按只会重复 ACTION_DOWN，ACTION_UP 仅触发一次，因此天然避免长按重复翻页。
+ * 长按只会重复 ACTION_DOWN，ACTION_UP 在松手时仅触发一次（其 repeatCount 恒为 0、无判断意义），
+ * 因此只在 ACTION_UP 上报一次翻页，天然避免长按重复翻页。
  */
 public class EInkKeyModule extends ReactContextBaseJavaModule {
   public static final String NAME = "EInkKeyModule";
@@ -90,8 +91,8 @@ public class EInkKeyModule extends ReactContextBaseJavaModule {
     if (direction == null) {
       return false;
     }
-    // 消费 down/up 两个动作，避免系统音量键弹窗与焦点移动
-    if (event.getAction() == KeyEvent.ACTION_UP && event.getRepeatCount() == 0) {
+    // 消费 down/up 两个动作，避免系统音量键弹窗与焦点移动；仅在松手（ACTION_UP）时上报一次
+    if (event.getAction() == KeyEvent.ACTION_UP) {
       emitPageKey(direction == DIRECTION_PREVIOUS ? "previous" : "next");
     }
     return true;

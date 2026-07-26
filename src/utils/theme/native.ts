@@ -14,8 +14,11 @@ export async function syncNativeThemeMode(mode: ThemeMode): Promise<void> {
     | ThemeModeNativeModule
     | undefined;
   if (!themeModeModule) {
+    // 桥缺失时 Appearance 回退已经生效，属于成功降级而非失败：
+    // 不抛错，避免调用方把已完成的降级当成同步失败处理。
     Appearance.setColorScheme(colorScheme);
-    throw new Error('缺少 Android 主题桥');
+    console.warn('缺少 Android 主题桥，已回退到 Appearance 设置主题');
+    return;
   }
   try {
     // 先清理或写入 Android 12+ 的应用级覆盖，再让 Appearance 读取最终 Configuration。

@@ -112,10 +112,8 @@ describe('saveDataWorker', () => {
       await waitForCondition(() => multiSet.mock.calls.length === 1);
 
       await runSaga(options, worker, action.removeFavorites(mangaHash)).toPromise();
-      for (let expected = 2; expected <= 2; expected++) {
-        pendingWrites.shift()?.();
-        await waitForCondition(() => multiSet.mock.calls.length === expected);
-      }
+      pendingWrites.shift()?.();
+      await waitForCondition(() => multiSet.mock.calls.length === 2);
       pendingWrites.shift()?.();
       await firstTask.toPromise();
       expect(multiSet).toHaveBeenCalledTimes(2);

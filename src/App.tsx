@@ -9,7 +9,7 @@ import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { NativeBaseProvider } from 'native-base';
 import { useMessageToast } from '~/hooks';
 import { ErrorBoundary } from 'react-error-boundary';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, useColorScheme } from 'react-native';
 import { Provider } from 'react-redux';
 import ErrorFallback from '~/components/ErrorFallback';
 import RNBootSplash from 'react-native-bootsplash';
@@ -23,7 +23,8 @@ import Chapter from '~/views/Chapter';
 import Plugin from '~/views/Plugin';
 import Webview from '~/views/Webview';
 import About from '~/views/About';
-import { useResolvedThemeMode, useThemePalette } from '~/utils/theme/hooks';
+import { ThemePreferenceProvider, resolveThemeMode } from '~/utils/theme/hooks';
+import { getThemePalette } from '~/utils/theme/tokens';
 import { syncNativeThemeMode } from '~/utils/theme/native';
 
 interface NavigationScreenProps {
@@ -84,8 +85,14 @@ const AppShell = () => {
   const [ready, setReady] = useState(false);
   const launchStatus = useAppSelector((state) => state.app.launchStatus);
   const themeMode = useAppSelector((state) => state.setting.themeMode);
-  const resolvedThemeMode = useResolvedThemeMode();
-  const palette = useThemePalette();
+  // setting.themeMode 是持久化、备份恢复的正式来源（AGENTS.md「冷启动主题」）。
+  // 通过 ThemePreferenceProvider 注入到全树：所有子组件的
+  // useThemePalette/useResolvedThemeMode/useTokenColor 都跟随用户选择，避免亮暗混搭。
+  // AppShell 自身渲染在 Provider 之外、读不到注入的偏好，根视图背景与导航 chrome
+  // 需直接用 themeMode + 系统模式自行解析，与 Provider 内的解析结果保持一致。
+  const systemMode = useColorScheme();
+  const resolvedThemeMode = resolveThemeMode(themeMode, systemMode);
+  const palette = getThemePalette(resolvedThemeMode);
   const navigationTheme = useMemo(
     () => ({
       ...DefaultTheme,
@@ -115,18 +122,20 @@ const AppShell = () => {
   }, [launchStatus, themeMode]);
 
   return (
-    <GestureHandlerRootView style={[styles.wrapper, { backgroundColor: palette.bg }]}>
-      <NativeBaseProvider theme={customTheme}>
-        <NavigationContainer
-          ref={navigationRef}
-          theme={navigationTheme}
-          onReady={() => setReady(true)}
-        >
-          <NavigationScreen ready={ready} />
-          <PrehandleDrawer />
-        </NavigationContainer>
-      </NativeBaseProvider>
-    </GestureHandlerRootView>
+    <ThemePreferenceProvider value={themeMode}>
+      <GestureHandlerRootView style={[styles.wrapper, { backgroundColor: palette.bg }]}>
+        <NativeBaseProvider theme={customTheme}>
+          <NavigationContainer
+            ref={navigationRef}
+            theme={navigationTheme}
+            onReady={() => setReady(true)}
+          >
+            <NavigationScreen ready={ready} />
+            <PrehandleDrawer />
+          </NavigationContainer>
+        </NativeBaseProvider>
+      </GestureHandlerRootView>
+    </ThemePreferenceProvider>
   );
 };
 

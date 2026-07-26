@@ -25,6 +25,9 @@ import ThemeModeSelector from '~/components/ThemeModeSelector';
 const { backup, restore, clearCache, loadLatestRelease, setAndroidDownloadPath, setThemeMode } =
   action;
 
+// 清除完成后让「清除中…」状态多停留一拍，避免按钮文案闪现、用户感知不到操作已结束
+const CLEARING_FEEDBACK_MS = 500;
+
 const About = () => {
   const { isOpen: isClearing, onOpen: openClearing, onClose: closeClearing } = useDisclose();
   const { isOpen: isModalOpen, onOpen: onModalOpen, onClose: onModalClose } = useDisclose();
@@ -91,7 +94,7 @@ const About = () => {
         toast.show({ title: '清除图片缓存失败，请稍后重试' });
       })
       .finally(() => {
-        clearingTimerRef.current = setTimeout(closeClearing, 500);
+        clearingTimerRef.current = setTimeout(closeClearing, CLEARING_FEEDBACK_MS);
       });
   };
   const handleStorageCacheClear = () => {

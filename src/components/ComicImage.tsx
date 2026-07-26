@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { type ImageLoadEventData, type NativeSyntheticEvent, StyleSheet } from 'react-native';
 import { Box, Center } from 'native-base';
 import { CacheManager } from '@georstat/react-native-image-cache';
@@ -108,14 +108,15 @@ const DefaultImage = ({
       }
     }, [imageState.loadStatus])
   );
-  useFocusEffect(
-    useCallback(() => {
-      if (uriRef.current !== uri) {
-        uriRef.current = uri;
-        setImageState(prevState);
-      }
-    }, [prevState, uri])
-  );
+  // uri 同步用 useEffect 而非 useFocusEffect：失焦期间 uri 变化也必须重置 imageState。
+  // prevState 由 Reader 从 *StateRef.current[index] 传入，是稳定引用（仅在该图片实际加载
+  // 完成时才被替换），不会因父组件 render 而变化，故列入 deps 不会触发不必要的重置。
+  useEffect(() => {
+    if (uriRef.current !== uri) {
+      uriRef.current = uri;
+      setImageState(prevState);
+    }
+  }, [prevState, uri]);
 
   if (imageState.loadStatus === AsyncStatus.Rejected) {
     return (

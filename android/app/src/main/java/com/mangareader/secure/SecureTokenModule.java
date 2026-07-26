@@ -14,6 +14,7 @@ import com.facebook.react.bridge.ReactMethod;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.UnrecoverableKeyException;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -29,6 +30,8 @@ public class SecureTokenModule extends ReactContextBaseJavaModule {
   private static final String VALUE = "bika_token";
   private static final String IV = "bika_token_iv";
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+  // containsAlias/getKey/deleteEntry/generateKey 不是原子操作，串行化避免并发下重复重建
+  private static final Object KEYSTORE_LOCK = new Object();
 
   public SecureTokenModule(ReactApplicationContext reactContext) {
     super(reactContext);
@@ -43,10 +46,22 @@ public class SecureTokenModule extends ReactContextBaseJavaModule {
     return getReactApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
   }
 
+  /**
+   * 读取或创建加解密密钥。alias 存在但密钥已损坏（UnrecoverableKeyException 或取回 null）时，
+   * 删除坏 alias 后重建并重试一次；重建后旧密文随之失效，由读取侧走「清除 + 重新登录」流程。
+   * 除密钥损坏外的异常原样抛出，不在这里吞掉。
+   */
   private SecretKey getOrCreateKey() throws Exception {
-    KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
-    keyStore.load(null);
-    if (!keyStore.containsAlias(KEY_ALIAS)) {
+    synchronized (KEYSTORE_LOCK) {
+      KeyStore keyStore = KeyStore.getInstance(KEYSTORE);
+      keyStore.load(null);
+      if (keyStore.containsAlias(KEY_ALIAS)) {
+        SecretKey key = tryGetKey(keyStore);
+        if (key != null) {
+          return key;
+        }
+        keyStore.deleteEntry(KEY_ALIAS);
+      }
       KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE);
       generator.init(
           new KeyGenParameterSpec.Builder(
@@ -55,8 +70,17 @@ public class SecureTokenModule extends ReactContextBaseJavaModule {
               .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
               .build());
       generator.generateKey();
+      return (SecretKey) keyStore.getKey(KEY_ALIAS, null);
     }
-    return (SecretKey) keyStore.getKey(KEY_ALIAS, null);
+  }
+
+  /** 取回密钥；仅在密钥损坏（UnrecoverableKeyException）时返回 null，其余异常原样上抛。 */
+  private static SecretKey tryGetKey(KeyStore keyStore) throws Exception {
+    try {
+      return (SecretKey) keyStore.getKey(KEY_ALIAS, null);
+    } catch (UnrecoverableKeyException corrupted) {
+      return null;
+    }
   }
 
   /** WebView 凭据桥接使用的每会话随机数，不依赖 JS Math.random。 */
@@ -72,7 +96,11 @@ public class SecureTokenModule extends ReactContextBaseJavaModule {
     try {
       String normalized = token == null ? "" : token.trim();
       if (normalized.isEmpty()) {
-        clearBikaToken(promise);
+        if (doClear()) {
+          promise.resolve(null);
+        } else {
+          promise.reject("SECURE_TOKEN_CLEAR_FAILED", "清除 Bika Token 失败");
+        }
         return;
       }
       Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -116,10 +144,14 @@ public class SecureTokenModule extends ReactContextBaseJavaModule {
 
   @ReactMethod
   public void clearBikaToken(Promise promise) {
-    if (preferences().edit().remove(VALUE).remove(IV).commit()) {
+    if (doClear()) {
       promise.resolve(null);
     } else {
       promise.reject("SECURE_TOKEN_CLEAR_FAILED", "清除 Bika Token 失败");
     }
+  }
+
+  private boolean doClear() {
+    return preferences().edit().remove(VALUE).remove(IV).commit();
   }
 }

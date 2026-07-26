@@ -1,5 +1,5 @@
 import Base, { Plugin } from './base';
-import { MangaStatus } from '~/utils';
+import { MangaStatus, ErrorMessage } from '~/utils';
 import dayjs from 'dayjs';
 
 interface MoeImgListItem {
@@ -192,7 +192,7 @@ class MoeImg extends Base {
   handleMangaInfo: Base['handleMangaInfo'] = (response: MoeImgDetailResponse, mangaId) => {
     const detail = response.detail;
     if (!detail) {
-      throw new Error('MoeImg 详情数据缺失');
+      throw new Error(`${this.name} ${ErrorMessage.MissingMangaInfo}`);
     }
     const chapters = response.chapters || [];
     const chapter = chapters[0];
@@ -244,10 +244,10 @@ class MoeImg extends Base {
   handleChapter: Base['handleChapter'] = (response: MoeImgReadResponse, mangaId, chapterId) => {
     const detail = response.chapter_detail;
     if (!detail) {
-      throw new Error('MoeImg 阅读数据缺失');
+      throw new Error(ErrorMessage.MissingChapterInfo);
     }
     if (detail.chapter_id && String(detail.chapter_id) !== chapterId) {
-      throw new Error('MoeImg 返回了错误的章节数据');
+      throw new Error(ErrorMessage.WrongChapterData);
     }
     const server = detail.server || (detail.slaves || []).find(Boolean) || '';
     const content = detail.chapter_content || '';
@@ -263,7 +263,7 @@ class MoeImg extends Base {
       )
     );
     if (images.length === 0) {
-      throw new Error('MoeImg 图片数据缺失');
+      throw new Error(ErrorMessage.MissingImageData);
     }
     return {
       canLoadMore: false,
