@@ -3,7 +3,7 @@
 一个基于 React Native 的漫画阅读 APP，**仅支持 Android**，面向电子纸设备：全局黑白高对比静态 UI，移除所有装饰动画与程序化翻页动画。采用插件式设计抓取多个漫画网站的内容，数据全部离线存储在本地，支持备份和恢复。
 
 - 仓库：https://github.com/youniaogu/MangaReader
-- 当前版本：0.7.10（`package.json` 中的 `version` 与 `publishTime`，以及 `android/app/build.gradle` 中的 `versionCode` / `versionName` 需保持同步）
+- 当前版本：0.8.0（`package.json` 中的 `version` 与 `publishTime`，以及 `android/app/build.gradle` 中的 `versionCode` / `versionName` 需保持同步）
 - 文档与用户界面以中文为主，代码注释中英文混用
 
 ## 电子墨水版核心约定
