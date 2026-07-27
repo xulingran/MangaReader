@@ -73,6 +73,38 @@ describe('增量持久化', () => {
       record: state.dict.record[favoriteChapterHash],
     });
   });
+
+  it('相同实体引用不重复序列化，实体变更后缓存失效', () => {
+    const stringifySpy = jest.spyOn(JSON, 'stringify');
+    const freshState = {
+      favorites: [{ mangaHash: favoriteMangaHash, isTrend: false, enableBatch: true }],
+      dict: {
+        manga: { [favoriteMangaHash]: { title: '缓存漫画', chapters: [] } },
+        chapter: {},
+        record: {},
+        lastWatch: { [favoriteMangaHash]: { chapter: favoriteChapterHash, page: 1 } },
+      },
+    } as unknown as RootState;
+
+    buildProgressPairs(freshState, [favoriteMangaHash], []);
+    buildProgressPairs(freshState, [favoriteMangaHash], []);
+    const mangaSerializeCalls = stringifySpy.mock.calls.filter(
+      ([value]) => value === freshState.dict.manga[favoriteMangaHash]
+    );
+    expect(mangaSerializeCalls).toHaveLength(1);
+
+    // immer 语义：实体变化必然产生新引用，新引用触发重新序列化
+    const changedState = {
+      ...freshState,
+      dict: {
+        ...freshState.dict,
+        manga: { [favoriteMangaHash]: { title: '已更新', chapters: [] } },
+      },
+    } as unknown as RootState;
+    const [pair] = buildProgressPairs(changedState, [favoriteMangaHash], []);
+    expect(JSON.parse(pair[1]).manga.title).toBe('已更新');
+    stringifySpy.mockRestore();
+  });
 });
 
 describe('generation 快照原子性', () => {

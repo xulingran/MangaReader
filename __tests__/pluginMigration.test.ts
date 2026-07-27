@@ -72,3 +72,47 @@ test('删除漫画源后清理旧数据并回退当前源', () => {
   expect(migrated.task.job.max).toBe(2);
   expect(migrated.task.job.thread).toEqual([{ taskId: 'mbz-task', jobId: 'mbz-job' }]);
 });
+
+test('flags 记录是否有改动：干净数据不置脏，脏数据置脏', () => {
+  const clean = {
+    plugin: {
+      source: Plugin.MBZ,
+      list: [
+        { value: Plugin.MBZ, disabled: false },
+        { value: Plugin.MHGM, disabled: false },
+      ],
+    },
+    favorites: [{ mangaHash: mbzMangaHash, isTrend: true, enableBatch: true }],
+    dict: {
+      manga: { [mbzMangaHash]: {} },
+      chapter: { [mbzChapterHash]: {} },
+      record: { [mbzChapterHash]: {} },
+      lastWatch: { [mbzMangaHash]: {} },
+    },
+    task: {
+      list: [{ taskId: 'mbz-task', chapterHash: mbzChapterHash }],
+      job: {
+        max: 2,
+        list: [{ taskId: 'mbz-task', jobId: 'mbz-job', chapterHash: mbzChapterHash }],
+        thread: [{ taskId: 'mbz-task', jobId: 'mbz-job' }],
+      },
+    },
+  } as unknown as Pick<RootState, 'dict' | 'favorites' | 'plugin' | 'task'>;
+
+  // plugin 结构每次都会按 PluginMap 重建，先迁移一次得到干净基线
+  migrateDeletedPluginData(clean);
+  const cleanFlags = { dirty: false };
+  migrateDeletedPluginData(clean, cleanFlags);
+  expect(cleanFlags.dirty).toBe(false);
+
+  const dirtyData = {
+    ...clean,
+    favorites: [
+      ...clean.favorites,
+      { mangaHash: legacyMangaHash, isTrend: false, enableBatch: false },
+    ],
+  } as Pick<RootState, 'dict' | 'favorites' | 'plugin' | 'task'>;
+  const dirtyFlags = { dirty: false };
+  migrateDeletedPluginData(dirtyData, dirtyFlags);
+  expect(dirtyFlags.dirty).toBe(true);
+});

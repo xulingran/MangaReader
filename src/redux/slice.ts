@@ -742,17 +742,16 @@ const dictSlice = createSlice({
         }
 
         const prev = state.record[chapterHash];
-        const imagesLoaded = Array.from(new Set([...prev.imagesLoaded, index]));
-
-        state.record[chapterHash] = {
-          total: chapter.images.length,
-          progress: Math.max(
-            prev.progress,
-            Math.floor((imagesLoaded.length * 100) / chapter.images.length)
-          ),
-          imagesLoaded,
-          isVisited: isVisited ? true : prev.isVisited,
-        };
+        // 原地更新 draft：未变化时 immer 不产生新引用，也避免每张图都复制整个 imagesLoaded
+        if (!prev.imagesLoaded.includes(index)) {
+          prev.imagesLoaded.push(index);
+        }
+        prev.total = chapter.images.length;
+        prev.progress = Math.max(
+          prev.progress,
+          Math.floor((prev.imagesLoaded.length * 100) / chapter.images.length)
+        );
+        prev.isVisited = isVisited ? true : prev.isVisited;
       }
     },
   },

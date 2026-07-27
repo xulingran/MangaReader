@@ -16,14 +16,14 @@
 - **按压反馈**：可交互元素按压时瞬时黑白反色、松开恢复（无渐变/透明度动画）；Button 由 `src/utils/theme.ts` 各 variant 的 `_pressed` 覆盖，图标按钮由 `src/components/VectorIcon.tsx` 统一处理，裸 `Pressable` 用 `src/utils/theme/hooks.ts` 的 `usePressedState` 同步翻转底色与文字/图标（token：`pressedBg`/`pressedText`，常态反色的元素按下回落 `bg`/`text`）；封面与漫画图不反色
 - **图标说明文字**：设置项 `setting.iconLabel`（默认关闭，About 页「图标说明文字」开关）开启后，`VectorIcon` 在图标下方渲染一行说明文字；文案优先取调用方的 `label` prop（简短文案，如「搜索」「排序」「实体按键」），缺省回退 `accessibilityLabel`；说明文字在按压反色区块之外，不跟随 pressed 反色；关闭时渲染路径与开启前完全一致
 - **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
-- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode`/`iconLabel` 时补默认值（跟随系统/关闭说明文字），首次升级强制横向单页；`syncDataSaga` 与 `restoreSaga` 都会调用
+- **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode`/`iconLabel` 时补默认值（跟随系统/关闭说明文字），首次升级强制横向单页；已是新结构时原样返回传入引用（启动路径用引用比较代替全量 `JSON.stringify` 判断是否需要回写，`migrateDeletedPluginData`/`normalizeTaskForRestart` 同此约定）；`syncDataSaga` 与 `restoreSaga` 都会调用
 - **阅读器尺寸冻结**：呼出菜单会显示状态栏，safe area frame/insets 随之变化，若响应会整页重布局（漫画页"缩小"），低端设备开销大；`Reader` / `Controller` / `ComicImage` / `NativeScrambleImage` 改用 `src/hooks/useStaticSafeArea.ts` 的 `useStaticSafeAreaFrame` / `useStaticSafeAreaInsets` 在挂载时冻结尺寸，屏幕方向变化经 `Reader` 的 `key={orientation}` remount 刷新
 
 ## 技术栈
 
 - **React Native 0.81.6** + React 19.1.4 + TypeScript 5.9.3（Node >= 20.19.4，`.nvmrc` 指定 24.18.0）
 - **Android 构建基线**：minSdk 24（覆盖 Android 9 / API 28）、compileSdk / targetSdk 36、Gradle 8.14.3、Android Gradle Plugin 8.11.0、Kotlin 2.1.20、NDK 27.1；当前保留旧架构（`newArchEnabled=false`）作为迁移阶段
-- **状态管理**：Redux Toolkit + redux-saga（`src/redux/`），dev 环境启用 redux-logger；jest 环境下不启动 saga（`store.ts`）
+- **状态管理**：Redux Toolkit + redux-saga（`src/redux/`）；jest 环境下不启动 saga（`store.ts`）
 - **UI**：NativeBase 3.4（通过 patch-package 打了补丁，见 `patches/native-base+3.4.28.patch`，移除了 SSRProvider）、react-navigation（native-stack）、react-native-reanimated 3.19（仅保留缩放/平移的直接操控）、@shopify/flash-list 1.8
 - **抓取**：cheerio 解析 HTML，自定义 fetch 封装（`src/utils/fetch.ts`）；webview（`src/views/Webview.tsx`）使用系统 WebView Cookie 会话过 Cloudflare 校验和登录
 - **存储**：react-native-mmkv（`src/utils/storage.ts` 封装，可切换回 AsyncStorage）、react-native-file-access 读写下载文件、@georstat/react-native-image-cache 图片缓存
@@ -96,6 +96,7 @@ patches/               # patch-package 补丁
 
 - 全局状态类型 `RootState` 定义在 `src/types/store.d.ts`（全局声明），初始值在 `src/redux/slice.ts` 的 `initialState`
 - 持久化数据（favorites、dict、plugin、setting、task 等）存储在 MMKV，key 定义在 `src/utils/common.ts` 的 `storageKey`
+- 增量持久化在 `src/redux/persistence.ts`：generation 快照布局；manga/chapter 实体的序列化结果用以引用为 key 的 WeakMap 缓存（immer 保证未变实体引用不变），manifest 以源字符串缓存避免每次 flush 重复 parse，翻页只重新序列化 lastWatch/record 小对象
 - `src/schema/*.json` 是由 `typescript-json-schema` 从 TS 类型生成的 JSON Schema，saga 在启动加载和恢复备份时用 `json-schema-library` 的 `Draft07` 校验数据合法性
 - **改动 `RootState` 相关类型后必须运行 `yarn jsonschema` 重新生成 schema**（pre-commit 钩子也会执行）
 

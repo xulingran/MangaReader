@@ -144,6 +144,9 @@ const Reader = ({
   const flashListRef = useRef<FlashList<any>>(null);
   const horizontalStateRef = useRef<(ImageState | null)[]>([]);
   const verticalStateRef = useRef<(ImageState | null)[]>([]);
+  // 纵向默认高度采样计数：已加载图片数与上次重算时的计数，供 updateDefaultHeights 分档重算
+  const verticalLoadedCountRef = useRef(0);
+  const verticalLastSampleRef = useRef(0);
   const multipleStateRef = useRef<Record<string, ImageState | null>[]>([]);
   const handleAccessibilityNext = useCallback(
     () => onTap?.(inverted ? PositionX.Left : PositionX.Right),
@@ -182,6 +185,8 @@ const Reader = ({
         horizontalStateRef.current = [];
         verticalStateRef.current = [];
         multipleStateRef.current = [];
+        verticalLoadedCountRef.current = 0;
+        verticalLastSampleRef.current = 0;
       };
     }, [])
   );
@@ -220,6 +225,8 @@ const Reader = ({
       horizontalStateRef.current = [];
       verticalStateRef.current = [];
       multipleStateRef.current = [];
+      verticalLoadedCountRef.current = 0;
+      verticalLastSampleRef.current = 0;
     },
   }));
 
@@ -352,8 +359,20 @@ const Reader = ({
       onZoomStart,
     ]
   );
-  /** 纵向模式：根据已加载图片重算中位默认高度并写回 ref，供未加载项兜底 */
+  /**
+   * 纵向模式：根据已加载图片重算中位默认高度并写回 ref，供未加载项兜底。
+   * 前 16 张逐张重算以便快速收敛，之后每跨 16 张一档才重算，
+   * 避免每张图加载都 filter 整个状态数组（长章节累计 O(n²)）。
+   */
   const updateDefaultHeights = useCallback(() => {
+    const count = verticalLoadedCountRef.current;
+    const last = verticalLastSampleRef.current;
+    const shouldUpdate =
+      count !== last && (count < 16 || Math.floor(count / 16) !== Math.floor(last / 16));
+    if (!shouldUpdate) {
+      return;
+    }
+    verticalLastSampleRef.current = count;
     const defaultHeight = getDefaultFillMedianHeight(
       verticalStateRef.current.filter(
         (imageState): imageState is ImageState => imageState !== null
@@ -401,10 +420,16 @@ const Reader = ({
               defaultLandscapeHeight={defaultLandscapeHeightRef.current}
               layoutMode={LayoutMode.Vertical}
               onRelease={(idx = index) => {
+                if (verticalStateRef.current[idx] != null) {
+                  verticalLoadedCountRef.current -= 1;
+                }
                 verticalStateRef.current[idx] = null;
               }}
               onChange={(state, idx = index) => {
                 cache.setImageState(uri, state);
+                if (verticalStateRef.current[idx] == null) {
+                  verticalLoadedCountRef.current += 1;
+                }
                 verticalStateRef.current[idx] = state;
                 reportFulfilledImage(state, onImageLoad, uri, item.chapterHash, item.current);
                 updateDefaultHeights();

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Input, InputGroup, InputRightAddon, Box } from 'native-base';
 import { KeyboardTypeOptions } from 'react-native';
 import Overlay from './Overlay';
@@ -62,4 +62,4 @@ const InputModal = ({
   );
 };
 
-export default InputModal;
+export default memo(InputModal);

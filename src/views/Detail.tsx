@@ -1,4 +1,4 @@
-import React, { Fragment, useState, useCallback, useMemo, useRef } from 'react';
+import React, { Fragment, memo, useState, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Flex,
@@ -21,6 +21,7 @@ import {
   AsyncStatus,
 } from '~/utils';
 import { useOnce, useSplitWidth, useDebouncedSafeAreaInsets } from '~/hooks';
+import { useLatestRef } from '~/hooks/useLatestRef';
 import { action, useAppSelector, useAppDispatch } from '~/redux';
 import { StyleSheet, Linking } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
@@ -83,6 +84,7 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     maxSplitWidth: 100,
   });
   const { isOpen, onOpen, onClose } = useDisclose();
+  const onOpenRef = useLatestRef(onOpen);
   const [chapter, setChapter] = useState<{ hash: string; title: string }>();
   const dispatch = useAppDispatch();
   const currentLoadStatus = useAppSelector(
@@ -184,51 +186,57 @@ const Detail = ({ route, navigation }: StackDetailProps) => {
     ({ chapterHash, page }: ContinueReadingTarget) => handleChapter(chapterHash, page),
     [handleChapter]
   );
+  /** 章节格子回调保持引用稳定（配合 ChapterCell 的 memo），按 hash 传参 */
+  const handleCellPress = useCallback(
+    (hash: string) => {
+      if (enabledMultiple) {
+        // 选中态统一从 route params 的 selected 读取，与 extraData.checkList 同源
+        navigation.setParams({
+          selected: selected.includes(hash)
+            ? selected.filter((hashString: string) => hashString !== hash)
+            : [...selected, hash],
+        });
+      } else {
+        handleChapter(hash);
+      }
+    },
+    [enabledMultiple, selected, navigation, handleChapter]
+  );
+  const handleCellLongPress = useCallback(
+    (hash: string, title: string) => {
+      if (!enabledMultiple) {
+        // useDisclose 的 onOpen 每次渲染都是新引用，经 ref 读取以保持本回调稳定
+        onOpenRef.current();
+        setChapter({ hash, title });
+      }
+    },
+    [enabledMultiple, onOpenRef]
+  );
 
   const renderItem = useCallback(
     ({
       item,
       extraData: { width, dict, chapterHash, multiple, checkList },
     }: ListRenderItemInfo<ChapterItem>) => {
-      const isActived = item.hash === chapterHash;
-      const isChecked = checkList.includes(item.hash);
       const record = dict[item.hash];
-
-      const handlePress = () => {
-        if (multiple) {
-          // 选中态统一从 extraData.checkList 读取，与 route params 的 selected 同源
-          navigation.setParams({
-            selected: isChecked
-              ? checkList.filter((hash: string) => hash !== item.hash)
-              : [...checkList, item.hash],
-          });
-        } else {
-          handleChapter(item.hash);
-        }
-      };
-      const handleLongPress = () => {
-        if (!multiple) {
-          onOpen();
-          setChapter({ hash: item.hash, title: item.title });
-        }
-      };
 
       return (
         <ChapterCell
+          hash={item.hash}
           title={item.title}
           width={width}
           gap={gap}
-          isActived={isActived}
-          isChecked={isChecked}
+          isActived={item.hash === chapterHash}
+          isChecked={checkList.includes(item.hash)}
           multiple={multiple}
           showProgress={!multiple && nonNullable(record) && record.progress >= 0}
           isVisited={nonNullable(record) && record.isVisited}
-          onPress={handlePress}
-          onLongPress={handleLongPress}
+          onPress={handleCellPress}
+          onLongPress={handleCellLongPress}
         />
       );
     },
-    [gap, handleChapter, navigation, onOpen]
+    [gap, handleCellPress, handleCellLongPress]
   );
 
   if (!nonNullable(data)) {
@@ -584,7 +592,9 @@ const MetaField = ({
   );
 };
 
-interface ChapterCellProps {  title: string;
+interface ChapterCellProps {
+  hash: string;
+  title: string;
   width: number;
   gap: number;
   isActived: boolean;
@@ -592,12 +602,13 @@ interface ChapterCellProps {  title: string;
   multiple: boolean;
   showProgress: boolean;
   isVisited?: boolean;
-  onPress: () => void;
-  onLongPress: () => void;
+  onPress: (hash: string) => void;
+  onLongPress: (hash: string, title: string) => void;
 }
 
-/** 章节格子：按压瞬时反色（当前章回落正色），无动画 */
-const ChapterCell = ({
+/** 章节格子：按压瞬时反色（当前章回落正色），无动画；memo 依赖稳定的 onPress/onLongPress */
+const ChapterCell = memo(function ChapterCell({
+  hash,
   title,
   width,
   gap,
@@ -608,13 +619,18 @@ const ChapterCell = ({
   isVisited,
   onPress,
   onLongPress,
-}: ChapterCellProps) => {
+}: ChapterCellProps) {
   const palette = useThemePalette();
   const [pressed, bind] = usePressedState();
   const inverted = isActived !== pressed;
   const foreground = inverted ? palette.selectedText : palette.text;
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={200} {...bind}>
+    <Pressable
+      onPress={() => onPress(hash)}
+      onLongPress={() => onLongPress(hash, title)}
+      delayLongPress={200}
+      {...bind}
+    >
       <Box w={width + gap} p={`${gap / 2}px`} position="relative">
         <Text
           px={1}
@@ -658,7 +674,7 @@ const ChapterCell = ({
       </Box>
     </Pressable>
   );
-};
+});
 
 export const PrehandleDrawer = () => {
   const showDrawer = useAppSelector((state) => state.chapter.showDrawer);

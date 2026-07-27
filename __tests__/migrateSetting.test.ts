@@ -59,6 +59,11 @@ describe('migrateSetting', () => {
     expect(result.pageKeys).toBe(initialState.setting.pageKeys);
   });
 
+  it('已是新结构的设置原样返回同一引用（供启动路径引用比较）', () => {
+    const newSetting = JSON.parse(JSON.stringify(initialState.setting));
+    expect(migrateSetting(newSetting)).toBe(newSetting);
+  });
+
   it('保留新版显式主题偏好', () => {
     const setting = { ...initialState.setting, themeMode: ThemeMode.Dark };
     expect(migrateSetting(setting).themeMode).toBe(ThemeMode.Dark);

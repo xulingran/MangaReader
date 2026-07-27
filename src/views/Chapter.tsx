@@ -99,6 +99,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const { isOpen: isMenuOpen, onOpen: onMenuOpen, onClose: onMenuClose } = useDisclose();
   const onOpenRef = useLatest(onOpen);
   const onMenuCloseRef = useLatest(onMenuClose);
+  // useDisclose 的 onClose 每次渲染都是新引用，经 ref 包一层保持 ActionsheetSelect 的 memo 有效
+  const onCloseRef = useLatest(onClose);
+  const handleSelectClose = useCallback(() => onCloseRef.current(), [onCloseRef]);
   const { isOpen: isJumpOpen, onOpen: onJumpOpen, onClose: onJumpClose } = useDisclose();
   const {
     isOpen: isTimerGapOpen,
@@ -360,6 +363,14 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
     }
   }, [dispatch, headers, toastRef]);
   const handleGoBack = useCallback(() => navigation.goBack(), [navigation]);
+  const handleImageSelect = useCallback(
+    (value: string) => {
+      if (value === 'save') {
+        handleImageSave();
+      }
+    },
+    [handleImageSave]
+  );
   const handleOrientationToggle = useCallback(
     () =>
       navigation.setOptions({
@@ -461,13 +472,9 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
       )}
       <ActionsheetSelect
         isOpen={isOpen}
-        onClose={onClose}
+        onClose={handleSelectClose}
         options={ImageSelectOptions}
-        onChange={(value) => {
-          if (value === 'save') {
-            handleImageSave();
-          }
-        }}
+        onChange={handleImageSelect}
       />
       <InputModal
         title="自动翻页间隔："

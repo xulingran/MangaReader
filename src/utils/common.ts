@@ -48,13 +48,17 @@ export function haveError(payload: any): payload is { error: Error } {
  * - 旧的 hearing 字段映射为 pageKeys
  * - 检测到旧字段（首次升级）时强制使用横向单页模式
  * 收藏、插件、阅读记录、下载路径、定时翻页等其余设置保持不变
+ * 已是新结构时原样返回传入引用，调用方可用引用比较判断是否需要回写
  */
 export function migrateSetting(raw: any): RootState['setting'] {
   if (!raw || typeof raw !== 'object') {
     return raw;
   }
+  const isLegacy = 'light' in raw || 'animated' in raw || 'hearing' in raw;
+  if (!isLegacy && 'themeMode' in raw && 'iconLabel' in raw) {
+    return raw;
+  }
   const setting = { ...raw };
-  const isLegacy = 'light' in setting || 'animated' in setting || 'hearing' in setting;
 
   delete setting.light;
   delete setting.animated;

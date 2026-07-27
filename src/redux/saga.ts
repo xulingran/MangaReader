@@ -361,7 +361,10 @@ const {
 function filterPluginRecord<T>(record: Record<string, T>): Record<string, T> {
   // isRegisteredHash 已从 ~/plugins 引入：安全过滤已删除插件遗留的脏数据
   // （splitHash 遇到非法 plugin 段会抛错，这里需要返回 false 而非抛错）。
-  return Object.fromEntries(Object.entries(record).filter(([hash]) => isRegisteredHash(hash)));
+  const entries = Object.entries(record);
+  const filtered = entries.filter(([hash]) => isRegisteredHash(hash));
+  // 无脏数据时返回原引用，调用方可用引用比较判断是否需要回写
+  return filtered.length === entries.length ? record : Object.fromEntries(filtered);
 }
 
 export const isCurrentMangaRequest = (
@@ -434,12 +437,19 @@ function* restorePluginCredentials() {
 }
 
 function migratePluginDict(dict: RootState['dict']): RootState['dict'] {
-  return {
-    manga: filterPluginRecord(dict.manga),
-    chapter: filterPluginRecord(dict.chapter),
-    record: filterPluginRecord(dict.record),
-    lastWatch: filterPluginRecord(dict.lastWatch),
-  };
+  const manga = filterPluginRecord(dict.manga);
+  const chapter = filterPluginRecord(dict.chapter);
+  const record = filterPluginRecord(dict.record);
+  const lastWatch = filterPluginRecord(dict.lastWatch);
+  if (
+    manga === dict.manga &&
+    chapter === dict.chapter &&
+    record === dict.record &&
+    lastWatch === dict.lastWatch
+  ) {
+    return dict;
+  }
+  return { manga, chapter, record, lastWatch };
 }
 
 function migratePluginTask(task: RootState['task']): RootState['task'] {
@@ -449,25 +459,54 @@ function migratePluginTask(task: RootState['task']): RootState['task'] {
     (item) => taskIds.has(item.taskId) && isRegisteredHash(item.chapterHash)
   );
   const jobIds = new Set(jobs.map((item) => item.jobId));
+  const threads = task.job.thread.filter((item) => taskIds.has(item.taskId) && jobIds.has(item.jobId));
+  const max = Math.min(Math.max(Number(task.job.max) || initialState.task.job.max, 1), 2);
+
+  // 无脏数据且并发数无需收敛时返回原引用，调用方可用引用比较判断是否需要回写
+  if (
+    list.length === task.list.length &&
+    jobs.length === task.job.list.length &&
+    threads.length === task.job.thread.length &&
+    max === task.job.max
+  ) {
+    return task;
+  }
 
   return {
     list,
     job: {
       ...task.job,
-      max: Math.min(Math.max(Number(task.job.max) || initialState.task.job.max, 1), 2),
+      max,
       list: jobs,
-      thread: task.job.thread.filter((item) => taskIds.has(item.taskId) && jobIds.has(item.jobId)),
+      thread: threads,
     },
   };
 }
 
+/**
+ * 过滤已删除插件遗留的 dict/favorites/plugin/task 数据。
+ * flags 传入时会记录是否真的发生了改动（启动路径据此决定是否需要回写，
+ * 避免对整份快照做全量 JSON.stringify 比较）；plugin 结构每次都会重建，
+ * 它的改动用自身序列化比较（条目少、代价低），其余部分用引用/长度比较。
+ */
 export function migrateDeletedPluginData<
   T extends Pick<RootState, 'dict' | 'favorites' | 'plugin' | 'task'>
->(data: T): T {
-  data.dict = migratePluginDict(data.dict);
-  data.favorites = data.favorites.filter((item) => isRegisteredHash(item.mangaHash));
-  data.plugin = migratePluginState(data.plugin);
-  data.task = migratePluginTask(data.task);
+>(data: T, flags?: { dirty: boolean }): T {
+  const dict = migratePluginDict(data.dict);
+  const favorites = data.favorites.filter((item) => isRegisteredHash(item.mangaHash));
+  const plugin = migratePluginState(data.plugin);
+  const task = migratePluginTask(data.task);
+  if (flags) {
+    flags.dirty ||=
+      dict !== data.dict ||
+      favorites.length !== data.favorites.length ||
+      task !== data.task ||
+      JSON.stringify(plugin) !== JSON.stringify(data.plugin);
+  }
+  data.dict = dict;
+  data.favorites = favorites;
+  data.plugin = plugin;
+  data.task = task;
   return data;
 }
 
@@ -628,12 +667,23 @@ function* loginPluginSaga() {
 /**
  * 从 generation 快照加载：迁移已删除插件数据、迁移 setting/task、采样校验后一次性还原。
  * 快照命中即直接返回，不再走旧版多 key 布局。
+ * 迁移是否产生改动用引用/长度比较判定（migrateDeletedPluginData 的 flags +
+ * migrateSetting/normalizeTaskForRestart 无变化时返回原引用），避免对整份快照
+ * 做两次全量 JSON.stringify，大库下可显著缩短低端设备的启动时间。
  */
 function* loadFromSnapshotSaga(snapshot: PersistedSnapshot) {
-  const original = JSON.stringify(snapshot);
-  migrateDeletedPluginData(snapshot);
-  snapshot.setting = migrateSetting(snapshot.setting);
-  snapshot.task = normalizeTaskForRestart(snapshot.task);
+  const flags = { dirty: false };
+  migrateDeletedPluginData(snapshot, flags);
+  const nextSetting = migrateSetting(snapshot.setting);
+  if (nextSetting !== snapshot.setting) {
+    flags.dirty = true;
+    snapshot.setting = nextSetting;
+  }
+  const nextTask = normalizeTaskForRestart(snapshot.task);
+  if (nextTask !== snapshot.task) {
+    flags.dirty = true;
+    snapshot.task = nextTask;
+  }
   // dict / favorites 在大库下可达上千条，全量 Draft07 校验会显著阻塞低端设备启动。
   // 这里采样前 8 条做结构防御；plugin/setting/task 条目少且结构关键，保持全量校验。
   // syncDataSaga 整段在 try/catch 内，采样漏过的脏数据走 catch 兜底；运行期 reducer
@@ -653,7 +703,7 @@ function* loadFromSnapshotSaga(snapshot: PersistedSnapshot) {
   yield put(syncPlugin(snapshot.plugin));
   yield put(syncSetting(snapshot.setting));
   yield put(syncTask(snapshot.task));
-  if (original !== JSON.stringify(snapshot)) {
+  if (flags.dirty) {
     const migratedState = ((state: RootState) => state)(yield select());
     yield call(persistFullState, migratedState);
   }

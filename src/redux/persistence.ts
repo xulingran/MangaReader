@@ -102,6 +102,86 @@ export const parseSnapshotManifest = (source: string | null): SnapshotManifest |
 const favoriteHashSet = (state: RootState) =>
   new Set(state.favorites.map(({ mangaHash }) => mangaHash));
 
+/**
+ * 翻页热路径每张脏 manga/chapter 都要序列化实体，而实体本体（含完整 chapters/images
+ * 数组，单本可达上百 KB）很少变化。immer 保证未修改的实体引用不变，这里以引用为 key
+ * 缓存序列化结果，翻页时只需重新序列化 lastWatch/record 小对象。
+ * 实体被替换后旧条目随引用一起被 GC，无需手动失效。
+ */
+const mangaJsonCache = new WeakMap<object, string>();
+const chapterJsonCache = new WeakMap<object, string>();
+
+const cachedStringify = (cache: WeakMap<object, string>, value: object): string => {
+  const cached = cache.get(value);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const serialized = JSON.stringify(value);
+  cache.set(value, serialized);
+  return serialized;
+};
+
+/** 与 JSON.stringify({ manga, lastWatch }) 等价（undefined 字段省略），但 manga 走引用缓存。 */
+const serializeMangaEntry = (
+  manga: RootState['dict']['manga'][string] | undefined,
+  lastWatch: RootState['dict']['lastWatch'][string] | undefined
+): string => {
+  const fields: string[] = [];
+  if (manga !== undefined) {
+    fields.push(`"manga":${cachedStringify(mangaJsonCache, manga)}`);
+  }
+  if (lastWatch !== undefined) {
+    fields.push(`"lastWatch":${JSON.stringify(lastWatch)}`);
+  }
+  return `{${fields.join(',')}}`;
+};
+
+/** 与 JSON.stringify({ chapter, record }) 等价（undefined 字段省略），但 chapter 走引用缓存。 */
+const serializeChapterEntry = (
+  chapter: RootState['dict']['chapter'][string] | undefined,
+  record: RootState['dict']['record'][string] | undefined
+): string => {
+  const fields: string[] = [];
+  if (chapter !== undefined) {
+    fields.push(`"chapter":${cachedStringify(chapterJsonCache, chapter)}`);
+  }
+  if (record !== undefined) {
+    fields.push(`"record":${JSON.stringify(record)}`);
+  }
+  return `{${fields.join(',')}}`;
+};
+
+/**
+ * manifest 的读取缓存：以源字符串比对避免每次 flush 都 JSON.parse 整份清单
+ * （含完整 favorites/plugin/setting 与全部索引）。所有写都经本模块串行提交，
+ * 写入成功后同步更新缓存，因此缓存不会与存储脱节。
+ */
+let manifestCache: { source: string; manifest: SnapshotManifest } | null = null;
+
+const readSnapshotManifest = async (): Promise<SnapshotManifest | undefined> => {
+  const source = await Storage.getItem(storageKey.snapshotManifest);
+  if (!source) {
+    manifestCache = null;
+    return undefined;
+  }
+  if (manifestCache?.source === source) {
+    return manifestCache.manifest;
+  }
+  const manifest = parseSnapshotManifest(source);
+  if (!manifest) {
+    manifestCache = null;
+    return undefined;
+  }
+  manifestCache = { source, manifest };
+  return manifest;
+};
+
+const writeSnapshotManifest = async (manifest: SnapshotManifest) => {
+  const source = JSON.stringify(manifest);
+  await Storage.setItem(storageKey.snapshotManifest, source);
+  manifestCache = { source, manifest };
+};
+
 export const buildMangaIndex = (state: RootState): string[] => {
   return state.favorites.flatMap(({ mangaHash }) => {
     const manga = state.dict.manga[mangaHash];
@@ -143,7 +223,7 @@ export const buildProgressPairs = (
     const manga = state.dict.manga[mangaHash];
     const lastWatch = state.dict.lastWatch[mangaHash];
     if (manga !== undefined || lastWatch !== undefined) {
-      pairs.push([mangaHash, JSON.stringify({ manga, lastWatch })]);
+      pairs.push([mangaHash, serializeMangaEntry(manga, lastWatch)]);
     }
   });
 
@@ -160,7 +240,7 @@ export const buildProgressPairs = (
     const chapter = state.dict.chapter[chapterHash];
     const record = state.dict.record[chapterHash];
     if (chapter !== undefined || record !== undefined) {
-      pairs.push([chapterHash, JSON.stringify({ chapter, record })]);
+      pairs.push([chapterHash, serializeChapterEntry(chapter, record)]);
     }
   });
 
@@ -253,7 +333,7 @@ const writeFullSnapshotUnlocked = async (state: RootState): Promise<SnapshotMani
     await Storage.multiSet(dataPairs);
   }
   // 唯一提交点：此前失败不会改变当前可见 generation。
-  await Storage.setItem(storageKey.snapshotManifest, JSON.stringify(manifest));
+  await writeSnapshotManifest(manifest);
   try {
     await removeInactiveStorage(manifest);
   } catch (error) {
@@ -270,7 +350,7 @@ type SnapshotMetadataField = 'favorites' | 'plugin' | 'setting';
 
 export const writeSnapshotMetadata = (state: RootState, fields: SnapshotMetadataField[]) =>
   withPersistenceLock(async () => {
-    const current = parseSnapshotManifest(await Storage.getItem(storageKey.snapshotManifest));
+    const current = await readSnapshotManifest();
     if (!current) {
       await writeFullSnapshotUnlocked(state);
       return;
@@ -285,12 +365,12 @@ export const writeSnapshotMetadata = (state: RootState, fields: SnapshotMetadata
     }
     if (fields.includes('plugin')) manifest.plugin = stripPluginCredentials(state.plugin);
     if (fields.includes('setting')) manifest.setting = state.setting;
-    await Storage.setItem(storageKey.snapshotManifest, JSON.stringify(manifest));
+    await writeSnapshotManifest(manifest);
   });
 
 export const writeSnapshotTasks = (state: RootState) =>
   withPersistenceLock(async () => {
-    const current = parseSnapshotManifest(await Storage.getItem(storageKey.snapshotManifest));
+    const current = await readSnapshotManifest();
     if (!current) {
       await writeFullSnapshotUnlocked(state);
       return;
@@ -323,7 +403,7 @@ export const writeSnapshotTasks = (state: RootState) =>
       jobIndex,
       jobMax: state.task.job.max,
     };
-    await Storage.setItem(storageKey.snapshotManifest, JSON.stringify(manifest));
+    await writeSnapshotManifest(manifest);
     try {
       await removeInactiveStorage(manifest);
     } catch (error) {
@@ -338,7 +418,7 @@ export const writeSnapshotProgress = (
   rebuildIndexes: boolean
 ) =>
   withPersistenceLock(async () => {
-    const current = parseSnapshotManifest(await Storage.getItem(storageKey.snapshotManifest));
+    const current = await readSnapshotManifest();
     if (!current) {
       await writeFullSnapshotUnlocked(state);
       return;
@@ -374,7 +454,7 @@ export const writeSnapshotProgress = (
         mangaIndex,
         chapterIndex,
       };
-      await Storage.setItem(storageKey.snapshotManifest, JSON.stringify(manifest));
+      await writeSnapshotManifest(manifest);
     }
   });
 
@@ -396,7 +476,7 @@ const readEntities = async <T>(
 
 export const readPersistedSnapshot = (): Promise<PersistedSnapshot | undefined> =>
   withPersistenceLock(async () => {
-    const manifest = parseSnapshotManifest(await Storage.getItem(storageKey.snapshotManifest));
+    const manifest = await readSnapshotManifest();
     if (!manifest) {
       return undefined;
     }
@@ -441,7 +521,7 @@ export const readPersistedSnapshot = (): Promise<PersistedSnapshot | undefined> 
 
 export const garbageCollectSnapshots = () =>
   withPersistenceLock(async () => {
-    const manifest = parseSnapshotManifest(await Storage.getItem(storageKey.snapshotManifest));
+    const manifest = await readSnapshotManifest();
     if (manifest) {
       try {
         await removeInactiveStorage(manifest);

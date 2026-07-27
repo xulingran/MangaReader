@@ -9,6 +9,12 @@ import type { AccessibilityActionEvent } from 'react-native';
 
 const doubleTapScaleValue = 2;
 const MAX_PINCH_SCALE = 4;
+// 模块常量：避免每次渲染都新建字面量数组
+const ACCESSIBILITY_ACTIONS = [
+  { name: 'increment', label: '下一页' },
+  { name: 'decrement', label: '上一页' },
+  { name: 'activate', label: '显示菜单' },
+];
 
 export interface ControllerProps {
   onTap?: (position: PositionX) => void;
@@ -162,7 +168,8 @@ const Controller = ({
     () =>
       Gesture.Tap()
         .maxDuration(300)
-        .maxDelay(300)
+        // 单击翻页需等双击识别失败才触发，maxDelay 决定这段白等时间；200ms 内完成双击仍可用
+        .maxDelay(200)
         .numberOfTaps(2)
         .onStart((e) => {
           'worklet';
@@ -387,11 +394,7 @@ const Controller = ({
             accessibilityRole="adjustable"
             accessibilityLabel="漫画阅读区域"
             accessibilityHint="上调下一页，下调上一页，激活显示菜单"
-            accessibilityActions={[
-              { name: 'increment', label: '下一页' },
-              { name: 'decrement', label: '上一页' },
-              { name: 'activate', label: '显示菜单' },
-            ]}
+            accessibilityActions={ACCESSIBILITY_ACTIONS}
             onAccessibilityAction={handleAccessibilityAction}
           >
             {children}

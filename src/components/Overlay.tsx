@@ -18,6 +18,11 @@ interface OverlayProps {
 const Overlay = ({ isOpen = false, title, onClose, children }: OverlayProps) => {
   const palette = useThemePalette();
   const [pressed, bind] = usePressedState();
+  // RN Modal 一旦打开过 isRendered 就永久为 true，关闭后整棵子树仍参与每次 reconciliation；
+  // 电子墨水版无关闭动画，关闭时直接卸载，避免阅读页翻页时白跑弹窗子树的 diff
+  if (!isOpen) {
+    return null;
+  }
   return (
     <RNModal
       visible={isOpen}
