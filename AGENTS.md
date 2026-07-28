@@ -17,7 +17,7 @@
 - **图标说明文字**：设置项 `setting.iconLabel`（默认关闭，About 页「图标说明文字」开关）开启后，`VectorIcon` 在图标下方渲染一行说明文字；文案优先取调用方的 `label` prop（简短文案，如「搜索」「排序」「实体按键」），缺省回退 `accessibilityLabel`；说明文字在按压反色区块之外，不跟随 pressed 反色；关闭时渲染路径与开启前完全一致
 - **图片内存**：普通图直接 `CachedImage` 渲染 + `onLoad` 取尺寸，不生成整张 base64；解密/base64 图写入临时文件，状态只保存 `file://` URI 与尺寸，离屏释放；Canvas 解码封顶 8MP；图片缓存上限 512MB、淡入 0（`index.js`）；仅预取下一页
 - **设置迁移**：`src/utils/common.ts` 的 `migrateSetting` 剔除旧 `light/animated`、把 `hearing` 映射为 `pageKeys`，缺少 `themeMode`/`iconLabel` 时补默认值（跟随系统/关闭说明文字），首次升级强制横向单页；已是新结构时原样返回传入引用（启动路径用引用比较代替全量 `JSON.stringify` 判断是否需要回写，`migrateDeletedPluginData`/`normalizeTaskForRestart` 同此约定）；`syncDataSaga` 与 `restoreSaga` 都会调用
-- **阅读器尺寸冻结**：呼出菜单会显示状态栏，safe area frame/insets 随之变化，若响应会整页重布局（漫画页"缩小"），低端设备开销大；`Reader` / `Controller` / `ComicImage` / `NativeScrambleImage` 改用 `src/hooks/useStaticSafeArea.ts` 的 `useStaticSafeAreaFrame` / `useStaticSafeAreaInsets` 在挂载时冻结尺寸，屏幕方向变化经 `Reader` 的 `key={orientation}` remount 刷新
+- **阅读器尺寸冻结**：呼出菜单会显示状态栏，safe area frame/insets 随之变化，若响应会整页重布局（漫画页"缩小"），低端设备开销大；`Reader` / `Controller` / `ComicImage` / `NativeScrambleImage` 改用 `src/hooks/useStaticSafeArea.ts` 的 `useStaticSafeAreaFrame` / `useStaticSafeAreaInsets` 在挂载时冻结尺寸，屏幕方向变化经 `Reader` 的 `key={orientation}` remount 刷新。`Chapter` 的 orientation 必须取实时 `useSafeAreaFrame()`（旋转立即 remount；曾经过 1s 防抖，窗口期内整树以旧方向尺寸渲染、漫画页被错误比例截断，FlashList/RecyclerListView 不会自我修正布局）；冻结源同样必须是实时值，否则重挂瞬间防抖值未更新会把旧方向尺寸再次冻结
 
 ## 技术栈
 

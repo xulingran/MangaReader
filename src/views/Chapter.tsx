@@ -15,12 +15,12 @@ import { Box, Center, StatusBar, useToast, useDisclose } from 'native-base';
 import {
   usePrevNext,
   usePageKeys,
-  useDebouncedSafeAreaFrame,
   useInterval,
   useLatest,
 } from '~/hooks';
 import { action, useAppSelector, useAppShallowSelector, useAppDispatch } from '~/redux';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaFrame } from 'react-native-safe-area-context';
 import Reader, { ReaderRef } from '~/components/Reader';
 import ReaderToolbar from '~/components/ReaderToolbar';
 import ActionsheetSelect from '~/components/ActionsheetSelect';
@@ -114,7 +114,11 @@ const Chapter = ({ route, navigation }: StackChapterProps) => {
   const [chapterHash, setChapterHash] = useState(initChapterHash);
   const [hashList, setHashList] = useState([initChapterHash]);
 
-  const { orientation } = useDebouncedSafeAreaFrame();
+  // Reader remount 的唯一触发源，必须取实时方向：旋转后立即重建 Reader，
+  // 冻结尺寸随重挂刷新；若经防抖，窗口期内整树仍以旧方向尺寸渲染，
+  // 漫画页会以错误比例被截断（FlashList/RecyclerListView 不会自我修正布局）。
+  const { width: frameWidth, height: frameHeight } = useSafeAreaFrame();
+  const orientation = frameWidth > frameHeight ? Orientation.Landscape : Orientation.Portrait;
   const loadStatus = useAppSelector(
     (state) => state.chapter.loadByHash[chapterHash] ?? AsyncStatus.Default
   );
