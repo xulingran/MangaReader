@@ -18,6 +18,7 @@ import {
   EMPTY_IMAGE_STATE,
   ImagePlaceholder,
   resizeModeDict,
+  useConcreteImageStyle,
   useFillStyle,
 } from './ComicImageShared';
 import type { ImageProps, ImageState } from './ComicImage';
@@ -52,6 +53,13 @@ const NativeScrambleImage = ({
   const dimsRef = useLatestRef({ windowWidth, windowHeight, top, left, right, bottom });
 
   const style = useFillStyle(
+    layoutMode,
+    state,
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
+  );
+  const imageStyle = useConcreteImageStyle(
     layoutMode,
     state,
     orientation,
@@ -171,7 +179,7 @@ const NativeScrambleImage = ({
   }
   return (
     <Image
-      style={style}
+      style={imageStyle}
       resizeMode={resizeModeDict[layoutMode]}
       source={{ uri: state.dataUrl }}
       onLoad={() => onChange?.(state, index)}

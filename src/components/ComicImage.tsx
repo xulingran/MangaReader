@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { type ImageLoadEventData, type NativeSyntheticEvent, StyleSheet } from 'react-native';
+import { type ImageLoadEventData, type NativeSyntheticEvent } from 'react-native';
 import { Box, Center } from 'native-base';
 import { CacheManager } from '@georstat/react-native-image-cache';
 import { useFocusEffect } from '@react-navigation/native';
@@ -13,6 +13,7 @@ import {
   EMPTY_IMAGE_STATE,
   ImagePlaceholder,
   resizeModeDict,
+  useConcreteImageStyle,
   useFillStyle,
 } from './ComicImageShared';
 
@@ -59,6 +60,13 @@ const DefaultImage = ({
   const [reloadVersion, setReloadVersion] = useState(0);
   const uriRef = useRef(uri);
   const style = useFillStyle(
+    layoutMode,
+    imageState,
+    orientation,
+    defaultPortraitHeight,
+    defaultLandscapeHeight
+  );
+  const imageStyle = useConcreteImageStyle(
     layoutMode,
     imageState,
     orientation,
@@ -138,7 +146,7 @@ const DefaultImage = ({
         source={uri}
         headers={headers}
         reloadKey={reloadVersion}
-        style={styles.fill}
+        style={imageStyle}
         resizeMode={resizeModeDict[layoutMode]}
         onLoad={handleLoad}
         onError={handleError}
@@ -154,9 +162,5 @@ const ComicImage = ({ needUnscramble, ...props }: ComicImageProps) => {
   }
   return <DefaultImage {...props} />;
 };
-
-const styles = StyleSheet.create({
-  fill: { width: '100%', height: '100%' },
-});
 
 export default memo(ComicImage);
