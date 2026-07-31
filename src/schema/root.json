@@ -134,7 +134,8 @@
                 "HCOMIC",
                 "BIKA",
                 "NH",
-                "MOEIMG"
+                "MOEIMG",
+                "MANHUAUK"
             ],
             "type": "string"
         },
@@ -511,6 +512,7 @@
                         "BIKA",
                         "BZM",
                         "HCOMIC",
+                        "MANHUAUK",
                         "MBZ",
                         "MHGM",
                         "MOEIMG",

@@ -6,6 +6,7 @@ import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
 import MBZ from '~/plugins/mbz';
+import MANHUAUK, { __test__ as manhuaukHelpers } from '~/plugins/manhuauk';
 import { MangaStatus, ErrorMessage } from '~/utils';
 import { SecureToken } from '~/utils/secureToken';
 import CryptoJS from 'crypto-js';
@@ -600,4 +601,139 @@ describe('HComic Auth0 PKCE 账号密码登录', () => {
       '登录失败：账号或密码错误'
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// manhua.uk（turbo-stream + 游标分页 + 单章节）
+// 真实抓包样本驱动（见 __tests__/fixtures/manhuauk/），避免手算 turbo-stream 索引
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+const UK_FIXTURES_DIR = join(__dirname, 'fixtures', 'manhuauk');
+const loadUkFixture = (name: string): string =>
+  readFileSync(join(UK_FIXTURES_DIR, name), 'utf-8');
+
+// search.data 为 q=test 的搜索结果（total=12，首页返回 11 条，每条含 paginationToken）
+const UK_SEARCH_PAYLOAD = loadUkFixture('search.data');
+// detail.data 为单本漫画详情（_id=667f0f58af6b0de9f6654fe8，images 71 张）
+const UK_DETAIL_ID = '667f0f58af6b0de9f6654fe8';
+const UK_DETAIL_PAYLOAD = loadUkFixture('detail.data');
+
+test('manhua.uk 注册到 PluginMap', () => {
+  expect(PluginMap.has(Plugin.MANHUAUK)).toBe(true);
+  expect(MANHUAUK.option.search.some((item) => item.name === 'language')).toBe(true);
+  // discovery 无筛选下拉，search 有语言筛选
+  expect(MANHUAUK.option.discovery).toEqual([]);
+});
+
+test('manhua.uk 游标分页：首页不带 next，解析后回填链尾游标', () => {
+  const page1 = MANHUAUK.prepareDiscoveryFetch(1, {});
+  // GET + body 被 fetchData 拼成查询串；首页不应含 next
+  expect((page1.body as Record<string, unknown>).next).toBeUndefined();
+
+  const { discovery } = MANHUAUK.handleDiscovery(UK_SEARCH_PAYLOAD) as {
+    discovery: IncreaseManga[];
+  };
+  expect(discovery.length).toBe(11);
+  expect(discovery[0]).toMatchObject({
+    mangaId: '667f0f58af6b0de9f6654fe8',
+    status: MangaStatus.End,
+  });
+  // 封面拼 image 前缀
+  expect(discovery[0].bookCover?.startsWith('https://manhua.uk/image')).toBe(true);
+
+  // 第二页 prepare 应回填末条记录的 paginationToken（search.data 末条带该字段）
+  const page2 = MANHUAUK.prepareDiscoveryFetch(2, {});
+  expect(typeof (page2.body as Record<string, unknown>).next).toBe('string');
+  expect((page2.body as Record<string, unknown>).next).not.toBe('');
+});
+
+test('manhua.uk 不同筛选 / 关键词的游标链相互隔离', () => {
+  // discovery 默认链已写入游标（上一测试）；切换到带 language 筛选的新链
+  const zhFilterPage2 = MANHUAUK.prepareDiscoveryFetch(2, { language: 'zh' });
+  expect((zhFilterPage2.body as Record<string, unknown>).next).toBeUndefined();
+  expect((zhFilterPage2.body as Record<string, unknown>).language).toBe('zh');
+
+  // search 链与 discovery 链也隔离：关键词链页 2 无游标
+  const searchReq = MANHUAUK.prepareSearchFetch('关键词', 1, { language: 'zh' });
+  expect((searchReq.body as Record<string, unknown>)).toMatchObject({ q: '关键词', language: 'zh' });
+  const searchPage2 = MANHUAUK.prepareSearchFetch('关键词', 2, { language: 'zh' });
+  expect((searchPage2.body as Record<string, unknown>).next).toBeUndefined();
+});
+
+test('manhua.uk 默认筛选项（$$DEFAULT$$）不作为查询参数发送', () => {
+  // saga 会把筛选项的 defaultValue（Options.Default = '$$DEFAULT$$'）填入 filter，
+  // 表示「不筛选」。必须过滤掉，否则 language=$$DEFAULT$$ 会让站点返回 404。
+  const req = MANHUAUK.prepareSearchFetch('mother', 1, { language: '$$DEFAULT$$' });
+  expect((req.body as Record<string, unknown>)).toEqual({ q: 'mother' });
+  expect((req.body as Record<string, unknown>).language).toBeUndefined();
+});
+
+test('manhua.uk 详情解析为单章节「全一话」', () => {
+  const { manga } = MANHUAUK.handleMangaInfo(UK_DETAIL_PAYLOAD, UK_DETAIL_ID) as {
+    manga: IncreaseManga;
+  };
+  expect(manga).toMatchObject({
+    mangaId: UK_DETAIL_ID,
+    status: MangaStatus.End,
+  });
+  // 单章节：chapterId = mangaId（一本漫画即一章）
+  expect(manga.chapters).toEqual([
+    {
+      hash: `MANHUAUK&${UK_DETAIL_ID}&${UK_DETAIL_ID}`,
+      mangaId: UK_DETAIL_ID,
+      chapterId: UK_DETAIL_ID,
+      href: `https://manhua.uk/zh-CN/comics/${UK_DETAIL_ID}`,
+      title: '全一话',
+    },
+  ]);
+
+  const { chapter } = MANHUAUK.handleChapter(UK_DETAIL_PAYLOAD, UK_DETAIL_ID, UK_DETAIL_ID, 1) as {
+    chapter: Chapter;
+  };
+  // 详情 images 数组直接作为图片列表（detail.data 含 71 张）
+  expect(chapter.images.length).toBe(71);
+  expect(chapter.images.every((item) => item.uri.startsWith('https://manhua.uk/image'))).toBe(true);
+});
+
+test('manhua.uk 非法响应（如 Cloudflare HTML 拦截页）抛友好错误', () => {
+  // 命中 Cloudflare 时 fetchData 退回 text（HTML），不是合法 turbo-stream
+  const htmlResponse = '<html><title>Just a moment...</title></html>';
+  expect(() => MANHUAUK.handleMangaInfo(htmlResponse, 'whatever')).toThrow(
+    `manhua.uk ${ErrorMessage.WrongResponse}`
+  );
+  expect(() => MANHUAUK.handleChapter(htmlResponse, 'whatever', 'whatever', 1)).toThrow(
+    `manhua.uk ${ErrorMessage.WrongResponse}`
+  );
+});
+
+test('manhua.uk 纯函数辅助：图片拼接 / 标签提取 / 分类映射', () => {
+  const { buildImageUrl, extractImages, extractTags, mapClassification, lastPaginationToken } =
+    manhuaukHelpers;
+  // 完整 URL 原样返回，相对路径拼前缀并补 /
+  expect(buildImageUrl('https://cdn.example/x.webp')).toBe('https://cdn.example/x.webp');
+  expect(buildImageUrl('/img/1.webp')).toBe('https://manhua.uk/image/img/1.webp');
+  expect(buildImageUrl('img/1.webp')).toBe('https://manhua.uk/image/img/1.webp');
+  expect(buildImageUrl('')).toBe('');
+
+  expect(extractImages(['/a.webp', 'https://x/2.webp', '', null])).toEqual([
+    'https://manhua.uk/image/a.webp',
+    'https://x/2.webp',
+  ]);
+
+  // 标签：字符串与 {name} 对象混排
+  expect(extractTags([' 甲 ', { name: '乙' }, { name: '' }, null, 1])).toEqual(['甲', '乙']);
+
+  // 分类：已知 key 翻译，未知原样透传，非字符串返回空
+  expect(mapClassification('booklet')).toBe('单行本');
+  expect(mapClassification('korean_comics')).toBe('韩漫');
+  expect(mapClassification('custom')).toBe('custom');
+  expect(mapClassification(null)).toBe('');
+
+  // 游标：优先 paginationToken，回退 _id
+  expect(lastPaginationToken([{ _id: 'a', paginationToken: 'tok' }])).toBe('tok');
+  expect(lastPaginationToken([{ _id: 'a' }])).toBe('a');
+  expect(lastPaginationToken([])).toBe('');
 });

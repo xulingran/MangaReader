@@ -7,6 +7,7 @@ import HCOMIC from './hcomic';
 import BIKA from './bika';
 import NH from './nh';
 import MOEIMG from './moeimg';
+import MANHUAUK from './manhuauk';
 
 export * from './base';
 
@@ -19,6 +20,7 @@ export const PluginMap = new Map<Plugin, Base>([
   [BIKA.id, BIKA],
   [NH.id, NH],
   [MOEIMG.id, MOEIMG],
+  [MANHUAUK.id, MANHUAUK],
 ]);
 export const combineHash = Base.combineHash;
 export const splitHash = Base.splitHash;

@@ -33,6 +33,7 @@ export enum Plugin {
   BIKA = 'BIKA',
   NH = 'NH',
   MOEIMG = 'MOEIMG',
+  MANHUAUK = 'MANHUAUK',
 }
 
 export enum Options {

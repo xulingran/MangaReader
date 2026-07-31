@@ -5,6 +5,7 @@ import Bika from '~/plugins/bika';
 import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
+import MANHUAUK from '~/plugins/manhuauk';
 
 const liveTest = process.env.RUN_LIVE_SOURCE_TESTS === '1' ? test : test.skip;
 if (process.env.RUN_LIVE_SOURCE_TESTS === '1') {
@@ -131,4 +132,29 @@ liveTest('肉漫屋实时列表、详情与章节可请求并解析', async () =
   expect(chapter.chapter.images.length).toBeGreaterThan(0);
   expect(chapter.chapter.images.every((item) => item.uri.startsWith('https://'))).toBe(true);
   expect(chapter.chapter.images.every((item) => /\/sr:[01]\//.test(item.uri))).toBe(true);
+});
+
+liveTest('manhua.uk 实时列表、详情与章节可请求并解析', async () => {
+  const response = await fetchData(MANHUAUK.prepareDiscoveryFetch(1, {}));
+  expect(response.error).toBeUndefined();
+  const result = MANHUAUK.handleDiscovery(response.data) as { discovery: IncreaseManga[] };
+  expect(result.discovery.length).toBeGreaterThan(0);
+  expect(result.discovery[0].bookCover?.startsWith('https://manhua.uk/image')).toBe(true);
+
+  const mangaId = result.discovery[0].mangaId;
+  const detailResponse = await fetchData(MANHUAUK.prepareMangaInfoFetch(mangaId));
+  expect(detailResponse.error).toBeUndefined();
+  const detail = MANHUAUK.handleMangaInfo(detailResponse.data, mangaId) as { manga: IncreaseManga };
+  // 单章节映射
+  expect(detail.manga.chapters).toHaveLength(1);
+  expect(detail.manga.chapters?.[0].chapterId).toBe(mangaId);
+
+  const chapter = MANHUAUK.handleChapter(detailResponse.data, mangaId, mangaId, 1) as {
+    chapter: Chapter;
+  };
+  expect(chapter.chapter.images.length).toBeGreaterThan(0);
+  // 图片直链无需 UA/Referer
+  const imageResponse = await fetch(chapter.chapter.images[0].uri);
+  expect(imageResponse.ok).toBe(true);
+  expect(imageResponse.headers.get('content-type')).toMatch(/^image\//);
 });

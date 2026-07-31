@@ -59,6 +59,7 @@ test('删除漫画源后清理旧数据并回退当前源', () => {
     Plugin.BIKA,
     Plugin.NH,
     Plugin.MOEIMG,
+    Plugin.MANHUAUK,
   ]);
   expect(migrated.plugin.list[0].disabled).toBe(true);
   expect('extra' in migrated.plugin).toBe(false);
