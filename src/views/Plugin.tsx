@@ -8,12 +8,14 @@ import VectorIcon from '~/components/VectorIcon';
 import LoginModal from '~/components/LoginModal';
 import ApiKeyModal from '~/components/ApiKeyModal';
 import { useThemePalette } from '~/utils/theme/hooks';
+import { ChineseOnly } from '~/utils';
 
-const { sortPlugin, disablePlugin, loginPlugin, saveCredential } = action;
+const { sortPlugin, disablePlugin, loginPlugin, saveCredential, setChineseOnly } = action;
 
 const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
   const dispatch = useAppDispatch();
   const list = useAppSelector((state) => state.plugin.list);
+  const chineseOnly = useAppSelector((state) => state.setting.chineseOnly);
   const { left, right, bottom } = useDebouncedSafeAreaInsets();
   const palette = useThemePalette();
   const [loginSource, setLoginSource] = useState<PluginType | null>(null);
@@ -100,6 +102,24 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
               accessibilityState={{ checked: !item.disabled }}
               onPress={() => dispatch(disablePlugin(item.value))}
             />
+            {item.value === PluginType.MANHUAUK && (
+              <VectorIcon
+                name={chineseOnly === ChineseOnly.Enable ? 'check-box' : 'check-box-outline-blank'}
+                size="lg"
+                label="只看中文"
+                accessibilityLabel={
+                  chineseOnly === ChineseOnly.Enable ? '关闭只看中文漫画' : '开启只看中文漫画'
+                }
+                accessibilityState={{ checked: chineseOnly === ChineseOnly.Enable }}
+                onPress={() =>
+                  dispatch(
+                    setChineseOnly(
+                      chineseOnly === ChineseOnly.Enable ? ChineseOnly.Disabled : ChineseOnly.Enable
+                    )
+                  )
+                }
+              />
+            )}
             {(item.value === PluginType.BIKA || item.value === PluginType.HCOMIC) && (
               <VectorIcon
                 name="login"

@@ -129,6 +129,17 @@ export enum IconLabel {
   Disabled,
 }
 
+/**
+ * @description manhua.uk「只看中文漫画」开关。开启后该源的发现页 / 搜索页
+ *   列表请求统一带 language=zh（由 saga 注入到 filter），仅返回中文漫画。
+ *   持久化在 setting.chineseOnly，与具体源解耦的存储位（当前仅 manhua.uk 消费）。
+ * @enum {number}
+ */
+export enum ChineseOnly {
+  Enable,
+  Disabled,
+}
+
 export enum SafeArea {
   All,
   None,

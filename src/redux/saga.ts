@@ -30,6 +30,7 @@ import {
   AsyncStatus,
   TaskType,
   TemplateKey,
+  ChineseOnly,
 } from '~/utils';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { splitHash, combineHash, isRegisteredHash, Plugin, PluginMap } from '~/plugins';
@@ -290,6 +291,7 @@ const {
   setThemeMode,
   setPageKeys,
   setIconLabel,
+  setChineseOnly,
   setDirection,
   setSequence,
   setSeat,
@@ -1210,6 +1212,7 @@ function* saveSettingSaga() {
       setThemeMode.type,
       setPageKeys.type,
       setIconLabel.type,
+      setChineseOnly.type,
       setDirection.type,
       setSequence.type,
       setSeat.type,
@@ -1393,12 +1396,31 @@ function* batchUpdateSaga() {
   yield takeLeadingSuspense(batchUpdate.type, batchUpdateWorker);
 }
 
+/**
+ * manhua.uk「只看中文漫画」开关注入：开启时给 filter 补 language=zh。
+ *
+ * 纯函数（不读 saga 上下文），便于单测。开关值由调用方从 setting.chineseOnly
+ * 传入；仅对 manhua.uk 生效（其它源的 language 参数语义不同，不干预）。
+ * 用户在搜索栏手选的 language 优先（filter 里已有值则不覆盖）。
+ */
+export function applyChineseOnlyFilter(
+  source: Plugin,
+  chineseOnly: ChineseOnly,
+  filter: Record<string, string>
+): Record<string, string> {
+  if (source === Plugin.MANHUAUK && chineseOnly === ChineseOnly.Enable && !filter.language) {
+    return { ...filter, language: 'zh' };
+  }
+  return filter;
+}
+
 function* loadDiscoverySaga() {
   yield takeLatestSuspense(
     loadDiscovery.type,
     function* ({ payload: { source } }: ReturnType<typeof loadDiscovery>) {
       const plugin = PluginMap.get(source);
       const { page, isEnd, filter } = ((state: RootState) => state.discovery)(yield select());
+      const { chineseOnly } = ((state: RootState) => state.setting)(yield select());
 
       if (!plugin) {
         yield put(loadDiscoveryCompletion({ error: new Error(ErrorMessage.PluginMissing) }));
@@ -1409,12 +1431,16 @@ function* loadDiscoverySaga() {
         return;
       }
 
-      const filterWithDefault = plugin.option.discovery.reduce<Record<string, string>>(
-        (dict, item) => {
-          dict[item.name] = dict[item.name] || item.defaultValue;
-          return dict;
-        },
-        { ...filter }
+      const filterWithDefault = applyChineseOnlyFilter(
+        source,
+        chineseOnly,
+        plugin.option.discovery.reduce<Record<string, string>>(
+          (dict, item) => {
+            dict[item.name] = dict[item.name] || item.defaultValue;
+            return dict;
+          },
+          { ...filter }
+        )
       );
 
       const { error: prepareError, request } = tryPrepare(() =>
@@ -1443,6 +1469,7 @@ function* loadSearchSaga() {
     function* ({ payload: { keyword, source } }: ReturnType<typeof loadSearch>) {
       const plugin = PluginMap.get(source);
       const { page, isEnd, filter } = ((state: RootState) => state.search)(yield select());
+      const { chineseOnly } = ((state: RootState) => state.setting)(yield select());
 
       if (!plugin) {
         yield put(loadSearchCompletion({ error: new Error(ErrorMessage.PluginMissing) }));
@@ -1453,12 +1480,16 @@ function* loadSearchSaga() {
         return;
       }
 
-      const filterWithDefault = plugin.option.search.reduce<Record<string, string>>(
-        (dict, item) => {
-          dict[item.name] = dict[item.name] || item.defaultValue;
-          return dict;
-        },
-        { ...filter }
+      const filterWithDefault = applyChineseOnlyFilter(
+        source,
+        chineseOnly,
+        plugin.option.search.reduce<Record<string, string>>(
+          (dict, item) => {
+            dict[item.name] = dict[item.name] || item.defaultValue;
+            return dict;
+          },
+          { ...filter }
+        )
       );
 
       const { error: prepareError, request } = tryPrepare(() =>

@@ -12,9 +12,10 @@ import {
   loadMangaWorker,
   preloadChapter,
   saveFavoritesWorker,
+  applyChineseOnlyFilter,
 } from '~/redux/saga';
 import { Storage } from '~/utils/storage';
-import { AsyncStatus } from '~/utils';
+import { AsyncStatus, ChineseOnly } from '~/utils';
 
 const mangaHash = `${Plugin.MBZ}&favorite`;
 const chapterHash = `${mangaHash}&chapter-1`;
@@ -498,5 +499,36 @@ describe('catchErrorWorker', () => {
     ).toPromise();
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyChineseOnlyFilter（manhua.uk 只看中文注入）', () => {
+  it('manhua.uk + 开关开启：注入 language=zh', () => {
+    expect(applyChineseOnlyFilter(Plugin.MANHUAUK, ChineseOnly.Enable, {})).toEqual({
+      language: 'zh',
+    });
+  });
+
+  it('manhua.uk + 开关关闭：不注入', () => {
+    expect(applyChineseOnlyFilter(Plugin.MANHUAUK, ChineseOnly.Disabled, {})).toEqual({});
+  });
+
+  it('非 manhua.uk 源：开关即使开启也不注入（语言参数语义因源而异）', () => {
+    expect(applyChineseOnlyFilter(Plugin.MBZ, ChineseOnly.Enable, {})).toEqual({});
+    expect(applyChineseOnlyFilter(Plugin.MOEIMG, ChineseOnly.Enable, {})).toEqual({});
+  });
+
+  it('用户手选的 language 优先，不被开关覆盖', () => {
+    expect(
+      applyChineseOnlyFilter(Plugin.MANHUAUK, ChineseOnly.Enable, { language: 'en' })
+    ).toEqual({ language: 'en' });
+  });
+
+  it('不修改原 filter 对象（返回新引用）', () => {
+    const filter = { q: 'test' };
+    const result = applyChineseOnlyFilter(Plugin.MANHUAUK, ChineseOnly.Enable, filter);
+    expect(result).not.toBe(filter);
+    expect(filter).toEqual({ q: 'test' });
+    expect(result).toEqual({ q: 'test', language: 'zh' });
   });
 });

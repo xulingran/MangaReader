@@ -9,6 +9,7 @@ import {
   PageKeys,
   Timer,
   IconLabel,
+  ChineseOnly,
 } from '~/utils';
 import { createSlice, combineReducers, nanoid, PayloadAction } from '@reduxjs/toolkit';
 import { Plugin, defaultPlugin, defaultPluginList } from '~/plugins';
@@ -43,6 +44,7 @@ export const initialState: RootState = {
     seat: MultipleSeat.AToB,
     pageKeys: PageKeys.Enable,
     iconLabel: IconLabel.Disabled,
+    chineseOnly: ChineseOnly.Disabled,
     timer: Timer.Disabled,
     timerGap: 5000,
     androidDownloadPath: DEFAULT_ANDROID_DOWNLOAD_PATH,
@@ -231,6 +233,9 @@ const settingSlice = createSlice({
     },
     setIconLabel(state, action: PayloadAction<IconLabel>) {
       state.iconLabel = action.payload;
+    },
+    setChineseOnly(state, action: PayloadAction<ChineseOnly>) {
+      state.chineseOnly = action.payload;
     },
     setTimer(state, action: PayloadAction<Timer>) {
       state.timer = action.payload;

@@ -44,19 +44,6 @@ interface UkComicDetail extends UkComicListItem {
   images?: unknown;
 }
 
-const searchOptions = [
-  {
-    name: 'language',
-    options: [
-      { label: '全部语言', value: '' },
-      { label: '中文', value: 'zh' },
-      { label: '英文', value: 'en' },
-      { label: '日文', value: 'ja' },
-      { label: '韩文', value: 'ko' },
-    ],
-  },
-];
-
 class ManHuaUk extends Base {
   /**
    * 游标分页缓存：signature → 链尾游标（最近一次请求返回的末条 token）。
@@ -92,7 +79,9 @@ class ManHuaUk extends Base {
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.5',
         Referer: `${BASE_URL}/`,
       },
-      option: { discovery: [], search: searchOptions },
+      // 语言筛选用「只看中文」开关控制（setting.chineseOnly，由 saga 注入 language=zh），
+      // 不在搜索栏暴露下拉，避免两个语言控制并存冲突
+      option: { discovery: [], search: [] },
     });
   }
 

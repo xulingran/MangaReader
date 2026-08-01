@@ -2,7 +2,15 @@
  * 旧设置 / 旧备份迁移回归测试（电子墨水版）
  * light、animated 被剔除，hearing 映射为 pageKeys，缺少主题时跟随系统
  */
-import { migrateSetting, validate, validateSampled, IconLabel, LayoutMode, ThemeMode } from '~/utils';
+import {
+  migrateSetting,
+  validate,
+  validateSampled,
+  IconLabel,
+  ChineseOnly,
+  LayoutMode,
+  ThemeMode,
+} from '~/utils';
 import { initialState } from '~/redux/slice';
 import { it, expect, describe } from '@jest/globals';
 
@@ -87,6 +95,22 @@ describe('migrateSetting', () => {
   it('已有 iconLabel 偏好迁移后保留', () => {
     const setting = { ...initialState.setting, iconLabel: IconLabel.Enable };
     expect(migrateSetting(setting).iconLabel).toBe(IconLabel.Enable);
+  });
+
+  it('缺少 chineseOnly 字段时由 initialState 补默认关闭（仅看中文开关）', () => {
+    // chineseOnly 是后加字段，老用户持久化 setting 里没有，靠 validate 兜底补齐
+    const settingWithoutChineseOnly = {
+      ...initialState.setting,
+    } as Partial<RootState['setting']>;
+    delete (settingWithoutChineseOnly as any).chineseOnly;
+    const result = migrateSetting(settingWithoutChineseOnly);
+    expect(validate(result, settingSchema, initialState.setting)).toBe(true);
+    expect(result.chineseOnly).toBe(ChineseOnly.Disabled);
+  });
+
+  it('已有 chineseOnly 偏好迁移后保留', () => {
+    const setting = { ...initialState.setting, chineseOnly: ChineseOnly.Enable };
+    expect(migrateSetting(setting).chineseOnly).toBe(ChineseOnly.Enable);
   });
 
   it('非对象输入原样返回', () => {

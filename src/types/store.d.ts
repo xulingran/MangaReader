@@ -9,6 +9,7 @@ import {
   PageKeys,
   Timer,
   IconLabel,
+  ChineseOnly,
   TaskType,
 } from '~/utils';
 import { Plugin } from '~/plugins';
@@ -131,6 +132,8 @@ declare global {
       pageKeys: PageKeys;
       /** 图标按钮下方是否显示说明文字 */
       iconLabel: IconLabel;
+      /** manhua.uk「只看中文漫画」：开启后该源发现页/搜索页统一带 language=zh */
+      chineseOnly: ChineseOnly;
       /** 定时翻页 */
       timer: Timer;
       timerGap: number;

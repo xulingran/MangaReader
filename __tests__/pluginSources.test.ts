@@ -623,9 +623,10 @@ const UK_DETAIL_PAYLOAD = loadUkFixture('detail.data');
 
 test('manhua.uk 注册到 PluginMap', () => {
   expect(PluginMap.has(Plugin.MANHUAUK)).toBe(true);
-  expect(MANHUAUK.option.search.some((item) => item.name === 'language')).toBe(true);
-  // discovery 无筛选下拉，search 有语言筛选
+  // 语言筛选用 setting.chineseOnly 开关控制（saga 注入 language=zh），
+  // 不在发现页/搜索栏暴露下拉
   expect(MANHUAUK.option.discovery).toEqual([]);
+  expect(MANHUAUK.option.search).toEqual([]);
 });
 
 test('manhua.uk 游标分页：首页不带 next，解析后回填链尾游标', () => {

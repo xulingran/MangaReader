@@ -1,6 +1,14 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "definitions": {
+        "ChineseOnly": {
+            "description": "manhua.uk「只看中文漫画」开关。开启后该源的发现页 / 搜索页\r\n列表请求统一带 language=zh（由 saga 注入到 filter），仅返回中文漫画。\r\n持久化在 setting.chineseOnly，与具体源解耦的存储位（当前仅 manhua.uk 消费）。",
+            "enum": [
+                0,
+                1
+            ],
+            "type": "number"
+        },
         "IconLabel": {
             "enum": [
                 0,
@@ -66,6 +74,10 @@
         "androidDownloadPath": {
             "type": "string"
         },
+        "chineseOnly": {
+            "$ref": "#/definitions/ChineseOnly",
+            "description": "manhua.uk「只看中文漫画」：开启后该源发现页/搜索页统一带 language=zh"
+        },
         "direction": {
             "$ref": "#/definitions/ReaderDirection",
             "description": "漫画阅读方向"
@@ -104,6 +116,7 @@
     },
     "required": [
         "androidDownloadPath",
+        "chineseOnly",
         "direction",
         "iconLabel",
         "mode",
