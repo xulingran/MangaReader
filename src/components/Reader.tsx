@@ -17,6 +17,7 @@ import {
   resolveDragTargetIndex,
   DRAG_PAGE_THRESHOLD_RATIO,
 } from '~/utils';
+import { groupIntoSpreads, spreadGlobalPage } from '~/utils/readerSpreads';
 import { FlashList, ListRenderItemInfo, ViewToken } from '@shopify/flash-list';
 import { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useStaticSafeAreaFrame } from '~/hooks';
@@ -50,9 +51,8 @@ export const reportFulfilledImage = (
     onImageLoad?.(uri, chapterHash, current);
   }
 };
-/** 双页组换算全局页码 */
-const multiplePageOf = (items: { pre: number; current: number }[]) =>
-  items[0].pre + items[0].current - 1;
+/** 双页组换算全局页码（逻辑见 readerSpreads，便于测试） */
+const multiplePageOf = (items: { pre: number; current: number }[]) => spreadGlobalPage(items);
 const VerticalListHeader = () => <Box height={0} safeAreaTop />;
 const VerticalListFooter = () => <Box height={0} safeAreaBottom />;
 
@@ -95,25 +95,8 @@ const EMPTY_LIST: Required<ReaderProps>['data'] = [];
 const EMPTY_HEADERS: NonNullable<ReaderProps['headers']> = {};
 
 const useTakeTwo = (data: Required<ReaderProps>['data'], seat: MultipleSeat) => {
-  return useMemo(() => {
-    const list: Required<ReaderProps>['data']['0'][][] = [];
-
-    for (let i = 0; i < data.length; ) {
-      const batch = data.slice(i, i + 2).reduce<typeof data>((dict, item) => {
-        if (dict.length <= 0) {
-          dict.push(item);
-        } else if (dict[0].chapterHash === item.chapterHash) {
-          dict.push(item);
-        }
-        return dict;
-      }, []);
-
-      list.push(seat === MultipleSeat.AToB ? batch : batch.reverse());
-      i += batch.length;
-    }
-
-    return list;
-  }, [data, seat]);
+  // 分组逻辑抽到 groupIntoSpreads（src/utils/readerSpreads），便于直接测试配对边界
+  return useMemo(() => groupIntoSpreads(data, seat), [data, seat]);
 };
 
 const Reader = ({

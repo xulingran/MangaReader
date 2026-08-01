@@ -6,10 +6,18 @@ import NH from '~/plugins/nh';
 import MoeImg from '~/plugins/moeimg';
 import RM5 from '~/plugins/rm5';
 import MBZ from '~/plugins/mbz';
+import BZM from '~/plugins/bzm';
+import MHGM, { __test__ as mhgmHelpers } from '~/plugins/mhgm';
 import MANHUAUK, { __test__ as manhuaukHelpers } from '~/plugins/manhuauk';
 import { MangaStatus, ErrorMessage } from '~/utils';
 import { SecureToken } from '~/utils/secureToken';
 import CryptoJS from 'crypto-js';
+import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
+
+// 生产环境在 index.js 里给 dayjs 注册 customParseFormat（bzm 用 'YYYY年MM月DD日' 解析），
+// jest 不加载 index.js，这里对齐注册，使时间格式分支可在测试中走通。
+dayjs.extend(customParseFormat);
 
 const hcomicItem = {
   _id: 'mongo-1',
@@ -737,4 +745,393 @@ test('manhua.uk 纯函数辅助：图片拼接 / 标签提取 / 分类映射', (
   expect(lastPaginationToken([{ _id: 'a', paginationToken: 'tok' }])).toBe('tok');
   expect(lastPaginationToken([{ _id: 'a' }])).toBe('a');
   expect(lastPaginationToken([])).toBe('');
+});
+
+// ===================== BZM（包子漫画）解析 =====================
+describe('BZM 插件解析', () => {  describe('handleDiscovery', () => {
+    it('JSON 输入：字段映射、bookCover 组装、combineHash 哈希', () => {
+      const res = {
+        items: [
+          {
+            author: '作者甲',
+            comic_id: 'yinianshiguang',
+            name: '一年时光',
+            region: 'cn' as const,
+            region_name: '国漫',
+            topic_img: 'cover/yinianshiguang.jpg',
+            type_names: ['古风', '恋爱'],
+          },
+        ],
+        next: '',
+      };
+      const result = BZM.handleDiscovery(res as any) as { discovery: IncreaseManga[] };
+      expect(result.discovery).toHaveLength(1);
+      expect(result.discovery[0]).toMatchObject({
+        mangaId: 'yinianshiguang',
+        title: '一年时光',
+        author: ['作者甲'],
+        tag: ['古风', '恋爱'],
+        href: 'https://cn.baozimhcn.com/comic/yinianshiguang',
+        bookCover: 'https://static-tw.baozimh.com/cover/cover/yinianshiguang.jpg',
+      });
+    });
+
+    it('字符串输入（命中 Cloudflare 的 HTML）→ 抛 CloudflareFail（而非旧实现的 res.items.map TypeError）', () => {
+      // bugfix：先 typeof res === 'string' 分流进 checkCloudFlare，避免在字符串上 res.items.map 抛 TypeError
+      const cfHtml = '<html><head><title>Just a moment...</title></head><body></body></html>';
+      expect(() => BZM.handleDiscovery(cfHtml)).toThrow(ErrorMessage.CloudflareFail);
+    });
+  });
+
+  describe('handleSearch', () => {
+    it('解析 classify-items 列表：mangaId 正则提取、cover 去参、tag 数组', () => {
+      const html = `
+        <div class="classify-items">
+          <div>
+            <a class="comics-card__poster" href="/comic/yinianshiguang">
+              <amp-img src="https://x.test/cover.jpg?token=1"></amp-img>
+              <div class="tabs"><span class="tab">古风</span><span class="tab">恋爱</span></div>
+            </a>
+            <div class="comics-card__info">
+              <div class="tags">作者乙</div>
+              <div class="comics-card__title">一年时光</div>
+            </div>
+          </div>
+        </div>`;
+      const result = BZM.handleSearch(html) as { search: IncreaseManga[] };
+      expect(result.search).toHaveLength(1);
+      expect(result.search[0]).toMatchObject({
+        mangaId: 'yinianshiguang',
+        title: '一年时光',
+        author: ['作者乙'],
+        tag: ['古风', '恋爱'],
+        bookCover: 'https://x.test/cover.jpg', // 去掉了 ?token=1
+        href: 'https://cn.baozimhcn.com/comic/yinianshiguang',
+      });
+    });
+  });
+
+  describe('handleMangaInfo', () => {
+    // 构造一个最小但覆盖关键分支的详情页 HTML
+    const buildDetailHtml = (updateTimeLabel: string, extraTags: string[] = []) => {
+      const tagsHtml = ['古风', ...extraTags]
+        .map((t) => `<span class="tag">${t}</span>`)
+        .join('');
+      return `
+        <html>
+        <head>
+          <meta name="og:url" content="https://cn.baozimhcn.com/comic/yinianshiguang">
+          <title>一年时光</title>
+        </head>
+        <body>
+          <div class="comics-detail"><div class="l-content">
+            <amp-img src="https://x.test/info-cover.jpg?v=2"></amp-img>
+            <div class="comics-detail__info">
+              <div class="comics-detail__title">一年时光</div>
+              <div class="comics-detail__author">作者甲</div>
+              <div class="tag-list">${tagsHtml}</div>
+            </div>
+            <div class="supporting-text">
+              <div><a>第100话</a><em>${updateTimeLabel}</em></div>
+            </div>
+            <div id="chapter-items">
+              <div><a href="/comic/chapter?section_slot=0&chapter_slot=1"><span>第1话</span></a></div>
+              <div><a href="/comic/chapter?section_slot=0&chapter_slot=2"><span>第2话</span></a></div>
+              <div><a href="/comic/chapter?section_slot=0&chapter_slot=3"><span>第3话</span></a></div>
+            </div>
+          </div></div>
+        </body></html>`;
+    };
+
+    it('YYYY年MM月DD日 时间格式 → 格式化为 YYYY-MM-DD', () => {
+      const result = BZM.handleMangaInfo(buildDetailHtml('2026年08月01日 更新'), 'yinianshiguang') as {
+        manga: IncreaseManga;
+      };
+      expect(result.manga.updateTime).toBe('2026-08-01');
+    });
+
+    it('今天 更新 → 当天日期', () => {
+      const result = BZM.handleMangaInfo(buildDetailHtml('今天 更新'), 'yinianshiguang') as {
+        manga: IncreaseManga;
+      };
+      expect(result.manga.updateTime).toMatch(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+    });
+
+    it('N小时前 → 当天日期（用固定系统时间断言）', () => {
+      const realDate = Date;
+      const fixed = new Date('2026-08-01T10:00:00Z');
+      // @ts-expect-error 锁定 Date.now，让 subtract(N,'h') 产出确定日期
+      global.Date = class extends realDate {
+        static now() {
+          return fixed.getTime();
+        }
+      };
+      try {
+        // 3小时前 → 仍是当天
+        const result = BZM.handleMangaInfo(buildDetailHtml('3小时前 更新'), 'yinianshiguang') as {
+          manga: IncreaseManga;
+        };
+        expect(result.manga.updateTime).toMatch(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+      } finally {
+        global.Date = realDate;
+      }
+    });
+
+    it('章节槽哈希：section_slot/chapter_slot 拼成 X_Y，并 reverse 倒序', () => {
+      const result = BZM.handleMangaInfo(
+        buildDetailHtml('2026年08月01日 更新'),
+        'yinianshiguang'
+      ) as { manga: IncreaseManga };
+      // 输入 1/2/3，reverse 后应为 3/2/1，chapterId 形如 0_3
+      const chapters = result.manga.chapters!;
+      expect(chapters.map((c) => c.chapterId)).toEqual(['0_3', '0_2', '0_1']);
+      expect(chapters.map((c) => c.title)).toEqual(['第3话', '第2话', '第1话']);
+    });
+
+    it('标签映射：含「连载中」→ Serial，且从 tag 数组剔除', () => {
+      const result = BZM.handleMangaInfo(
+        buildDetailHtml('2026年08月01日 更新', ['连载中']),
+        'yinianshiguang'
+      ) as { manga: IncreaseManga };
+      expect(result.manga.status).toBe(MangaStatus.Serial);
+      expect(result.manga.tag).not.toContain('连载中');
+    });
+
+    it('标签映射：含「已完结」→ End，且从 tag 数组剔除', () => {
+      const result = BZM.handleMangaInfo(
+        buildDetailHtml('2026年08月01日 更新', ['已完结']),
+        'yinianshiguang'
+      ) as { manga: IncreaseManga };
+      expect(result.manga.status).toBe(MangaStatus.End);
+      expect(result.manga.tag).not.toContain('已完结');
+    });
+
+    it('缺少 og:url 中的 mangaId → 抛 MissingMangaInfo', () => {
+      const html = `<html><head><title>x</title></head><body></body></html>`;
+      expect(() => BZM.handleMangaInfo(html, 'whatever')).toThrow(ErrorMessage.MissingMangaInfo);
+    });
+  });
+
+  describe('handleChapter', () => {
+    const buildChapterHtml = (withNext: boolean, images: string[] = []) => {
+      // 「下一页」href 须匹配 PATTERN_SLOT_HTML：/{word}_?{n}/{n}_{n}_{n}.html，末段为 pageSlot
+      const nextHtml = withNext
+        ? `<div class="next_chapter"><a href="/dzmanga_0/0_3_2.html">下一页</a></div>`
+        : '';
+      const imgHtml = images.map((src) => `<div><amp-img src="${src}"></amp-img></div>`).join('');
+      return `
+        <html><head><title>第1话</title></head><body>
+          <div class="comic-chapter"><div class="header"><div class="l-content"><div class="title">第1话</div></div></div></div>
+          <div class="comic-contain">${imgHtml}</div>
+          ${nextHtml}
+        </body></html>`;
+    };
+
+    it('含「下一页」链接（pageSlot>page）→ canLoadMore=true', () => {
+      // pageSlot=2 > page=1
+      const result = BZM.handleChapter(
+        buildChapterHtml(true, ['https://x.test/1.jpg', 'https://x.test/2.jpg']),
+        'yinianshiguang',
+        '0_1',
+        1
+      ) as { chapter: any; canLoadMore: boolean };
+      expect(result.canLoadMore).toBe(true);
+      expect(result.chapter.images.map((i: any) => i.uri)).toEqual([
+        'https://x.test/1.jpg',
+        'https://x.test/2.jpg',
+      ]);
+    });
+
+    it('无「下一页」链接 → canLoadMore=false（已是末页）', () => {
+      const result = BZM.handleChapter(buildChapterHtml(false), 'yinianshiguang', '0_1', 1) as {
+        canLoadMore: boolean;
+      };
+      expect(result.canLoadMore).toBe(false);
+    });
+  });
+});
+
+// ===================== MHGM（漫画柜mobile）解析 =====================
+describe('MHGM 插件解析', () => {
+  describe('handleDiscovery', () => {
+    it('解析列表：data-src 补 https、状态 连载/完结 映射', () => {
+      const html = `
+        <ul>
+          <li>
+            <a href="/comic/123">
+              <h3>测试漫画A</h3>
+              <div class="thumb"><img data-src="//i.test/a.jpg"><i>连载</i></div>
+              <dl><dt>作者</dt><dd>作者甲</dd></dl>
+              <dl><dt>类别</dt><dd>热血</dd></dl>
+              <dl><dt>最新</dt><dd>第1话</dd></dl>
+              <dl><dt>更新</dt><dd>2026-08-01</dd></dl>
+            </a>
+          </li>
+          <li>
+            <a href="/comic/456">
+              <h3>测试漫画B</h3>
+              <div class="thumb"><img data-src="//i.test/b.jpg"><i>完结</i></div>
+              <dl><dt>作者</dt><dd>作者乙</dd></dl>
+              <dl><dt>类别</dt><dd>校园</dd></dl>
+              <dl><dt>最新</dt><dd>第2话</dd></dl>
+              <dl><dt>更新</dt><dd>2026-07-01</dd></dl>
+            </a>
+          </li>
+        </ul>`;
+      const result = MHGM.handleDiscovery(html) as { discovery: IncreaseManga[] };
+      expect(result.discovery).toHaveLength(2);
+      expect(result.discovery[0]).toMatchObject({
+        mangaId: '123',
+        title: '测试漫画A',
+        status: MangaStatus.Serial,
+        bookCover: 'https://i.test/a.jpg',
+      });
+      expect(result.discovery[1]).toMatchObject({
+        mangaId: '456',
+        title: '测试漫画B',
+        status: MangaStatus.End,
+        bookCover: 'https://i.test/b.jpg',
+      });
+    });
+
+    it('过滤掉缺 mangaId 或 title 的项：即使缺 <dl> 也不让整页解析崩溃', () => {
+      // 修复前：缺 dl 的项会让 authorLabel 解构为 undefined，紧接着 authorLabel.split(',')
+      // 抛错，导致整页（含后面的合法项）解析失败。修复后先过滤 mangaId/title，缺 dl 的项直接跳过。
+      const html = `
+        <ul>
+          <li><a href="/not-a-comic"><h3>无ID</h3></a></li>
+          <li><a href="/comic/789"><div class="thumb"></div></a></li>
+          <li>
+            <a href="/comic/100">
+              <h3>有效</h3>
+              <div class="thumb"><i>连载</i></div>
+              <dl><dt>作者</dt><dd>作者</dd></dl>
+              <dl><dt>类别</dt><dd>热血</dd></dl>
+              <dl><dt>最新</dt><dd></dd></dl>
+              <dl><dt>更新</dt><dd></dd></dl>
+            </a>
+          </li>
+        </ul>`;
+      const result = MHGM.handleDiscovery(html) as { discovery: IncreaseManga[] };
+      expect(result.discovery).toHaveLength(1);
+      expect(result.discovery[0].mangaId).toBe('100');
+    });
+  });
+
+  describe('handleSearch', () => {
+    it('解析列表并过滤缺 mangaId/title 的项（缺 <dl> 不再崩溃）', () => {
+      const html = `
+        <ul id="detail">
+          <li><a href="/not-a-comic"><h3>无ID</h3></a></li>
+          <li>
+            <a href="/comic/200">
+              <h3>搜索结果</h3>
+              <div class="thumb"><img data-src="//i.test/s.jpg"><i>连载</i></div>
+              <dl><dt>作者</dt><dd>作者丙</dd></dl>
+              <dl><dt>类别</dt><dd>校园</dd></dl>
+              <dl><dt>最新</dt><dd>第5话</dd></dl>
+              <dl><dt>更新</dt><dd>2026-08-01</dd></dl>
+            </a>
+          </li>
+        </ul>`;
+      const result = MHGM.handleSearch(html) as { search: IncreaseManga[] };
+      expect(result.search).toHaveLength(1);
+      expect(result.search[0]).toMatchObject({
+        mangaId: '200',
+        title: '搜索结果',
+        status: MangaStatus.Serial,
+        bookCover: 'https://i.test/s.jpg',
+      });
+    });
+  });
+
+  describe('handleMangaInfo 常规路径', () => {
+    const buildDetailHtml = (statusLabel: string) => `
+      <html><head>
+        <title>测试漫画</title>
+      </head><body>
+        <div class="main-bar"><h1>测试漫画</h1></div>
+        <div class="book-detail">
+          <div class="thumb"><img src="//i.test/cover.jpg"><i>${statusLabel}</i></div>
+        </div>
+        <div class="cont-list">
+          <dl><dt>最新</dt><dd>第50话</dd></dl>
+          <dl><dt>更新</dt><dd>2026-08-01</dd></dl>
+          <dl><dt>作者</dt><dd>作者：作者甲</dd></dl>
+          <dl><dt>类别</dt><dd>类别：热血</dd></dl>
+        </div>
+        <script>{ bid:12345, status:0,block_cc:'' }</script>
+        <div id="chapterList"><ul>
+          <li><a href="/comic/12345/1.html"><b>第1话</b></a></li>
+          <li><a href="/comic/12345/2.html"><b>第2话</b></a></li>
+        </ul></div>
+      </body></html>`;
+
+    it('连载状态 + 章节 href→chapterId 正则提取', () => {
+      const result = MHGM.handleMangaInfo(buildDetailHtml('连载'), '12345') as {
+        manga: IncreaseManga;
+      };
+      expect(result.manga.mangaId).toBe('12345');
+      expect(result.manga.status).toBe(MangaStatus.Serial);
+      const chapters = result.manga.chapters!;
+      expect(chapters.map((c) => c.chapterId)).toEqual(['1', '2']);
+      expect(chapters[0].href).toBe('https://m.manhuagui.com/comic/12345/1.html');
+      expect(result.manga.infoCover).toBe('https://i.test/cover.jpg');
+    });
+
+    it('完结状态映射', () => {
+      const result = MHGM.handleMangaInfo(buildDetailHtml('完结'), '12345') as {
+        manga: IncreaseManga;
+      };
+      expect(result.manga.status).toBe(MangaStatus.End);
+    });
+
+    it('缺 bid → 抛 MissingMangaInfo', () => {
+      const html = `<html><head><title>x</title></head><body></body></html>`;
+      expect(() => MHGM.handleMangaInfo(html, 'whatever')).toThrow(ErrorMessage.MissingMangaInfo);
+    });
+  });
+
+  describe('isReaderData 类型守卫', () => {
+    const valid = {
+      bookId: '1',
+      chapterId: '2',
+      images: ['a.jpg', 'b.jpg'],
+      sl: { host: 'h' },
+    };
+
+    it('合法 ReaderData → true', () => {
+      expect(mhgmHelpers.isReaderData(valid)).toBe(true);
+    });
+
+    it('bookId/chapterId 同时支持 number', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, bookId: 1, chapterId: 2 })).toBe(true);
+    });
+
+    it('缺 bookId → false', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, bookId: undefined })).toBe(false);
+    });
+
+    it('images 非数组 → false', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, images: 'nope' })).toBe(false);
+    });
+
+    it('images 含非字符串元素 → false', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, images: ['a', 2] })).toBe(false);
+    });
+
+    it('sl 缺失 → false', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, sl: undefined })).toBe(false);
+    });
+
+    it('sl 是数组 → false', () => {
+      expect(mhgmHelpers.isReaderData({ ...valid, sl: [] as any })).toBe(false);
+    });
+
+    it('非对象输入 → false', () => {
+      expect(mhgmHelpers.isReaderData(null)).toBe(false);
+      expect(mhgmHelpers.isReaderData('str')).toBe(false);
+      expect(mhgmHelpers.isReaderData(undefined)).toBe(false);
+    });
+  });
 });

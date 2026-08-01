@@ -192,11 +192,18 @@ class ManHuaGuiMobile extends Base {
         .find('dl')
         .toArray()
         .map((dl) => $(dl).find('dd').first().text().trim());
-      const author = authorLabel.split(',');
-      const tag = tagLabel.split(',');
+      const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
+
+      // 缺 dl 的条目会让解构得到 undefined，先过滤 mangaId/title 再取字段，
+      // 否则下面的 split 会抛错让整页解析崩溃（站点偶有无 dl 的占位 li）。
+      if (!mangaId || !title) {
+        return;
+      }
+
+      const author = (authorLabel || '').split(',');
+      const tag = (tagLabel || '').split(',');
       const latest = latestLabel !== '' ? latestLabel : undefined;
       const updateTime = PATTERN_FULL_TIME.test(updateTimeLabel) ? updateTimeLabel : undefined;
-      const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
 
       let status = MangaStatus.Unknown;
       if (statusLabel === '连载') {
@@ -204,10 +211,6 @@ class ManHuaGuiMobile extends Base {
       }
       if (statusLabel === '完结') {
         status = MangaStatus.End;
-      }
-
-      if (!mangaId || !title) {
-        return;
       }
 
       list.push({
@@ -244,11 +247,18 @@ class ManHuaGuiMobile extends Base {
         .find('dl')
         .toArray()
         .map((dl) => $(dl).find('dd').first().text().trim());
-      const author = authorLabel.split(',');
-      const tag = tagLabel.split(',');
+      const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
+
+      // 缺 dl 的条目会让解构得到 undefined，先过滤 mangaId/title 再取字段，
+      // 否则下面的 split 会抛错让整页解析崩溃（站点偶有无 dl 的占位 li）。
+      if (!mangaId || !title) {
+        return;
+      }
+
+      const author = (authorLabel || '').split(',');
+      const tag = (tagLabel || '').split(',');
       const latest = latestLabel !== '' ? latestLabel : undefined;
       const updateTime = PATTERN_FULL_TIME.test(updateTimeLabel) ? updateTimeLabel : undefined;
-      const [, mangaId] = href.match(PATTERN_MANGA_ID) || [];
 
       let status = MangaStatus.Unknown;
       if (statusLabel === '连载') {
@@ -256,10 +266,6 @@ class ManHuaGuiMobile extends Base {
       }
       if (statusLabel === '完结') {
         status = MangaStatus.End;
-      }
-
-      if (!mangaId || !title) {
-        return;
       }
 
       list.push({
@@ -453,5 +459,7 @@ const isReaderData = (value: unknown): value is ReaderData => {
     !Array.isArray(data.sl)
   );
 };
+
+export const __test__ = { isReaderData };
 
 export default new ManHuaGuiMobile();

@@ -3,6 +3,7 @@ import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-nativ
 import { useStaticSafeAreaInsets, useStaticSafeAreaFrame } from '~/hooks';
 import { useLatestRef } from '~/hooks/useLatestRef';
 import { emptyFn, PositionX, SafeArea } from '~/utils';
+import { resolveTapZone, clampPan, computeZoomEdges } from '~/utils/controllerLayout';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import { useFocusEffect } from '@react-navigation/native';
 import type { AccessibilityActionEvent } from 'react-native';
@@ -149,17 +150,7 @@ const Controller = ({
           if (!handler) {
             return;
           }
-          if (savedScale.value === 1 && horizontal) {
-            if (e.x < oneThirdWidth) {
-              handler(PositionX.Left);
-            } else if (e.x < oneThirdWidth * 2) {
-              handler(PositionX.Mid);
-            } else {
-              handler(PositionX.Right);
-            }
-          } else {
-            handler(PositionX.Mid);
-          }
+          handler(resolveTapZone(e.x, oneThirdWidth, savedScale.value === 1 && horizontal));
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [horizontal, oneThirdWidth]
@@ -195,14 +186,18 @@ const Controller = ({
             const currentX = (windowWidth / doubleTapScaleValue - e.x) * (doubleTapScaleValue - 1);
             const currentY =
               (windowHeight / doubleTapScaleValue - e.y) * (doubleTapScaleValue - 1);
-            const dX = width.value * doubleTapScaleValue - windowWidth;
-            const dY = height.value * doubleTapScaleValue - windowHeight;
             translationX.value = currentX;
             translationY.value = currentY;
-            top.value = Math.max(dY / 2, 0);
-            bottom.value = Math.max(dY / 2, 0);
-            left.value = Math.max(dX / 2, 0);
-            right.value = Math.max(dX / 2, 0);
+            const edges = computeZoomEdges(
+              width.value * doubleTapScaleValue,
+              height.value * doubleTapScaleValue,
+              windowWidth,
+              windowHeight
+            );
+            top.value = edges.top;
+            bottom.value = edges.bottom;
+            left.value = edges.left;
+            right.value = edges.right;
 
             savedScale.value = doubleTapScaleValue;
             savedTranslationX.value = currentX;
@@ -233,13 +228,7 @@ const Controller = ({
           if (!handler || savedScale.value !== 1) {
             return;
           }
-          if (e.x < oneThirdWidth) {
-            handler(PositionX.Left);
-          } else if (e.x < oneThirdWidth * 2) {
-            handler(PositionX.Mid);
-          } else {
-            handler(PositionX.Right);
-          }
+          handler(resolveTapZone(e.x, oneThirdWidth, true));
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [oneThirdWidth]
@@ -274,12 +263,16 @@ const Controller = ({
         })
         .onFinalize(() => {
           'worklet';
-          const dX = width.value * scale.value - windowWidth;
-          const dY = height.value * scale.value - windowHeight;
-          top.value = Math.max(dY / 2, 0);
-          bottom.value = Math.max(dY / 2, 0);
-          left.value = Math.max(dX / 2, 0);
-          right.value = Math.max(dX / 2, 0);
+          const edges = computeZoomEdges(
+            width.value * scale.value,
+            height.value * scale.value,
+            windowWidth,
+            windowHeight
+          );
+          top.value = edges.top;
+          bottom.value = edges.bottom;
+          left.value = edges.left;
+          right.value = edges.right;
 
           savedScale.value = scale.value;
           savedTranslationX.value = translationX.value;
@@ -309,18 +302,10 @@ const Controller = ({
           const currentX = translationX.value + e.changeX;
           const currentY = translationY.value + e.changeY;
 
-          if (
-            (currentX >= -left.value && currentX <= right.value) ||
-            (currentX < -left.value && currentX > translationX.value) ||
-            (currentX > right.value && currentX < translationX.value)
-          ) {
+          if (clampPan(currentX, -left.value, right.value, translationX.value)) {
             translationX.value = currentX;
           }
-          if (
-            (currentY >= -top.value && currentY <= bottom.value) ||
-            (currentY < -top.value && currentY > translationY.value) ||
-            (currentY > bottom.value && currentY < translationY.value)
-          ) {
+          if (clampPan(currentY, -top.value, bottom.value, translationY.value)) {
             translationY.value = currentY;
           }
         })
@@ -416,13 +401,7 @@ export const LongPressController = ({ children, onLongPress }: LongPressControll
         .minDuration(1000)
         .onStart((e) => {
           if (onLongPress) {
-            if (e.x < oneThirdWidth) {
-              onLongPress(PositionX.Left);
-            } else if (e.x < oneThirdWidth * 2) {
-              onLongPress(PositionX.Mid);
-            } else {
-              onLongPress(PositionX.Right);
-            }
+            onLongPress(resolveTapZone(e.x, oneThirdWidth, true));
           }
         }),
     [onLongPress, oneThirdWidth]
