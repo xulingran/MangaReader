@@ -85,8 +85,8 @@ android {
         applicationId = "com.youniaogu.mangareader"
         minSdk = rootProject.ext.minSdkVersion
         targetSdk = rootProject.ext.targetSdkVersion
-        versionCode = 55
-        versionName = "0.8.0"
+        versionCode = 56
+        versionName = "0.8.1"
         ndk {
             // 正式包由 gradle.properties 固定为 ARMv7/ARM64；本地模拟器可用 -P 覆盖 ABI。
             abiFilters(*targetArchitectures)
