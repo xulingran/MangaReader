@@ -94,14 +94,6 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
                 onPress={() => move(index, 1)}
               />
             </VStack>
-            <VectorIcon
-              name={item.disabled ? 'check-box-outline-blank' : 'check-box'}
-              size="lg"
-              label="启用"
-              accessibilityLabel={item.disabled ? '启用来源' : '停用来源'}
-              accessibilityState={{ checked: !item.disabled }}
-              onPress={() => dispatch(disablePlugin(item.value))}
-            />
             {item.value === PluginType.MANHUAUK && (
               <VectorIcon
                 name={chineseOnly === ChineseOnly.Enable ? 'check-box' : 'check-box-outline-blank'}
@@ -147,6 +139,14 @@ const Plugin = ({ navigation: { navigate } }: StackPluginProps) => {
                 onPress={() => navigate('OnlineFavorites', { source: item.value })}
               />
             )}
+            <VectorIcon
+              name={item.disabled ? 'check-box-outline-blank' : 'check-box'}
+              size="lg"
+              label="启用"
+              accessibilityLabel={item.disabled ? '启用来源' : '停用来源'}
+              accessibilityState={{ checked: !item.disabled }}
+              onPress={() => dispatch(disablePlugin(item.value))}
+            />
           </HStack>
         ))}
       </ScrollView>
